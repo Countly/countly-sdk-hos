@@ -1,0 +1,11 @@
+{
+  "modelVersion": "5.0.0",
+  "name": "countly-sdk-hos-workspace",
+  "version": "26.1.0",
+  "description": "Countly SDK for HarmonyOS / OpenHarmony — workspace root",
+  "license": "MIT",
+  "dependencies": {},
+  "devDependencies": {
+    "@ohos/hypium": "1.0.19"
+  }
+}

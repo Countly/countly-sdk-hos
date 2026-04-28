@@ -1,0 +1,11 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "Countly SDK · example / feature harness app",
+  "main": "",
+  "author": "Countly",
+  "license": "MIT",
+  "dependencies": {
+    "countly-sdk-hos": "file:../library"
+  }
+}

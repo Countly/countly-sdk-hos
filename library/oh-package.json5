@@ -1,0 +1,16 @@
+{
+  "name": "countly-sdk-hos",
+  "version": "26.1.0",
+  "description": "Countly SDK for HarmonyOS / OpenHarmony (ArkTS)",
+  "main": "Index.ets",
+  "author": "Countly",
+  "license": "MIT",
+  "keywords": [
+    "countly",
+    "analytics",
+    "harmonyos",
+    "openharmony",
+    "arkts"
+  ],
+  "dependencies": {}
+}

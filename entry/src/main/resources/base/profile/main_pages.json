@@ -1,0 +1,18 @@
+{
+  "src": [
+    "pages/Index",
+    "pages/EventsPage",
+    "pages/SessionsPage",
+    "pages/ViewsPage",
+    "pages/CrashesPage",
+    "pages/UserProfilePage",
+    "pages/ConsentPage",
+    "pages/DeviceIdPage",
+    "pages/LocationPage",
+    "pages/MetricsPage",
+    "pages/RemoteConfigPage",
+    "pages/ConfigurationPage",
+    "pages/MultiInstancePage",
+    "pages/ShutdownPage"
+  ]
+}
