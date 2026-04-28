@@ -13,8 +13,8 @@ const DOMAIN: number = 0xC047;
 
 // Fill these in before running. COUNTLY_SERVER_URL must be an https:// URL of a
 // Countly server you control (or a trial server from trial.count.ly).
-const COUNTLY_SERVER_URL: string = 'http://192.168.1.107:5050/';
-const COUNTLY_APP_KEY: string = 'sdk_qa_test';
+const COUNTLY_SERVER_URL: string = 'YOUR_SERVER_URL';
+const COUNTLY_APP_KEY: string = 'YOUR_APP_KEY';
 
 /**
  * AbilityStage runs ONCE per HAP module process, BEFORE any UIAbility is
