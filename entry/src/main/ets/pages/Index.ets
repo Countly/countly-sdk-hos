@@ -1,8 +1,16 @@
 import router from '@ohos.router';
+import common from '@ohos.app.ability.common';
+import Want from '@ohos.app.ability.Want';
 import { Countly } from 'countly-sdk-hos';
 import { Theme } from '../components/Theme';
 import { LogPanel } from '../components/LogPanel';
 import { DemoLog, StoreKeys } from '../model/DemoState';
+
+// Bundle name comes from `AppScope/app.json5`. Hard-coded here because
+// HMOS does not expose a typed accessor on `common.Context` for it the way
+// Android exposes `Context.getPackageName()` — keep this in sync if the
+// bundleName ever changes.
+const DEMO_BUNDLE_NAME: string = 'ly.count.sdk.hos.demo';
 
 class FeatureTile {
   public title: string;
@@ -51,6 +59,30 @@ struct Index {
   private navigate(route: string, title: string): void {
     router.pushUrl({ url: route }).catch((err: Object): void => {
       DemoLog.append(`nav ${title} ERR: ${err}`);
+    });
+  }
+
+  /**
+   * Launch a sibling UIAbility to exercise the SDK's automatic view
+   * tracking path. Auto-view fires on `abilityLifecycle.onAbilityForeground`
+   * which the platform emits ONLY on cross-ability transitions (not on
+   * `router.pushUrl` between pages of the same ability), so this is the
+   * only demo control that produces `[CLY]_view` events with non-Entry
+   * names. The bundle name is the demo HAP's bundleName from
+   * `AppScope/app.json5`.
+   */
+  private launchAbility(abilityName: string): void {
+    const ctx: common.UIAbilityContext | undefined =
+      this.getUIContext().getHostContext() as common.UIAbilityContext | undefined;
+    if (!ctx) {
+      DemoLog.append(`launch ${abilityName} ERR: no UIAbilityContext`);
+      return;
+    }
+    const want: Want = { bundleName: DEMO_BUNDLE_NAME, abilityName: abilityName };
+    ctx.startAbility(want).then((): void => {
+      DemoLog.append(`startAbility(${abilityName}) OK`);
+    }).catch((err: Object): void => {
+      DemoLog.append(`startAbility(${abilityName}) ERR: ${err}`);
     });
   }
 
@@ -124,6 +156,36 @@ struct Index {
           .width('100%')
           .textAlign(TextAlign.Start)
           .margin({ top: 10 })
+
+        // Auto-view tracking demo: launch a sibling UIAbility so the SDK's
+        // `abilityLifecycle.onAbilityForeground` subscription fires and emits
+        // a `[CLY]_view` event. Required because intra-ability `router.pushUrl`
+        // does NOT trigger that lifecycle hook (see memory
+        // `project_auto_lifecycle.md`).
+        Row() {
+          Button('Launch Secondary')
+            .fontSize(12)
+            .fontColor(Theme.TEXT_INVERT)
+            .backgroundColor('#2563EB')
+            .type(ButtonType.Normal)
+            .borderRadius(Theme.RADIUS_MD)
+            .height(36)
+            .layoutWeight(1)
+            .margin({ right: 6 })
+            .onClick(() => { this.launchAbility('SecondaryAbility'); })
+          Button('Launch Tertiary')
+            .fontSize(12)
+            .fontColor(Theme.TEXT_INVERT)
+            .backgroundColor('#7C3AED')
+            .type(ButtonType.Normal)
+            .borderRadius(Theme.RADIUS_MD)
+            .height(36)
+            .layoutWeight(1)
+            .margin({ left: 6 })
+            .onClick(() => { this.launchAbility('TertiaryAbility'); })
+        }
+        .width('100%')
+        .margin({ top: 12 })
       }
       .width('100%')
       .padding({ left: 18, right: 18, top: 22, bottom: 20 })

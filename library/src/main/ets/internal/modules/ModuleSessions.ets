@@ -13,13 +13,6 @@ class NoopFirstViewFlagHost implements FirstViewFlagHost {
   reset(): void { /* no-op default */ }
 }
 
-class EndSessionOptions {
-  emit: boolean;
-  constructor(emit: boolean) {
-    this.emit = emit;
-  }
-}
-
 /**
  * Session tracking. Three modes:
  *   1. Fully automatic (default) — driven by foreground/background callbacks
@@ -37,6 +30,13 @@ export class ModuleSessions extends ModuleBase {
   private updateTimer: number = 0;
   private lifecycleCounter: number = 0;
   private firstViewFlagHost: FirstViewFlagHost = new NoopFirstViewFlagHost();
+  // Hook called immediately after begin_session is enqueued so the host
+  // (CountlyInstance) can emit a forced orientation baseline. Mirrors
+  // Android sdk/ModuleSessions.java:67-68 which calls
+  // `_cly.moduleViews.updateOrientation(currentOrientation, true)` right
+  // after `requestQueueProvider.beginSession(...)`. Default no-op so the
+  // module remains usable in tests that don't wire the emitter.
+  private orientationBaselineEmitter: () => void = (): void => { /* no-op default */ };
 
   constructor(config: InternalConfig, core: SdkCore) {
     super(config);
@@ -46,6 +46,18 @@ export class ModuleSessions extends ModuleBase {
 
   public setFirstViewFlagHost(host: FirstViewFlagHost): void {
     this.firstViewFlagHost = host;
+  }
+
+  /**
+   * Wire the post-begin_session orientation baseline emitter. Called once
+   * by `CountlyInstance` during construction. Implementations should
+   * read the platform display, gate on `trackOrientationChanges` +
+   * registration state, and call `viewsModule.updateOrientation(mode, true)`
+   * — the `true` bypasses the dedupe so every begin_session gets a fresh
+   * baseline event, matching Android.
+   */
+  public setOrientationBaselineEmitter(emitter: () => void): void {
+    this.orientationBaselineEmitter = emitter;
   }
 
   public override async onInit(): Promise<void> {
@@ -147,6 +159,14 @@ export class ModuleSessions extends ModuleBase {
     const body: string = Utils.buildQueryString(params);
     await this.core.requestQueue.enqueue(body);
 
+    // Orientation baseline — fires AFTER begin_session is in the request
+    // queue so the events batch that carries the orientation event is
+    // ordered after the begin_session URL request on the wire. Mirrors
+    // Android sdk/ModuleSessions.java:67-68. Forced (dedupe bypassed) so
+    // every begin_session gets a fresh orientation event even when the
+    // orientation hasn't changed since the previous session.
+    this.orientationBaselineEmitter();
+
     this.config.logger.i('[ModuleSessions] beginSessionInternal, session started');
     this.scheduleUpdateTimer();
   }
@@ -174,7 +194,7 @@ export class ModuleSessions extends ModuleBase {
     this.config.logger.d(`[ModuleSessions] sendUpdate, duration=${elapsed}s`);
   }
 
-  private async endSessionInternal(options?: EndSessionOptions): Promise<void> {
+  private async endSessionInternal(emit: boolean = true): Promise<void> {
     if (!this.sessionActive) return;
     if (this.updateTimer !== 0) {
       clearInterval(this.updateTimer);
@@ -188,7 +208,7 @@ export class ModuleSessions extends ModuleBase {
     // When consent was just revoked, we still want to stop the timer and flip
     // sessionActive — but we MUST NOT enqueue an end_session request (that's
     // the whole point of consent revocation).
-    if (options && !options.emit) return;
+    if (!emit) return;
 
     const params: Record<string, string> = this.core.requestBuilder.baseParams();
     params['end_session'] = '1';
@@ -236,7 +256,7 @@ export class ModuleSessions extends ModuleBase {
     // here, even when consent is still in effect — the host hasn't told us
     // the new user is in foreground.
     if (this.sessionActive) {
-      await this.endSessionInternal(new EndSessionOptions(false));
+      await this.endSessionInternal(false);
     }
     this.lifecycleCounter = 0;
   }
@@ -252,7 +272,7 @@ export class ModuleSessions extends ModuleBase {
     // gets a chance to emit it. Defer to the device-id hook instead.
     if (source === ConsentChangeSource.DeviceIDChangedNotMerged) return;
     if (removed.indexOf(CountlyFeature.SESSIONS) !== -1 && this.sessionActive) {
-      await this.endSessionInternal(new EndSessionOptions(false));
+      await this.endSessionInternal(false);
     }
   }
 

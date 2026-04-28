@@ -202,8 +202,16 @@ export class ModuleViews extends ModuleBase {
    * consecutive identical values so rapid redundant calls (e.g. a
    * config-update fired with no actual orientation change) don't inflate
    * the event queue.
+   *
+   * `forceSend=true` bypasses the dedupe — used at session boundaries to
+   * mirror Android `ModuleViews.updateOrientation(orient, forceSend=true)`
+   * (sdk/ModuleSessions.java:67-68): every begin_session emits a fresh
+   * orientation baseline so dashboards always see the orientation that
+   * was current when the session started, even if the device hasn't
+   * rotated since the last session. The default-false matches the
+   * config-update path which should keep deduping.
    */
-  public async updateOrientation(mode: string): Promise<void> {
+  public async updateOrientation(mode: string, forceSend: boolean = false): Promise<void> {
     if (!this.config.trackOrientationChanges) {
       this.config.logger.v('[ModuleViews] updateOrientation, trackOrientationChanges disabled — ignored');
       return;
@@ -217,7 +225,7 @@ export class ModuleViews extends ModuleBase {
       this.config.logger.w(`[ModuleViews] updateOrientation, unsupported mode '${mode}' — expected 'portrait' or 'landscape'`);
       return;
     }
-    if (normalized === this.lastOrientationMode) {
+    if (!forceSend && normalized === this.lastOrientationMode) {
       this.config.logger.d(`[ModuleViews] updateOrientation, unchanged (${normalized}) — skipped`);
       return;
     }

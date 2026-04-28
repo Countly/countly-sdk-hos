@@ -78,7 +78,6 @@ const HOUR_IN_MS: number = 60 * 60 * 1000;
 export class ModuleConfiguration extends ModuleBase {
   private core: SdkCore;
   private fetchTimer: number = 0;
-  private lastFetchTimestamp: number = 0;
   private latestRetrievedFull: Record<string, Object> | null = null;
   private latestRetrievedInner: Record<string, Object> | null = null;
 
@@ -162,7 +161,6 @@ export class ModuleConfiguration extends ModuleBase {
     const base: Record<string, string> = this.core.requestBuilder.baseParams();
     base['method'] = 'sc';
     const qs: string = Utils.buildQueryString(base);
-    this.lastFetchTimestamp = Date.now();
     this.config.logger.d('[ModuleConfiguration] fetchFromServer, sending /o/sdk?method=sc');
 
     try {
@@ -289,6 +287,12 @@ export class ModuleConfiguration extends ModuleBase {
     return out;
   }
 
+  private isIntegerAtLeast(value: Object, lowerBound: number): boolean {
+    if (typeof value !== 'number') return false;
+    const n: number = value as number;
+    return Number.isFinite(n) && n >= lowerBound && Math.floor(n) === n;
+  }
+
   private isValidKeyValue(key: string, value: Object): boolean {
     // Booleans
     if (key === K_TRACKING || key === K_NETWORKING || key === K_SESSION_TRACKING ||
@@ -297,21 +301,21 @@ export class ModuleConfiguration extends ModuleBase {
         key === K_BACKOFF_MECHANISM || key === K_LOGGING || key === K_CONSENT_REQUIRED) {
       return typeof value === 'boolean';
     }
-    // Positive integers
+    // Positive integers (>= 1)
     if (key === K_REQUEST_QUEUE_SIZE || key === K_EVENT_QUEUE_SIZE || key === K_SESSION_UPDATE_INTERVAL ||
         key === K_LIMIT_KEY_LENGTH || key === K_LIMIT_VALUE_SIZE || key === K_LIMIT_SEG_VALUES ||
         key === K_LIMIT_BREADCRUMB || key === K_LIMIT_TRACE_LINE || key === K_LIMIT_TRACE_LENGTH ||
         key === K_SERVER_CONFIG_UPDATE_INTERVAL || key === K_BOM_ACCEPTED_TIMEOUT ||
         key === K_BOM_REQUEST_AGE || key === K_BOM_DURATION || key === K_USER_PROPERTY_CACHE_LIMIT) {
-      return typeof value === 'number' && Number.isFinite(value as number) && (value as number) > 0 && Math.floor(value as number) === (value as number);
+      return this.isIntegerAtLeast(value, 1);
     }
-    // Non-negative integer
+    // Non-negative integer (>= 0)
     if (key === K_DROP_OLD_REQUEST_TIME) {
-      return typeof value === 'number' && Number.isFinite(value as number) && (value as number) >= 0 && Math.floor(value as number) === (value as number);
+      return this.isIntegerAtLeast(value, 0);
     }
     // Min-16 integer
     if (key === K_CONTENT_ZONE_INTERVAL) {
-      return typeof value === 'number' && Number.isFinite(value as number) && (value as number) >= 16 && Math.floor(value as number) === (value as number);
+      return this.isIntegerAtLeast(value, 16);
     }
     // Open (0,1) double
     if (key === K_BOM_RQ_PERCENTAGE) {

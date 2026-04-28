@@ -4,7 +4,7 @@ import { SdkCore } from '../SdkCore';
 import { InternalConfig } from '../InternalConfig';
 import { DeviceInfo } from '../DeviceInfo';
 import { Utils } from '../Utils';
-import { CountlyFeature, CrashData, SegmentationMap, SegmentationValue, ThreadStackEntry, ThreadStackProvider } from '../../types/Types';
+import { CountlyFeature, CrashData, SegmentationMap, ThreadStackEntry, ThreadStackProvider } from '../../types/Types';
 
 const MAX_STACK_TRACE_CHARS: number = 20000;
 

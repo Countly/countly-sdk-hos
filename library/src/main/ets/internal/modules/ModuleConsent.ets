@@ -256,4 +256,22 @@ export class ModuleConsent extends ModuleBase {
       this.pendingCoalesceTimer = 0;
     }
   }
+
+  /**
+   * Send any init-time consent snapshot synchronously, bypassing the 1-second
+   * coalesce timer scheduled by the constructor. Called from
+   * `CountlyInstance.init()` after `deviceIdModule.resolveInitial()` so the
+   * initial consent state lands on the wire ahead of any `begin_session` /
+   * other module request — the platform's `onApplicationForeground` arrives
+   * after `init()` resolves but well before the 1s timer would fire, so
+   * without this flush the queue ends up with `begin_session` ahead of the
+   * consent change. (The 1s timer remains correct for runtime consent dialog
+   * toggles where multiple changes coalesce to a single request.)
+   */
+  public async flushInitialConsentIfPending(): Promise<void> {
+    if (this.pendingCoalesceTimer === 0) return;
+    clearTimeout(this.pendingCoalesceTimer);
+    this.pendingCoalesceTimer = 0;
+    await this.sendSnapshot();
+  }
 }

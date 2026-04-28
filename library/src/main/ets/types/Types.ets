@@ -269,8 +269,7 @@ export type GlobalCrashFilterCallback = (crash: CrashData) => boolean;
  */
 export enum ConsentChangeSource {
   DeveloperSet = 'DeveloperSet',
-  DeviceIDChangedNotMerged = 'DeviceIDChangedNotMerged',
-  ServerConfig = 'ServerConfig'
+  DeviceIDChangedNotMerged = 'DeviceIDChangedNotMerged'
 }
 
 /**

@@ -75,10 +75,6 @@ export class Network {
     this.forcePost = forced;
   }
 
-  public isForcePost(): boolean {
-    return this.forcePost;
-  }
-
   public async execute(baseUrl: string, endpoint: string, data: string, usePost: boolean): Promise<HttpResult> {
     const fullUrl: string = usePost
       ? `${baseUrl}${endpoint}`

@@ -54,7 +54,6 @@ export class RequestQueue {
   private backoffUntilMs: number = 0;
   private backoffTimer: number = 0;
   private consecutiveBackedOff: number = 0;
-  private totalBackedOff: number = 0;
   private processorTimer: number = 0;
   private tempMode: () => boolean;
   private healthListener: HealthListener | null = null;
@@ -376,7 +375,6 @@ export class RequestQueue {
     const delay: number = Math.min(baseMs * Math.pow(2, exponent), BACKOFF_MAX_MS);
     this.backoffUntilMs = Date.now() + delay;
     this.consecutiveBackedOff++;
-    this.totalBackedOff++;
     if (this.healthListener !== null) this.healthListener.onBackoff();
     this.config.logger.i(`[RequestQueue] enterBackoff, delay=${delay / 1000}s consecutive=${this.consecutiveBackedOff}`);
   }
@@ -405,7 +403,6 @@ export class RequestQueue {
     }
     const pauseMs: number = sc.bomDuration * 1000;
     this.backoffUntilMs = Date.now() + pauseMs;
-    this.totalBackedOff++;
     if (this.healthListener !== null) this.healthListener.onBackoff();
     this.config.logger.d(`[RequestQueue] evaluateBackoff, slow server — pausing ${sc.bomDuration}s`);
   }

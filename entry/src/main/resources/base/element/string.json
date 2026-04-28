@@ -1,7 +1,11 @@
 {
   "string": [
-    { "name": "module_desc",       "value": "Countly SDK feature harness" },
-    { "name": "EntryAbility_desc", "value": "Countly feature demo entry ability" },
-    { "name": "EntryAbility_label","value": "Countly Demo" }
+    { "name": "module_desc",            "value": "Countly SDK feature harness" },
+    { "name": "EntryAbility_desc",      "value": "Countly feature demo entry ability" },
+    { "name": "EntryAbility_label",     "value": "Countly Demo" },
+    { "name": "SecondaryAbility_desc",  "value": "Auto-view tracking demo target #1" },
+    { "name": "SecondaryAbility_label", "value": "Countly Secondary" },
+    { "name": "TertiaryAbility_desc",   "value": "Auto-view tracking demo target #2" },
+    { "name": "TertiaryAbility_label",  "value": "Countly Tertiary" }
   ]
 }

@@ -70,6 +70,32 @@ export class Utils {
     return url.startsWith('http://') || url.startsWith('https://');
   }
 
+  /**
+   * Detailed server-URL validation. Returns a short reason code so callers
+   * (CountlyConfig constructor, CountlyInstance.setServerURL) can map it to
+   * their own throw / log-and-ignore behaviour.
+   *
+   * Codes:
+   *   ''          — valid
+   *   'empty'     — null / undefined / whitespace-only
+   *   'scheme'    — missing http:// or https://
+   *   'authority' — contains userinfo (`@` before the path), e.g.
+   *                 "https://legit.server.com@evil.com" — RFC 3986 parses
+   *                 the authority as `evil.com` so a misconfiguration here
+   *                 silently redirects all telemetry.
+   */
+  public static validateServerUrl(url: string | null | undefined): string {
+    if (url === null || url === undefined || url.trim().length === 0) return 'empty';
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return 'scheme';
+    const schemeEnd: number = url.indexOf('://');
+    const authorityEnd: number = url.indexOf('/', schemeEnd + 3);
+    const authority: string = authorityEnd === -1
+      ? url.substring(schemeEnd + 3)
+      : url.substring(schemeEnd + 3, authorityEnd);
+    if (authority.indexOf('@') !== -1) return 'authority';
+    return '';
+  }
+
   public static truncate(value: string, max: number): string {
     if (!value) return value;
     if (value.length <= max) return value;

@@ -4,6 +4,7 @@
     "type": "entry",
     "description": "$string:module_desc",
     "mainElement": "EntryAbility",
+    "srcEntry": "./ets/myabilitystage/MyAbilityStage.ets",
     "deviceTypes": [
       "phone",
       "tablet",
@@ -29,6 +30,28 @@
             "actions": ["action.system.home"]
           }
         ]
+      },
+      {
+        "name": "SecondaryAbility",
+        "srcEntry": "./ets/secondaryability/SecondaryAbility.ets",
+        "description": "$string:SecondaryAbility_desc",
+        "icon": "$media:icon",
+        "label": "$string:SecondaryAbility_label",
+        "startWindowIcon": "$media:icon",
+        "startWindowBackground": "$color:start_window_background",
+        "orientation": "auto_rotation_restricted",
+        "exported": false
+      },
+      {
+        "name": "TertiaryAbility",
+        "srcEntry": "./ets/tertiaryability/TertiaryAbility.ets",
+        "description": "$string:TertiaryAbility_desc",
+        "icon": "$media:icon",
+        "label": "$string:TertiaryAbility_label",
+        "startWindowIcon": "$media:icon",
+        "startWindowBackground": "$color:start_window_background",
+        "orientation": "auto_rotation_restricted",
+        "exported": false
       }
     ],
     "requestPermissions": [

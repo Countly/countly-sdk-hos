@@ -37,6 +37,7 @@ import { PushApi } from './api/PushApi';
 import { ContentApi } from './api/ContentApi';
 import { FeedbackApi } from './api/FeedbackApi';
 import { RequestQueueApi } from './api/RequestQueueApi';
+import { ModuleBase } from './internal/ModuleBase';
 import {
   ConsentChangeSource,
   ContentStatus,
@@ -46,6 +47,22 @@ import {
 import display from '@ohos.display';
 import { Configuration as SystemConfig } from '@ohos.app.ability.Configuration';
 import ConfigurationConstant from '@ohos.app.ability.ConfigurationConstant';
+
+/**
+ * Pairs a module instance with the short label used in rejection-log tags
+ * (e.g. `events.consentWillChange`). The fan-out arrays below are listed
+ * explicitly per fan-out so it's grep-able which modules participate in
+ * which event — `userProfile` is a deliberate consent recipient but not a
+ * device-id recipient, `configuration` is the inverse, etc.
+ */
+class LabeledModule {
+  module: ModuleBase;
+  label: string;
+  constructor(module: ModuleBase, label: string) {
+    this.module = module;
+    this.label = label;
+  }
+}
 
 /**
  * A single Countly instance. Multiple can exist simultaneously (multi-
@@ -93,6 +110,18 @@ export class CountlyInstance implements SdkCore {
   private requestQueueModule: ModuleRequestQueue;
   private readonly configurationModule: ModuleConfiguration;
   private initialized: boolean = false;
+
+  // Fan-out lists for consent-change and device-id-change events. Initialised
+  // at the end of the constructor once every module is wired. Each list is
+  // separate (rather than reusing one array with conditional skips) so that a
+  // future reader can grep for "which modules see consent" / "which modules
+  // see device-id changes (merged vs not-merged)" and read the answer off one
+  // place. Notable membership rules:
+  //   - userProfile: in consent fan-outs, NOT in device-id fan-outs.
+  //   - configuration: in deviceIdNotMerged only.
+  private consentRecipients: LabeledModule[] = [];
+  private deviceIdMergedRecipients: LabeledModule[] = [];
+  private deviceIdNotMergedRecipients: LabeledModule[] = [];
 
   // -- User-facing per-module API surfaces --
   public readonly events: EventsApi;
@@ -237,6 +266,18 @@ export class CountlyInstance implements SdkCore {
 
     this.sessionsModule = new ModuleSessions(this.config, this);
     this.sessionsModule.setFirstViewFlagHost(this.viewsModule.getFirstViewFlagHost());
+    // Orientation baseline at session begin — Android parity with
+    // sdk/ModuleSessions.java:67-68. Gated on `trackOrientationChanges`
+    // AND on the lifecycle observer being registered: tests use a fake
+    // `{}` context that fails registration, and we don't want test-driven
+    // beginSession calls to accumulate phantom orientation events from a
+    // display read that may not be meaningful in the harness. forceSend=true
+    // bypasses the dedupe so every begin_session emits a fresh baseline.
+    this.sessionsModule.setOrientationBaselineEmitter((): void => {
+      if (this.config.trackOrientationChanges && this.lifecycleObserver.isRegistered()) {
+        this.maybeUpdateOrientationFromDisplay(true);
+      }
+    });
 
     this.crashesModule = new ModuleCrashes(this.config, this);
     this.userProfileModule = new ModuleUserProfile(this.config, this);
@@ -340,35 +381,56 @@ export class CountlyInstance implements SdkCore {
     // needs a chance to react. Without-merge is a user switch (clear timed
     // events, breadcrumbs, RC cache, consent, end + begin session). With-merge
     // keeps state — modules are notified separately so they can do bookkeeping.
+    this.consentRecipients = [
+      new LabeledModule(this.eventsModule, 'events'),
+      new LabeledModule(this.viewsModule, 'views'),
+      new LabeledModule(this.sessionsModule, 'sessions'),
+      new LabeledModule(this.crashesModule, 'crashes'),
+      new LabeledModule(this.locationModule, 'location'),
+      new LabeledModule(this.userProfileModule, 'userProfile'),
+      new LabeledModule(this.remoteConfigModule, 'remoteConfig'),
+      new LabeledModule(this.pushModule, 'push'),
+      new LabeledModule(this.contentModule, 'content'),
+      new LabeledModule(this.feedbackModule, 'feedback')
+    ];
+    this.deviceIdMergedRecipients = [
+      new LabeledModule(this.eventsModule, 'events'),
+      new LabeledModule(this.viewsModule, 'views'),
+      new LabeledModule(this.sessionsModule, 'sessions'),
+      new LabeledModule(this.crashesModule, 'crashes'),
+      new LabeledModule(this.locationModule, 'location'),
+      new LabeledModule(this.remoteConfigModule, 'remoteConfig'),
+      new LabeledModule(this.pushModule, 'push'),
+      new LabeledModule(this.contentModule, 'content'),
+      new LabeledModule(this.feedbackModule, 'feedback')
+    ];
+    this.deviceIdNotMergedRecipients = [
+      new LabeledModule(this.eventsModule, 'events'),
+      new LabeledModule(this.viewsModule, 'views'),
+      new LabeledModule(this.sessionsModule, 'sessions'),
+      new LabeledModule(this.crashesModule, 'crashes'),
+      new LabeledModule(this.locationModule, 'location'),
+      new LabeledModule(this.remoteConfigModule, 'remoteConfig'),
+      new LabeledModule(this.pushModule, 'push'),
+      new LabeledModule(this.contentModule, 'content'),
+      new LabeledModule(this.feedbackModule, 'feedback'),
+      new LabeledModule(this.configurationModule, 'configuration')
+    ];
+
     this.deviceIdModule.setChangeListener(async (oldId: string, newId: string, merged: boolean): Promise<void> => {
       if (merged) {
-        await Promise.all([
-          this.captureRejection('events.onDeviceIdChangedMerged', this.eventsModule.onDeviceIdChangedMerged(oldId, newId)),
-          this.captureRejection('views.onDeviceIdChangedMerged', this.viewsModule.onDeviceIdChangedMerged(oldId, newId)),
-          this.captureRejection('sessions.onDeviceIdChangedMerged', this.sessionsModule.onDeviceIdChangedMerged(oldId, newId)),
-          this.captureRejection('crashes.onDeviceIdChangedMerged', this.crashesModule.onDeviceIdChangedMerged(oldId, newId)),
-          this.captureRejection('location.onDeviceIdChangedMerged', this.locationModule.onDeviceIdChangedMerged(oldId, newId)),
-          this.captureRejection('remoteConfig.onDeviceIdChangedMerged', this.remoteConfigModule.onDeviceIdChangedMerged(oldId, newId)),
-          this.captureRejection('push.onDeviceIdChangedMerged', this.pushModule.onDeviceIdChangedMerged(oldId, newId)),
-          this.captureRejection('content.onDeviceIdChangedMerged', this.contentModule.onDeviceIdChangedMerged(oldId, newId)),
-          this.captureRejection('feedback.onDeviceIdChangedMerged', this.feedbackModule.onDeviceIdChangedMerged(oldId, newId))
-        ]);
+        const promises: Promise<void>[] = this.deviceIdMergedRecipients.map((lm: LabeledModule): Promise<void> =>
+          this.captureRejection(`${lm.label}.onDeviceIdChangedMerged`, lm.module.onDeviceIdChangedMerged(oldId, newId))
+        );
+        await Promise.all(promises);
       } else {
         // Reset consent FIRST so modules reacting to the deviceId change see
         // consent already cleared (they may skip enqueue decisions on that).
         await this.consentModule.resetForDeviceIdChangeNotMerged();
-        await Promise.all([
-          this.captureRejection('events.onDeviceIdChangedNotMerged', this.eventsModule.onDeviceIdChangedNotMerged(oldId, newId)),
-          this.captureRejection('views.onDeviceIdChangedNotMerged', this.viewsModule.onDeviceIdChangedNotMerged(oldId, newId)),
-          this.captureRejection('sessions.onDeviceIdChangedNotMerged', this.sessionsModule.onDeviceIdChangedNotMerged(oldId, newId)),
-          this.captureRejection('crashes.onDeviceIdChangedNotMerged', this.crashesModule.onDeviceIdChangedNotMerged(oldId, newId)),
-          this.captureRejection('location.onDeviceIdChangedNotMerged', this.locationModule.onDeviceIdChangedNotMerged(oldId, newId)),
-          this.captureRejection('remoteConfig.onDeviceIdChangedNotMerged', this.remoteConfigModule.onDeviceIdChangedNotMerged(oldId, newId)),
-          this.captureRejection('push.onDeviceIdChangedNotMerged', this.pushModule.onDeviceIdChangedNotMerged(oldId, newId)),
-          this.captureRejection('content.onDeviceIdChangedNotMerged', this.contentModule.onDeviceIdChangedNotMerged(oldId, newId)),
-          this.captureRejection('feedback.onDeviceIdChangedNotMerged', this.feedbackModule.onDeviceIdChangedNotMerged(oldId, newId)),
-          this.captureRejection('configuration.onDeviceIdChangedNotMerged', this.configurationModule.onDeviceIdChangedNotMerged(oldId, newId))
-        ]);
+        const promises: Promise<void>[] = this.deviceIdNotMergedRecipients.map((lm: LabeledModule): Promise<void> =>
+          this.captureRejection(`${lm.label}.onDeviceIdChangedNotMerged`, lm.module.onDeviceIdChangedNotMerged(oldId, newId))
+        );
+        await Promise.all(promises);
       }
     });
   }
@@ -383,6 +445,18 @@ export class CountlyInstance implements SdkCore {
       return;
     }
     this.initialized = true;
+
+    // Register the lifecycle observer SYNCHRONOUSLY before any await below
+    // yields control. HMOS lifecycle events fire on transitions only and
+    // never replay current state — if the platform's first
+    // onApplicationForeground / onAbilityForeground transition lands while
+    // init is still doing its async work (storage + device-id + module
+    // inits + SBS fetch), the observer must already be subscribed or we
+    // permanently miss the cold-boot session and auto-view. The observer's
+    // own ready-gate (see `markReady` below) buffers any event that arrives
+    // mid-init and replays it once the modules are loaded enough to handle
+    // it; we do NOT synthesise events.
+    this.lifecycleObserver.register(this.config.context);
 
     if (!this.config.context) {
       // No context means no preferences file — the SDK will run in memory
@@ -411,6 +485,16 @@ export class CountlyInstance implements SdkCore {
     }
     await this.deviceIdModule.resolveInitial();
 
+    // Send the init-time consent snapshot NOW — bypassing the 1-second
+    // coalesce timer the ModuleConsent constructor scheduled — so the consent
+    // change lands in the request queue ahead of any begin_session that fires
+    // when the platform delivers the cold-boot onApplicationForeground.
+    // Sequencing: persisted requests (loaded by `requestQueue.load`) ship
+    // first, then this consent snapshot, then everything else the module
+    // inits enqueue. The coalesce timer remains correct for runtime consent
+    // dialog toggles, so this method only flushes if a snapshot is pending.
+    await this.consentModule.flushInitialConsentIfPending();
+
     // Never log the full device ID — it's a stable identifier that could
     // leak via a log listener. Log only the type.
     this.config.logger.i(`[Countly] init complete appKey=${this.config.appKey} deviceIdType=${this.deviceIdModule.getType()}`);
@@ -435,11 +519,13 @@ export class CountlyInstance implements SdkCore {
     // Health check LAST so it can observe any error/warning logs + failed
     // requests from the earlier module inits before deciding what to ship.
     await this.healthCheckModule.onInit();
-    // Auto-subscribe to applicationStateChange so foreground/background
-    // happens without the integrator wiring `onForeground`/`onBackground`
-    // overrides on their UIAbility. Idempotent — safe even if init runs
-    // twice (which it shouldn't, see the early-return above).
-    this.lifecycleObserver.register(this.config.context);
+    // Flush any platform fg/auto-view event the observer captured while we
+    // were still loading. The observer was registered at the top of init();
+    // any transition that happened during the async pipeline is buffered
+    // there. `markReady()` replays it now that storage, device-id, the
+    // request queue, and every module's `onInit` have completed — so a
+    // begin_session enqueue here goes through the fully-loaded pipeline.
+    this.lifecycleObserver.markReady();
   }
 
   // -- SdkCore interface --
@@ -467,33 +553,17 @@ export class CountlyInstance implements SdkCore {
     // allSettled here — one module's failure is logged and swallowed, never
     // aborting peers. Every feature module is notified so they can flush
     // in-flight work before the consent flip.
-    await Promise.all([
-      this.captureRejection('events.consentWillChange', this.eventsModule.consentWillChange(added, removed, source)),
-      this.captureRejection('views.consentWillChange', this.viewsModule.consentWillChange(added, removed, source)),
-      this.captureRejection('sessions.consentWillChange', this.sessionsModule.consentWillChange(added, removed, source)),
-      this.captureRejection('crashes.consentWillChange', this.crashesModule.consentWillChange(added, removed, source)),
-      this.captureRejection('location.consentWillChange', this.locationModule.consentWillChange(added, removed, source)),
-      this.captureRejection('userProfile.consentWillChange', this.userProfileModule.consentWillChange(added, removed, source)),
-      this.captureRejection('remoteConfig.consentWillChange', this.remoteConfigModule.consentWillChange(added, removed, source)),
-      this.captureRejection('push.consentWillChange', this.pushModule.consentWillChange(added, removed, source)),
-      this.captureRejection('content.consentWillChange', this.contentModule.consentWillChange(added, removed, source)),
-      this.captureRejection('feedback.consentWillChange', this.feedbackModule.consentWillChange(added, removed, source))
-    ]);
+    const promises: Promise<void>[] = this.consentRecipients.map((lm: LabeledModule): Promise<void> =>
+      this.captureRejection(`${lm.label}.consentWillChange`, lm.module.consentWillChange(added, removed, source))
+    );
+    await Promise.all(promises);
   }
 
   public async notifyConsentDidChange(added: string[], removed: string[], source: ConsentChangeSource): Promise<void> {
-    await Promise.all([
-      this.captureRejection('events.onConsentChanged', this.eventsModule.onConsentChanged(added, removed, source)),
-      this.captureRejection('views.onConsentChanged', this.viewsModule.onConsentChanged(added, removed, source)),
-      this.captureRejection('sessions.onConsentChanged', this.sessionsModule.onConsentChanged(added, removed, source)),
-      this.captureRejection('crashes.onConsentChanged', this.crashesModule.onConsentChanged(added, removed, source)),
-      this.captureRejection('location.onConsentChanged', this.locationModule.onConsentChanged(added, removed, source)),
-      this.captureRejection('userProfile.onConsentChanged', this.userProfileModule.onConsentChanged(added, removed, source)),
-      this.captureRejection('remoteConfig.onConsentChanged', this.remoteConfigModule.onConsentChanged(added, removed, source)),
-      this.captureRejection('push.onConsentChanged', this.pushModule.onConsentChanged(added, removed, source)),
-      this.captureRejection('content.onConsentChanged', this.contentModule.onConsentChanged(added, removed, source)),
-      this.captureRejection('feedback.onConsentChanged', this.feedbackModule.onConsentChanged(added, removed, source))
-    ]);
+    const promises: Promise<void>[] = this.consentRecipients.map((lm: LabeledModule): Promise<void> =>
+      this.captureRejection(`${lm.label}.onConsentChanged`, lm.module.onConsentChanged(added, removed, source))
+    );
+    await Promise.all(promises);
   }
 
   /**
@@ -513,21 +583,13 @@ export class CountlyInstance implements SdkCore {
     this.sessionsModule.onEnterForeground();
     this.eventsModule.onEnterForeground();
     this.viewsModule.onEnterForeground();
-    // Initial orientation baseline. environment.onConfigurationUpdated
-    // fires only on actual config CHANGES, not on app launch / return
-    // from background — without this read, a user who rotated while the
-    // app was in background would never get an event for the new
-    // orientation. The dedup inside ModuleViews.updateOrientation makes
-    // this cheap when nothing changed.
-    //
-    // Gated on `lifecycleObserver.isRegistered()`: when registration
-    // failed (no real context — typically the unit-test harness's `{}`
-    // fake), we treat the platform as unavailable and skip the read so
-    // tests that drive lifecycleForeground manually don't accumulate
-    // orientation events that aren't part of their assertions.
-    if (this.config.trackOrientationChanges && this.lifecycleObserver.isRegistered()) {
-      this.maybeUpdateOrientationFromDisplay();
-    }
+    // Note: the post-foreground orientation baseline is now driven by
+    // `ModuleSessions.beginSessionInternal` via the orientation-baseline
+    // emitter wired in the constructor (Android parity, sdk/ModuleSessions.java:67-68).
+    // That insertion point fires only when a session actually begins,
+    // matching Android's gating exactly. The display read for rotations
+    // that happened while backgrounded still happens — it just lives
+    // inside that emitter path now.
   }
 
   public lifecycleBackground(): void {
@@ -536,24 +598,6 @@ export class CountlyInstance implements SdkCore {
     this.viewsModule.onEnterBackground();
   }
 
-  /**
-   * Wired into `LifecycleObserver`'s `abilityLifecycle.onAbilityForeground`
-   * when `enableAutomaticViewTracking()` is set. Mirrors Android's
-   * `ModuleViews.onActivityStarted` (sdk/ModuleViews.java:564):
-   *
-   *   1. Pick the long form (`bundle.Ability`) by default to match Android's
-   *      `getName()`; switch to the short form (`Ability`) when
-   *      `enableAutomaticViewShortNames()` is on, matching `getSimpleName()`.
-   *   2. Skip ability names listed via `setAutomaticViewTrackingExclusions`.
-   *   3. Hand the chosen name + global segmentation to
-   *      `viewsModule.startAutoStoppedView` — same entrypoint manual code
-   *      uses, so all the per-view rules (auto-stop the previous one,
-   *      apply view-id, dispatch through the events pipeline) come for
-   *      free without duplicating ModuleViews logic here.
-   *
-   * Errors thrown by the views module are logged (not rethrown) so the
-   * platform's lifecycle dispatch isn't poisoned by a single SDK fault.
-   */
   /**
    * Wired into `LifecycleObserver`'s `environment.onConfigurationUpdated`
    * when `trackOrientationChanges` is on. Mirrors Android's per-Activity
@@ -583,12 +627,19 @@ export class CountlyInstance implements SdkCore {
   }
 
   /**
-   * Read orientation from the display directly. Called from
-   * `lifecycleForeground` to capture rotations that happened while the
-   * app was backgrounded — `onConfigurationUpdated` only fires while the
-   * app is actually receiving config events.
+   * Read orientation from the display directly. Wired into
+   * `ModuleSessions.beginSessionInternal` via `setOrientationBaselineEmitter`
+   * so a fresh baseline orientation event is emitted on every session
+   * begin — including session begins that follow a backgrounded rotation
+   * which `onConfigurationUpdated` never delivered (that callback only
+   * fires while the app is foregrounded).
+   *
+   * `forceSend=true` at this insertion point bypasses
+   * `ModuleViews.updateOrientation`'s dedupe so each session begin sees
+   * its own orientation event, matching Android's behavior at
+   * sdk/ModuleSessions.java:67-68.
    */
-  private maybeUpdateOrientationFromDisplay(): void {
+  private maybeUpdateOrientationFromDisplay(forceSend: boolean): void {
     let mode: string = '';
     try {
       const d: display.Display = display.getDefaultDisplaySync();
@@ -597,11 +648,29 @@ export class CountlyInstance implements SdkCore {
       this.config.logger.d(`[Countly] auto-orientation, display unavailable: ${err}`);
       return;
     }
-    this.viewsModule.updateOrientation(mode).catch((err: Object): void => {
+    this.viewsModule.updateOrientation(mode, forceSend).catch((err: Object): void => {
       this.config.logger.e(`[Countly] auto-orientation (display) updateOrientation rejected: ${err}`);
     });
   }
 
+  /**
+   * Wired into `LifecycleObserver`'s `abilityLifecycle.onAbilityForeground`
+   * when `enableAutomaticViewTracking()` is set. Mirrors Android's
+   * `ModuleViews.onActivityStarted` (sdk/ModuleViews.java:564):
+   *
+   *   1. Pick the long form (`bundle.Ability`) by default to match Android's
+   *      `getName()`; switch to the short form (`Ability`) when
+   *      `enableAutomaticViewShortNames()` is on, matching `getSimpleName()`.
+   *   2. Skip ability names listed via `setAutomaticViewTrackingExclusions`.
+   *   3. Hand the chosen name + global segmentation to
+   *      `viewsModule.startAutoStoppedView` — same entrypoint manual code
+   *      uses, so all the per-view rules (auto-stop the previous one,
+   *      apply view-id, dispatch through the events pipeline) come for
+   *      free without duplicating ModuleViews logic here.
+   *
+   * Errors thrown by the views module are logged (not rethrown) so the
+   * platform's lifecycle dispatch isn't poisoned by a single SDK fault.
+   */
   private handleAutoTrackedAbilityForeground(shortName: string, fullName: string): void {
     const name: string = this.config.automaticViewShortNames ? shortName : fullName;
     if (name.length === 0) {
@@ -715,20 +784,16 @@ export class CountlyInstance implements SdkCore {
    * requests stay in place and will be sent to the new URL on the next tick.
    */
   public setServerURL(url: string): void {
-    if (!url || url.trim().length === 0) {
+    const reason: string = Utils.validateServerUrl(url);
+    if (reason === 'empty') {
       this.config.logger.w('[Countly] setServerURL, empty url — ignored');
       return;
     }
-    if (!url.startsWith('http://') && !url.startsWith('https://')) {
+    if (reason === 'scheme') {
       this.config.logger.w(`[Countly] setServerURL, must start with http:// or https:// — ignored (${url})`);
       return;
     }
-    const schemeEnd: number = url.indexOf('://');
-    const authorityEnd: number = url.indexOf('/', schemeEnd + 3);
-    const authority: string = authorityEnd === -1
-      ? url.substring(schemeEnd + 3)
-      : url.substring(schemeEnd + 3, authorityEnd);
-    if (authority.indexOf('@') !== -1) {
+    if (reason === 'authority') {
       this.config.logger.e('[Countly] setServerURL, authority contains "@" — ignored (userinfo hazard)');
       return;
     }

@@ -112,6 +112,20 @@ class CountlyEnvironmentObserver extends EnvironmentCallback {
 }
 
 /**
+ * Buffer for an ability foreground event captured before `markReady()`.
+ * ArkTS strict mode bans typed object literals, so a named class is the
+ * idiomatic shape for this small pair.
+ */
+class PendingAutoView {
+  shortName: string;
+  fullName: string;
+  constructor(shortName: string, fullName: string) {
+    this.shortName = shortName;
+    this.fullName = fullName;
+  }
+}
+
+/**
  * Per-instance HarmonyOS lifecycle subscription manager.
  *
  * Each `CountlyInstance` owns its own observer, registers on init, and
@@ -162,11 +176,10 @@ export class LifecycleObserver {
   // applicationStateChange uses an observer-object handle, not a numeric id.
   // We track the observer reference so deregister() can pass the same
   // instance back to off(). abilityLifecycle and environment use the
-  // numeric-id form.
+  // numeric-id form, so the callback id alone is enough — no need to retain
+  // the observer reference once registration succeeds.
   private appStateObserver: CountlyAppStateObserver | null = null;
-  private abilityObserver: CountlyAbilityLifecycleObserver | null = null;
   private abilityCallbackId: number = -1;
-  private envObserver: CountlyEnvironmentObserver | null = null;
   private envCallbackId: number = -1;
   private appContext: common.ApplicationContext | null = null;
   private readonly logger: Logger;
@@ -174,6 +187,18 @@ export class LifecycleObserver {
   private readonly onBackground: () => void;
   private readonly onAbilityForeground: ((shortName: string, fullName: string) => void) | null;
   private readonly onConfigurationUpdated: ((config: SystemConfig) => void) | null;
+
+  // "Ready" gate. `register()` runs synchronously at the TOP of init() — well
+  // before storage / device-id / module inits resolve — so the platform's
+  // first foreground transition is never lost to a cold-boot race. But we
+  // can't immediately dispatch into modules whose async init is still in
+  // flight (request queue not loaded, device id unresolved, server config
+  // not applied), so any platform event that arrives before `markReady()` is
+  // buffered here and replayed once init has finished. We don't synthesise
+  // anything — only platform-confirmed events ever fire downstream.
+  private ready: boolean = false;
+  private pendingFg: boolean = false;
+  private pendingAutoView: PendingAutoView | null = null;
 
   constructor(
     logger: Logger,
@@ -190,8 +215,82 @@ export class LifecycleObserver {
   }
 
   /**
+   * Internal foreground dispatch. Buffered until `markReady()` so a platform
+   * fg transition that fires while init's async pipeline is still running
+   * doesn't reach modules whose state isn't loaded yet. Once ready, future
+   * fg events dispatch immediately.
+   */
+  private dispatchFg(): void {
+    if (!this.ready) {
+      this.pendingFg = true;
+      return;
+    }
+    this.onForeground();
+  }
+
+  /**
+   * Internal background dispatch. A bg arriving while not-ready cancels any
+   * pending fg AND any pending auto-view (the same way an actual bg + return
+   * cycle would have): we never replay an out-of-date fg/auto-view after the
+   * app has already moved on.
+   */
+  private dispatchBg(): void {
+    if (!this.ready) {
+      this.pendingFg = false;
+      this.pendingAutoView = null;
+      return;
+    }
+    this.onBackground();
+  }
+
+  /**
+   * Internal auto-view dispatch. Same buffering as fg/bg — the most recent
+   * pending ability wins, since `startAutoStoppedView` would auto-stop any
+   * earlier one anyway.
+   */
+  private dispatchAutoView(shortName: string, fullName: string): void {
+    const cb: ((shortName: string, fullName: string) => void) | null = this.onAbilityForeground;
+    if (cb === null) return;
+    if (!this.ready) {
+      this.pendingAutoView = new PendingAutoView(shortName, fullName);
+      return;
+    }
+    cb(shortName, fullName);
+  }
+
+  /**
+   * Called by `CountlyInstance.init()` once every async init step has
+   * completed. Flushes any platform events received during init in the order
+   * they would have happened — fg before any auto-view that may have been
+   * captured. Idempotent: subsequent calls flip nothing.
+   */
+  public markReady(): void {
+    if (this.ready) return;
+    this.ready = true;
+    if (this.pendingFg) {
+      this.pendingFg = false;
+      this.onForeground();
+    }
+    if (this.pendingAutoView !== null) {
+      const cb: ((shortName: string, fullName: string) => void) | null = this.onAbilityForeground;
+      const pending: PendingAutoView = this.pendingAutoView;
+      this.pendingAutoView = null;
+      if (cb !== null) cb(pending.shortName, pending.fullName);
+    }
+  }
+
+  /**
    * Subscribe. Idempotent — calling twice is a no-op so re-init paths
    * don't double-subscribe.
+   *
+   * Note: HMOS lifecycle events (`applicationStateChange`,
+   * `abilityLifecycle`, `environment`) fire on transitions only and never
+   * replay the current state. If `register()` is called after the platform
+   * has already fired the cold-boot foreground transition, that transition
+   * is lost — the recommended init point is `AbilityStage.onCreate` (HMOS
+   * equivalent of Android's Application.onCreate), which runs before any
+   * UIAbility, so registration is always in place ahead of every
+   * transition.
    */
   public register(ctx: common.Context | null): void {
     if (this.appStateObserver !== null) return;
@@ -215,9 +314,14 @@ export class LifecycleObserver {
     }
     this.appContext = appCtx;
 
-    // applicationStateChange — always
+    // applicationStateChange — always. Route through dispatchFg/dispatchBg
+    // so events received before `markReady()` are buffered safely.
     try {
-      const observer: CountlyAppStateObserver = new CountlyAppStateObserver(this.logger, this.onForeground, this.onBackground);
+      const observer: CountlyAppStateObserver = new CountlyAppStateObserver(
+        this.logger,
+        (): void => this.dispatchFg(),
+        (): void => this.dispatchBg()
+      );
       appCtx.on('applicationStateChange', observer);
       this.appStateObserver = observer;
       this.logger.d('[LifecycleObserver] applicationStateChange registered');
@@ -227,15 +331,15 @@ export class LifecycleObserver {
 
     // abilityLifecycle — only if a callback was supplied at construction.
     // Independently logged so registration failures of one don't poison
-    // the other.
-    const abilityCb: ((shortName: string, fullName: string) => void) | null = this.onAbilityForeground;
-    if (abilityCb !== null) {
+    // the other. Routed through dispatchAutoView for the same buffering.
+    if (this.onAbilityForeground !== null) {
       try {
-        const observer: CountlyAbilityLifecycleObserver = new CountlyAbilityLifecycleObserver(this.logger, abilityCb);
-        const id: number = appCtx.on('abilityLifecycle', observer);
-        this.abilityObserver = observer;
-        this.abilityCallbackId = id;
-        this.logger.d(`[LifecycleObserver] abilityLifecycle registered, id=${id}`);
+        const observer: CountlyAbilityLifecycleObserver = new CountlyAbilityLifecycleObserver(
+          this.logger,
+          (s: string, f: string): void => this.dispatchAutoView(s, f)
+        );
+        this.abilityCallbackId = appCtx.on('abilityLifecycle', observer);
+        this.logger.d(`[LifecycleObserver] abilityLifecycle registered, id=${this.abilityCallbackId}`);
       } catch (err) {
         this.logger.w(`[LifecycleObserver] abilityLifecycle.on failed — auto-view tracking disabled: ${err}`);
       }
@@ -247,10 +351,8 @@ export class LifecycleObserver {
     if (envCb !== null) {
       try {
         const observer: CountlyEnvironmentObserver = new CountlyEnvironmentObserver(this.logger, envCb);
-        const id: number = appCtx.on('environment', observer);
-        this.envObserver = observer;
-        this.envCallbackId = id;
-        this.logger.d(`[LifecycleObserver] environment registered, id=${id}`);
+        this.envCallbackId = appCtx.on('environment', observer);
+        this.logger.d(`[LifecycleObserver] environment registered, id=${this.envCallbackId}`);
       } catch (err) {
         this.logger.w(`[LifecycleObserver] environment.on failed — orientation auto-tracking disabled: ${err}`);
       }
@@ -272,15 +374,20 @@ export class LifecycleObserver {
       try { this.appContext.off('abilityLifecycle', this.abilityCallbackId); }
       catch (err) { this.logger.w(`[LifecycleObserver] deregister abilityLifecycle failed: ${err}`); }
       this.abilityCallbackId = -1;
-      this.abilityObserver = null;
     }
     if (this.envCallbackId !== -1) {
       try { this.appContext.off('environment', this.envCallbackId); }
       catch (err) { this.logger.w(`[LifecycleObserver] deregister environment failed: ${err}`); }
       this.envCallbackId = -1;
-      this.envObserver = null;
     }
     this.appContext = null;
+    // Reset the ready-gate state so a subsequent re-init via initShared/
+    // createInstance (e.g. tests doing haltAll → initShared again) starts
+    // clean — without this a fresh instance would see ready=true from the
+    // halted predecessor and skip its own buffering window.
+    this.ready = false;
+    this.pendingFg = false;
+    this.pendingAutoView = null;
   }
 
   /** Test/diagnostic helper. */

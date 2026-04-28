@@ -3,7 +3,7 @@ import { SdkCore } from '../SdkCore';
 import { InternalConfig } from '../InternalConfig';
 import { ListingFilters } from '../ServerConfig';
 import { Utils } from '../Utils';
-import { ConsentChangeSource, CountlyFeature, SegmentationMap } from '../../types/Types';
+import { CountlyFeature, SegmentationMap } from '../../types/Types';
 
 export class ViewIds {
   currentViewId: string;

@@ -1,5 +1,6 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { RecordedCall } from './doubles/FakeNetwork';
 import { CountlyFeature, CountlyFeatureNames } from '../../../main/ets/types/Types';
 
 /** Exhaustive list of features exposed by the HOS SDK. Used to drive
@@ -253,6 +254,26 @@ export default function consentTest() {
       // A feature not in the initial list should be present as false.
       const notGranted: string = `%22${CountlyFeature.SESSIONS}%22%3Afalse`;
       expect(data.indexOf(notGranted) !== -1).assertTrue();
+    });
+
+    // Regression: the init-time consent snapshot must be enqueued BEFORE
+    // begin_session. The constructor schedules the snapshot via a 1-second
+    // coalesce timer (correct for runtime dialog toggles); init() short-
+    // circuits that timer with `flushInitialConsentIfPending()` so the queue
+    // ends up with [consent, begin_session, ...] rather than [begin_session,
+    // consent, ...]. Without that flush, the typical sub-second init wallclock
+    // means begin_session lands before the consent timer fires.
+    it('initTimeConsent_precedesBeginSession_inWireOrder', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true).setEnabled(CountlyFeatureNames);
+      });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      const consentIdx: number = h.network.calls.findIndex((c: RecordedCall): boolean => c.data.indexOf('consent=') !== -1);
+      const sessionIdx: number = h.network.calls.findIndex((c: RecordedCall): boolean => c.data.indexOf('begin_session=1') !== -1);
+      expect(consentIdx).assertLarger(-1);
+      expect(sessionIdx).assertLarger(-1);
+      expect(consentIdx < sessionIdx).assertTrue();
     });
 
     // Verify the coalesced snapshot contains the CURRENT full state (not a
