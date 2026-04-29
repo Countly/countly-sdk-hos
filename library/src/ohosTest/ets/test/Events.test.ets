@@ -1,10 +1,12 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses, assertWireOrder } from './TestHelpers';
 import { FilterList } from '../../../main/ets/internal/ServerConfig';
 import { SegmentationMap } from '../../../main/ets/types/Types';
 
 export default function eventsTest() {
   describe('EventsTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('recordEvent_emptyKey_ignored', 0, async () => {
       const h: Harness = await buildHarness();
       await h.instance.events.recordEvent('', null, 1, 0, 0);
@@ -15,29 +17,29 @@ export default function eventsTest() {
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(3); });
       await h.instance.events.recordEvent('e1');
       await h.instance.events.recordEvent('e2');
-      expect(h.network.findCallsWithParam('events').length).assertEqual(0);
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
       await h.instance.events.recordEvent('e3');
       await flushTick(60);
-      expect(h.network.findCallsWithParam('events').length >= 1).assertTrue();
+      expect(h.network.findCallsWithParam('events=').length >= 1).assertTrue();
     });
 
     it('recordEvent_immediateFlushForNpsSurveyPushAction', 0, async () => {
       const h: Harness = await buildHarness();
       await h.instance.events.recordEvent('[CLY]_nps');
       await flushTick(60);
-      expect(h.network.findCallsWithParam('events').length >= 1).assertTrue();
+      expect(h.network.findCallsWithParam('events=').length >= 1).assertTrue();
     });
 
     it('recordEvent_consentGatingForCustom', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
       await h.instance.events.recordEvent('custom_event');
       await flushTick(60);
-      expect(h.network.findCallsWithParam('events').length).assertEqual(0);
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
       // Give events consent and confirm a custom event goes through.
       h.instance.consent.giveConsent(['events']);
       await h.instance.events.recordEvent('custom_event_2');
       await flushTick(1200);
-      expect(h.network.findCallsWithParam('events').length >= 0).assertTrue();
+      expect(h.network.findCallsWithParam('events=').length >= 0).assertTrue();
     });
 
     it('recordEvent_internalEventRequiresFeatureConsent', 0, async () => {
@@ -47,11 +49,11 @@ export default function eventsTest() {
       h.instance.consent.giveConsent(['events']);
       await h.instance.events.recordEvent('[CLY]_nps');
       await flushTick(60);
-      expect(h.network.findCallsWithParam('events').length).assertEqual(0);
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
       h.instance.consent.giveConsent(['feedback']);
       await h.instance.events.recordEvent('[CLY]_nps');
       await flushTick(60);
-      expect(h.network.findCallsWithParam('events').length >= 1).assertTrue();
+      expect(h.network.findCallsWithParam('events=').length >= 1).assertTrue();
     });
 
     it('timedEvent_endRecordsDuration', 0, async () => {
@@ -60,7 +62,7 @@ export default function eventsTest() {
       await flushTick(50);
       await h.instance.events.endEvent('action');
       await flushTick(60);
-      const call = h.network.findCallsWithParam('events')[0];
+      const call = h.network.findCallsWithParam('events=')[0];
       expect(call !== undefined).assertTrue();
       expect(call.data.indexOf('dur') !== -1 || call.data.indexOf('%22dur%22') !== -1).assertTrue();
     });
@@ -71,7 +73,7 @@ export default function eventsTest() {
       h.instance.events.cancelEvent('action');
       await h.instance.events.endEvent('action');
       await flushTick(60);
-      expect(h.network.findCallsWithParam('events').length).assertEqual(0);
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
     });
 
     it('timedEvent_startTwice_ignored', 0, async () => {
@@ -85,7 +87,7 @@ export default function eventsTest() {
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       await h.instance.events.recordEvent('e', null, -5, 0, 0);
       await flushTick(60);
-      expect(h.network.findCallsWithParam('events').length).assertEqual(1);
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(1);
     });
 
     it('recordPastEvent_preservesGivenTimestamp', 0, async () => {
@@ -585,6 +587,18 @@ export default function eventsTest() {
       expect(firstIdMatch !== null).assertTrue();
       const firstId: string = firstIdMatch![1];
       expect(body.indexOf(`%22peid%22%3A%22${firstId}%22`) !== -1).assertTrue();
+    });
+
+    it('eventsWireOrder_consentBeforeBeginSessionBeforeEvents', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'events']);
+        cfg.events.setQueueSizeToSend(1);
+      });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      await h.instance.events.recordEvent('wire_order_event');
+      await flushTick(60);
+      assertWireOrder(h.network.calls, ['consent=', 'begin_session=1', 'events=']);
     });
   });
 }

@@ -1,6 +1,6 @@
-import { describe, it, expect } from '@ohos/hypium';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
 import common from '@ohos.app.ability.common';
-import { buildHarness, flushTick, Harness, TestableCountlyConfig } from './TestHelpers';
+import { buildHarness, flushTick, Harness, TestableCountlyConfig, assertAllRecordedCallsValid, clearTestHarnesses, assertWireOrder } from './TestHelpers';
 import { DeviceIdType } from '../../../main/ets/types/Types';
 import { TEMP_DEVICE_ID } from '../../../main/ets/internal/RequestQueue';
 import { CountlyInstance } from '../../../main/ets/CountlyInstance';
@@ -9,6 +9,8 @@ import { Logger } from '../../../main/ets/internal/Logger';
 
 export default function deviceIdTest() {
   describe('DeviceIdTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('firstInit_generatesUuid', 0, async () => {
       const h: Harness = await buildHarness();
       expect(h.instance.deviceId.getID().length > 0).assertTrue();
@@ -89,7 +91,11 @@ export default function deviceIdTest() {
       // key is a no-op (no events request produced).
       await h.instance.events.endEvent('checkout');
       await flushTick(60);
-      expect(h.network.findCallsWithParam('events').length).assertEqual(0);
+      // Match on `events=` (the URL-encoded query param) — NOT bare `events`,
+      // which would also match the init-time consent snapshot whose JSON body
+      // contains the feature name `"events":true` URL-encoded as %22events%22.
+      // The init-time consent flush legitimately ships before this assertion.
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
     });
 
     it('changeWithoutMerge_endsSessionSilently_resumesOnForeground', 0, async () => {
@@ -488,6 +494,15 @@ export default function deviceIdTest() {
       const dump: Record<string, string> = h.storage.dump();
       expect(dump['cly_device_id']).assertEqual('merged');
       expect(dump['cly_device_id_type']).assertEqual(DeviceIdType.DEVELOPER_SUPPLIED);
+    });
+
+    it('changeWithMergeWireOrder_beginSessionBeforeOldDeviceId', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('original_id'); });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      await h.instance.deviceId.changeWithMerge('merged_id');
+      await flushTick(80);
+      assertWireOrder(h.network.calls, ['begin_session=1', 'old_device_id=']);
     });
   });
 }

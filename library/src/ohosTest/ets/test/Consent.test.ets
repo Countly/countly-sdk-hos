@@ -1,6 +1,5 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
-import { RecordedCall } from './doubles/FakeNetwork';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertValidBaseParams, assertWireOrder, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
 import { CountlyFeature, CountlyFeatureNames } from '../../../main/ets/types/Types';
 
 /** Exhaustive list of features exposed by the HOS SDK. Used to drive
@@ -26,6 +25,8 @@ const ALL_FEATURES: string[] = [
 
 export default function consentTest() {
   describe('ConsentTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('consentNotRequired_allGranted', 0, async () => {
       const h: Harness = await buildHarness();
       expect(h.instance.consent.getConsent('events')).assertTrue();
@@ -263,17 +264,23 @@ export default function consentTest() {
     // ends up with [consent, begin_session, ...] rather than [begin_session,
     // consent, ...]. Without that flush, the typical sub-second init wallclock
     // means begin_session lands before the consent timer fires.
+    //
+    // Also locks in: every shipped request carries a well-formed base-param
+    // bag (app_key, device_id, t, timestamp>0, hour 0..23, dow 0..6, tz,
+    // sdk_name, sdk_version, av).
     it('initTimeConsent_precedesBeginSession_inWireOrder', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true).setEnabled(CountlyFeatureNames);
       });
       h.instance.lifecycleForeground();
       await flushTick(60);
-      const consentIdx: number = h.network.calls.findIndex((c: RecordedCall): boolean => c.data.indexOf('consent=') !== -1);
-      const sessionIdx: number = h.network.calls.findIndex((c: RecordedCall): boolean => c.data.indexOf('begin_session=1') !== -1);
-      expect(consentIdx).assertLarger(-1);
-      expect(sessionIdx).assertLarger(-1);
-      expect(consentIdx < sessionIdx).assertTrue();
+      // Wire order — consent first, begin_session second. Other init-time
+      // requests (sc/hc) may interleave; assertWireOrder tolerates that.
+      assertWireOrder(h.network.calls, ['consent=', 'begin_session=1']);
+      // Every recorded call carries a valid base-param bag.
+      for (let i = 0; i < h.network.calls.length; i++) {
+        assertValidBaseParams(h.network.calls[i]);
+      }
     });
 
     // Verify the coalesced snapshot contains the CURRENT full state (not a

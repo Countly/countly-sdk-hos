@@ -23,7 +23,14 @@ export class ModuleConsent extends ModuleBase {
   private requiresConsent: boolean = false;
   private consent: Record<string, boolean> = {};
   private featureGroups: Record<string, string[]> = {};
-  private pendingCoalesceTimer: number = 0;
+  // `null` = no timer scheduled. We can't use 0 as a sentinel because HMOS's
+  // setTimeout may legitimately return 0 as the first timer id of the process,
+  // causing a collision with "no timer scheduled" — manifests as the
+  // init-time `flushInitialConsentIfPending` no-op'ing and the consent
+  // snapshot deferring to the 1-second coalesce timer instead of shipping
+  // before begin_session. Browsers and Node return positive ids so the older
+  // `=== 0` sentinel was idiomatic but not portable.
+  private pendingCoalesceTimer: number | null = null;
 
   constructor(config: InternalConfig, core: SdkCore) {
     super(config);
@@ -229,11 +236,11 @@ export class ModuleConsent extends ModuleBase {
    * a cluster of toggles (from a consent dialog) produces one request.
    */
   private scheduleConsentRequest(): void {
-    if (this.pendingCoalesceTimer !== 0) {
+    if (this.pendingCoalesceTimer !== null) {
       clearTimeout(this.pendingCoalesceTimer);
     }
     this.pendingCoalesceTimer = setTimeout(() => {
-      this.pendingCoalesceTimer = 0;
+      this.pendingCoalesceTimer = null;
       this.sendSnapshot();
     }, 1000) as number;
   }
@@ -251,9 +258,9 @@ export class ModuleConsent extends ModuleBase {
    * shutdown (would produce "already halted" races in tests).
    */
   public cancelPendingTimers(): void {
-    if (this.pendingCoalesceTimer !== 0) {
+    if (this.pendingCoalesceTimer !== null) {
       clearTimeout(this.pendingCoalesceTimer);
-      this.pendingCoalesceTimer = 0;
+      this.pendingCoalesceTimer = null;
     }
   }
 
@@ -269,9 +276,9 @@ export class ModuleConsent extends ModuleBase {
    * toggles where multiple changes coalesce to a single request.)
    */
   public async flushInitialConsentIfPending(): Promise<void> {
-    if (this.pendingCoalesceTimer === 0) return;
+    if (this.pendingCoalesceTimer === null) return;
     clearTimeout(this.pendingCoalesceTimer);
-    this.pendingCoalesceTimer = 0;
+    this.pendingCoalesceTimer = null;
     await this.sendSnapshot();
   }
 }

@@ -1,5 +1,5 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness, TestableCountlyConfig } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, TestableCountlyConfig, assertAllRecordedCallsValid, clearTestHarnesses, assertWireOrder } from './TestHelpers';
 import { SegmentationMap } from '../../../main/ets/types/Types';
 import { CountlyConfig } from '../../../main/ets/CountlyConfig';
 
@@ -72,6 +72,8 @@ function scUP_expectUserDataModifiers(ud: Record<string, Object>, expectedA: str
 
 export default function userProfileTest() {
   describe('UserProfileTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('setProperties_predefined', 0, async () => {
       const h: Harness = await buildHarness();
       const upJane: SegmentationMap = { 'name': 'Jane', 'email': 'j@example.com' };
@@ -1534,6 +1536,18 @@ export default function userProfileTest() {
       const upCalls = h.network.findCallsWithParam('user_details=');
       expect(upCalls.length).assertEqual(1);
       expect(parseUserDetails(upCalls[0].data)['name'] as string).assertEqual('Once');
+    });
+
+    it('userProfileWireOrder_consentBeforeBeginSessionBeforeUserDetails', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'users']);
+      });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      h.instance.userProfile.setProperty('name', 'Alice');
+      await h.instance.userProfile.save();
+      await flushTick(60);
+      assertWireOrder(h.network.calls, ['consent=', 'begin_session=1', 'user_details=']);
     });
   });
 }

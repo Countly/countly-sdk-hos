@@ -1,8 +1,10 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertValidBaseParams, assertWireOrder, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
 
 export default function sessionsTest() {
   describe('SessionsTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('automatic_foregroundBeginsSession_backgroundEnds', 0, async () => {
       const h: Harness = await buildHarness();
       h.instance.lifecycleForeground();
@@ -11,6 +13,41 @@ export default function sessionsTest() {
       h.instance.lifecycleBackground();
       await flushTick(60);
       expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(1);
+      // Wire order — begin precedes end, both shipped, base params valid.
+      assertWireOrder(h.network.calls, ['begin_session=1', 'end_session=1']);
+      for (let i = 0; i < h.network.calls.length; i++) {
+        assertValidBaseParams(h.network.calls[i]);
+      }
+    });
+
+    // Regression: events buffered during a session must ship in the queue
+    // BEFORE end_session, so server-side they fall inside the open session
+    // window. Mirrors Android's `sendEventsIfNeeded(true)` call at the top
+    // of `endSessionInternal`. The HOS port enforces this by `await
+    // core.flushEvents()` immediately before building the end_session body.
+    // Without that flush, eventsModule.onEnterBackground (which fires AFTER
+    // sessionsModule.onEnterBackground in lifecycleBackground) would land
+    // events= AFTER end_session in the queue.
+    it('bg_eventsFlushBeforeEndSession_inWireOrder', 0, async () => {
+      const h: Harness = await buildHarness();
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      // Record an event mid-session so there's something in the buffer to
+      // flush at bg time. Setting eventQueueThreshold high (default 100)
+      // means it sits in the buffer rather than auto-flushing here.
+      await h.instance.events.recordEvent('mid_session_event', { 'key': 'value' });
+      h.instance.lifecycleBackground();
+      await flushTick(60);
+      // events= must precede end_session=1.
+      assertWireOrder(h.network.calls, ['begin_session=1', 'events=', 'end_session=1']);
+      // The events= request should contain our recorded event.
+      const eventCalls = h.network.findCallsWithParam('events=');
+      expect(eventCalls.length).assertLarger(0);
+      // URL-encoded "mid_session_event" appears in the events= payload.
+      expect(eventCalls[0].data.indexOf('mid_session_event') !== -1).assertTrue();
+      for (let i = 0; i < h.network.calls.length; i++) {
+        assertValidBaseParams(h.network.calls[i]);
+      }
     });
 
     it('automatic_multipleForegrounds_onlyOneBegin', 0, async () => {
@@ -467,10 +504,18 @@ export default function sessionsTest() {
     // "intent port" tests above only covered a subset). Android's source
     // relies on a `TestLifecycleObserver` + orientation requests; on HOS the
     // equivalent is direct lifecycleForeground()/lifecycleBackground() calls
-    // via the CountlyInstance, and there is NO automatic orientation emission
-    // on lifecycle — orientation is only emitted when
-    // cfg.views.setTrackOrientationChanges(true) is set AND
-    // updateOrientation(mode) is called explicitly. See ModuleSessions.ets.
+    // via the CountlyInstance.
+    //
+    // Production wiring DOES emit a forceSend=true orientation baseline at
+    // every `beginSessionInternal` (mirrors Android sdk/ModuleSessions.java:67-68
+    // — see `ModuleSessions.setOrientationBaselineEmitter` and its wiring
+    // in CountlyInstance). In the test harness it's a no-op because the
+    // wired emitter gates on `lifecycleObserver.isRegistered()`, which
+    // returns false when the harness's fake `{}` context fails registration.
+    // So in tests: orientation is only emitted when
+    // `setTrackOrientationChanges(true)` (the default) AND
+    // `views.updateOrientation(mode)` is called explicitly via the public
+    // facade — which is what these scenarios assume.
 
     /**
      * Shared automatic-mode id-change flow. Mirrors

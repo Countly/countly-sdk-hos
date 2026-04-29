@@ -1,5 +1,5 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
 import { Countly } from '../../../main/ets/Countly';
 import { CountlyConfig } from '../../../main/ets/CountlyConfig';
 import { CountlyInstance } from '../../../main/ets/CountlyInstance';
@@ -12,6 +12,8 @@ function ctx(): common.Context { return {} as common.Context; }
 
 export default function countlyFacadeTest() {
   describe('CountlyFacadeTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('init_invalidUrl_throws', 0, async () => {
       let threw: boolean = false;
       try {

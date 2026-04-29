@@ -77,7 +77,9 @@ const HOUR_IN_MS: number = 60 * 60 * 1000;
  */
 export class ModuleConfiguration extends ModuleBase {
   private core: SdkCore;
-  private fetchTimer: number = 0;
+  // null = no timer scheduled (see ModuleConsent.pendingCoalesceTimer for the
+  // sentinel-collision rationale: HMOS's setInterval may legitimately return 0).
+  private fetchTimer: number | null = null;
   private latestRetrievedFull: Record<string, Object> | null = null;
   private latestRetrievedInner: Record<string, Object> | null = null;
 
@@ -194,9 +196,9 @@ export class ModuleConfiguration extends ModuleBase {
   }
 
   private stopFetchTimer(): void {
-    if (this.fetchTimer !== 0) {
+    if (this.fetchTimer !== null) {
       clearInterval(this.fetchTimer);
-      this.fetchTimer = 0;
+      this.fetchTimer = null;
     }
   }
 

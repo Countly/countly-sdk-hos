@@ -1,5 +1,5 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
 import { RecordedCall } from './doubles/FakeNetwork';
 
 /**
@@ -17,6 +17,8 @@ import { RecordedCall } from './doubles/FakeNetwork';
 
 export default function healthCheckTest() {
   describe('HealthCheckTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('onInit_fireOneHealthCheckRequest', 0, async () => {
       const h: Harness = await buildHarness();
       await flushTick(60);

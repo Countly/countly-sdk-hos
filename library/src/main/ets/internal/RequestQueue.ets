@@ -52,9 +52,13 @@ export class RequestQueue {
   private paused: boolean = false;
   private halted: boolean = false;
   private backoffUntilMs: number = 0;
-  private backoffTimer: number = 0;
+  private backoffTimer: number | null = null;
   private consecutiveBackedOff: number = 0;
-  private processorTimer: number = 0;
+  // null = no timer scheduled. We can't use 0 as a sentinel because HMOS's
+  // setTimeout/setInterval may legitimately return 0 as the first timer id of
+  // the process (browser/Node return positive ids; HMOS does not guarantee
+  // that). See ModuleConsent.pendingCoalesceTimer for the original symptom.
+  private processorTimer: number | null = null;
   private tempMode: () => boolean;
   private healthListener: HealthListener | null = null;
 
@@ -146,8 +150,8 @@ export class RequestQueue {
   public halt(): void {
     this.halted = true;
     this.paused = true;
-    if (this.processorTimer !== 0) { clearTimeout(this.processorTimer); this.processorTimer = 0; }
-    if (this.backoffTimer !== 0) { clearTimeout(this.backoffTimer); this.backoffTimer = 0; }
+    if (this.processorTimer !== null) { clearTimeout(this.processorTimer); this.processorTimer = null; }
+    if (this.backoffTimer !== null) { clearTimeout(this.backoffTimer); this.backoffTimer = null; }
   }
 
   public async enqueue(requestData: string): Promise<void> {
@@ -222,9 +226,9 @@ export class RequestQueue {
 
   private scheduleTick(): void {
     if (this.halted) return;
-    if (this.processorTimer !== 0) return;
+    if (this.processorTimer !== null) return;
     this.processorTimer = setTimeout(() => {
-      this.processorTimer = 0;
+      this.processorTimer = null;
       this.tick();
     }, 0) as number;
   }
@@ -248,10 +252,10 @@ export class RequestQueue {
       // this dedup, a flurry of enqueues during a backoff window each
       // triggers a scheduleTick → tick → setTimeout chain; they all fire at
       // once and all race on `processing`, producing wasteful contention.
-      if (this.backoffTimer === 0) {
+      if (this.backoffTimer === null) {
         const delay: number = this.backoffUntilMs - Date.now();
         this.backoffTimer = setTimeout(() => {
-          this.backoffTimer = 0;
+          this.backoffTimer = null;
           this.scheduleTick();
         }, delay) as number;
       }

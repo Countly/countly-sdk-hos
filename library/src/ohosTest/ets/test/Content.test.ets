@@ -1,5 +1,5 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
 import { OverlayKeys } from '../../../main/ets/internal/OverlayStore';
 import { ContentStatus } from '../../../main/ets/types/Types';
 
@@ -29,6 +29,8 @@ function resetStore(): void {
 
 export default function contentTest() {
   describe('ContentTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('enterContentZone_noConsent_omitsFetch', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => {

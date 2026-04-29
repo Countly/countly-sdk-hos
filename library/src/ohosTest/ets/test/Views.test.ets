@@ -1,10 +1,14 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses, assertWireOrder } from './TestHelpers';
 import { SegmentationMap } from '../../../main/ets/types/Types';
 import { RecordedCall } from './doubles/FakeNetwork';
+import { ModuleViews } from '../../../main/ets/internal/modules/ModuleViews';
+import { ModuleEvents } from '../../../main/ets/internal/modules/ModuleEvents';
 
 export default function viewsTest() {
   describe('ViewsTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('autoStoppedView_onlyOneActive', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       const id1: string | null = await h.instance.views.startAutoStoppedView('A');
@@ -12,7 +16,7 @@ export default function viewsTest() {
       const id2: string | null = await h.instance.views.startAutoStoppedView('B');
       expect(id2 !== null).assertTrue();
       await flushTick(100);
-      const calls = h.network.findCallsWithParam('events');
+      const calls = h.network.findCallsWithParam('events=');
       // Expect a stop event for A and start events for A, B -> at least 3 event requests.
       expect(calls.length >= 2).assertTrue();
     });
@@ -124,6 +128,56 @@ export default function viewsTest() {
         cfg.views.setTrackOrientationChanges(false);
       });
       await h.instance.views.updateOrientation('portrait');
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('%5BCLY%5D_orientation').length).assertEqual(0);
+    });
+
+    it('updateOrientation_forceSend_bypassesDedupe', 0, async () => {
+      // Locks the Android-parity contract introduced for the
+      // begin_session orientation baseline: ModuleSessions.beginSessionInternal
+      // calls updateOrientation(mode, forceSend=true) after enqueueing
+      // begin_session (mirrors sdk/ModuleSessions.java:67-68). forceSend=true
+      // must bypass the dedupe so every begin_session emits a fresh
+      // orientation event even when the orientation hasn't changed since
+      // the previous session — without this, dashboards would see "first
+      // session per process has orientation, subsequent same-process
+      // sessions don't" which diverges from Android.
+      //
+      // The public `views` facade only exposes the no-arg form (matching
+      // Android — forceSend is internal-only). To exercise the overload
+      // without leaking it through the integrator-facing surface we
+      // construct a parallel `ModuleViews` here, sharing `h.instance` as
+      // the `SdkCore` so emitted events still flow through `h.network` via
+      // the same request queue.
+      const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
+      const events: ModuleEvents = new ModuleEvents(h.instance.config, h.instance);
+      const views: ModuleViews = new ModuleViews(h.instance.config, h.instance, events);
+      await views.updateOrientation('portrait'); // primes lastOrientationMode
+      await flushTick(60);
+      const baseline: number = h.network.findCallsWithParam('%5BCLY%5D_orientation').length;
+      // Same mode + forceSend=true → emits anyway.
+      await views.updateOrientation('portrait', true);
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('%5BCLY%5D_orientation').length).assertEqual(baseline + 1);
+      // Repeated force-sends each emit independently of dedupe state.
+      await views.updateOrientation('portrait', true);
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('%5BCLY%5D_orientation').length).assertEqual(baseline + 2);
+    });
+
+    it('updateOrientation_forceSend_stillRespectsDisabled', 0, async () => {
+      // Even with forceSend=true, the trackOrientationChanges killswitch
+      // must win — otherwise integrators who explicitly opt out via
+      // setTrackOrientationChanges(false) would still receive orientation
+      // events at every begin_session. Same parallel-ModuleViews approach
+      // as the bypass-dedupe test above.
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.events.setQueueSizeToSend(1);
+        cfg.views.setTrackOrientationChanges(false);
+      });
+      const events: ModuleEvents = new ModuleEvents(h.instance.config, h.instance);
+      const views: ModuleViews = new ModuleViews(h.instance.config, h.instance, events);
+      await views.updateOrientation('portrait', true);
       await flushTick(60);
       expect(h.network.findCallsWithParam('%5BCLY%5D_orientation').length).assertEqual(0);
     });
@@ -924,6 +978,20 @@ export default function viewsTest() {
       ev = parseEvents(customCalls[0].data)[0];
       expect(ev['cvid']).assertEqual(idvAct2);
       expect(ev['peid']).assertEqual(ideCustom1);
+    });
+
+    it('viewWireOrder_consentBeforeBeginSessionBeforeViewEvent', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'views', 'events']);
+        cfg.events.setQueueSizeToSend(1);
+      });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      await h.instance.views.startView('home');
+      await flushTick(60);
+      await h.instance.views.stopAllViews(null);
+      await flushTick(60);
+      assertWireOrder(h.network.calls, ['consent=', 'begin_session=1', 'events=']);
     });
   });
 }

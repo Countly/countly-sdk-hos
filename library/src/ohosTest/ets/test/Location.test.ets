@@ -1,8 +1,10 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses, assertWireOrder } from './TestHelpers';
 
 export default function locationTest() {
   describe('LocationTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('initialLocation_attachedToBeginSession', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
         cfg.location.set('US', 'NY', '40.7,-74.0', null);
@@ -156,6 +158,17 @@ export default function locationTest() {
       await flushTick(120);
       const after: number = h.network.calls.length;
       expect(after > before).assertTrue();
+    });
+
+    it('locationWireOrder_consentBeforeBeginSessionBeforeLocation', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'location']);
+      });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      await h.instance.location.setLocation('US', 'NYC', '40.7,-74.0', null);
+      await flushTick(60);
+      assertWireOrder(h.network.calls, ['consent=', 'begin_session=1', 'location=']);
     });
   });
 }

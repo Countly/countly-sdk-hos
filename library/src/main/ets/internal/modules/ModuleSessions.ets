@@ -27,7 +27,9 @@ export class ModuleSessions extends ModuleBase {
   private sessionActive: boolean = false;
   private sessionStartMs: number = 0;
   private lastUpdateMs: number = 0;
-  private updateTimer: number = 0;
+  // null = no timer scheduled (see ModuleConsent.pendingCoalesceTimer for the
+  // sentinel-collision rationale: HMOS's setInterval may legitimately return 0).
+  private updateTimer: number | null = null;
   private lifecycleCounter: number = 0;
   private firstViewFlagHost: FirstViewFlagHost = new NoopFirstViewFlagHost();
   // Hook called immediately after begin_session is enqueued so the host
@@ -196,9 +198,9 @@ export class ModuleSessions extends ModuleBase {
 
   private async endSessionInternal(emit: boolean = true): Promise<void> {
     if (!this.sessionActive) return;
-    if (this.updateTimer !== 0) {
+    if (this.updateTimer !== null) {
       clearInterval(this.updateTimer);
-      this.updateTimer = 0;
+      this.updateTimer = null;
     }
     const now: number = Date.now();
     const elapsed: number = Math.round((now - this.lastUpdateMs) / 1000);
@@ -210,6 +212,15 @@ export class ModuleSessions extends ModuleBase {
     // the whole point of consent revocation).
     if (!emit) return;
 
+    // Flush any buffered events BEFORE enqueueing end_session so the events
+    // request lands inside the session window (begin..end) on the server.
+    // Mirrors Android's `moduleRequestQueue.sendEventsIfNeeded(true)` call
+    // at the top of `ModuleSessions.endSessionInternal`. Without this flush,
+    // pending events would have to wait for the eventsModule.onEnterBackground
+    // pass that follows in `lifecycleBackground`, which lands them AFTER
+    // end_session in the queue (wrong order, orphans events server-side).
+    await this.core.flushEvents();
+
     const params: Record<string, string> = this.core.requestBuilder.baseParams();
     params['end_session'] = '1';
     if (elapsed > 0) params['session_duration'] = String(elapsed);
@@ -219,7 +230,7 @@ export class ModuleSessions extends ModuleBase {
   }
 
   private scheduleUpdateTimer(): void {
-    if (this.updateTimer !== 0) return;
+    if (this.updateTimer !== null) return;
     const intervalMs: number = this.config.sessionUpdateIntervalSec * 1000;
     this.updateTimer = setInterval(() => {
       if (this.config.manualSessionControl && !this.config.manualSessionHybridMode) return;
@@ -277,9 +288,9 @@ export class ModuleSessions extends ModuleBase {
   }
 
   public override async onHalt(): Promise<void> {
-    if (this.updateTimer !== 0) {
+    if (this.updateTimer !== null) {
       clearInterval(this.updateTimer);
-      this.updateTimer = 0;
+      this.updateTimer = null;
     }
     if (this.sessionActive) await this.endSessionInternal();
   }

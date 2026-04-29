@@ -1,9 +1,11 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
 import { MessagingProvider, PushTestMode } from '../../../main/ets/types/Types';
 
 export default function pushTest() {
   describe('PushTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('onTokenRefresh_noConsent_stashesButDoesNotSend', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true);
