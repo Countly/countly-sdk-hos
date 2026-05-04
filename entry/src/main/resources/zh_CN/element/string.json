@@ -1,0 +1,11 @@
+{
+  "string": [
+    { "name": "module_desc",            "value": "Countly SDK 功能演示" },
+    { "name": "EntryAbility_desc",      "value": "Countly 功能演示主入口" },
+    { "name": "EntryAbility_label",     "value": "Countly 演示" },
+    { "name": "SecondaryAbility_desc",  "value": "自动视图追踪演示目标 #1" },
+    { "name": "SecondaryAbility_label", "value": "Countly 第二页" },
+    { "name": "TertiaryAbility_desc",   "value": "自动视图追踪演示目标 #2" },
+    { "name": "TertiaryAbility_label",  "value": "Countly 第三页" }
+  ]
+}
