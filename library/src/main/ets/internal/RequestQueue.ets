@@ -391,8 +391,7 @@ export class RequestQueue {
    *   - queue ≤ `bom_rqp` of capacity (we can afford to pause)
    *   - request not older than `bom_ra` hours (slow response is "current",
    *     not just a stale request finally getting through)
-   * On trigger, pause for `bom_d` seconds. Mirrors Android's
-   * `ConnectionProcessor.backoff(...)` decision tree.
+   * On trigger, pause for `bom_d` seconds.
    */
   private evaluateBackoff(result: HttpResult, requestData: string): void {
     const sc: ServerConfig = this.config.serverConfig;

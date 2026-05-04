@@ -33,11 +33,8 @@ export class ModuleSessions extends ModuleBase {
   private lifecycleCounter: number = 0;
   private firstViewFlagHost: FirstViewFlagHost = new NoopFirstViewFlagHost();
   // Hook called immediately after begin_session is enqueued so the host
-  // (CountlyInstance) can emit a forced orientation baseline. Mirrors
-  // Android sdk/ModuleSessions.java:67-68 which calls
-  // `_cly.moduleViews.updateOrientation(currentOrientation, true)` right
-  // after `requestQueueProvider.beginSession(...)`. Default no-op so the
-  // module remains usable in tests that don't wire the emitter.
+  // (CountlyInstance) can emit a forced orientation baseline. Default
+  // no-op so the module remains usable in tests that don't wire the emitter.
   private orientationBaselineEmitter: () => void = (): void => { /* no-op default */ };
 
   constructor(config: InternalConfig, core: SdkCore) {
@@ -56,7 +53,7 @@ export class ModuleSessions extends ModuleBase {
    * read the platform display, gate on `trackOrientationChanges` +
    * registration state, and call `viewsModule.updateOrientation(mode, true)`
    * — the `true` bypasses the dedupe so every begin_session gets a fresh
-   * baseline event, matching Android.
+   * baseline event.
    */
   public setOrientationBaselineEmitter(emitter: () => void): void {
     this.orientationBaselineEmitter = emitter;
@@ -163,10 +160,9 @@ export class ModuleSessions extends ModuleBase {
 
     // Orientation baseline — fires AFTER begin_session is in the request
     // queue so the events batch that carries the orientation event is
-    // ordered after the begin_session URL request on the wire. Mirrors
-    // Android sdk/ModuleSessions.java:67-68. Forced (dedupe bypassed) so
-    // every begin_session gets a fresh orientation event even when the
-    // orientation hasn't changed since the previous session.
+    // ordered after the begin_session URL request on the wire. Forced
+    // (dedupe bypassed) so every begin_session gets a fresh orientation
+    // event even when the orientation hasn't changed since the previous session.
     this.orientationBaselineEmitter();
 
     this.config.logger.i('[ModuleSessions] beginSessionInternal, session started');
@@ -214,12 +210,15 @@ export class ModuleSessions extends ModuleBase {
 
     // Flush any buffered events BEFORE enqueueing end_session so the events
     // request lands inside the session window (begin..end) on the server.
-    // Mirrors Android's `moduleRequestQueue.sendEventsIfNeeded(true)` call
-    // at the top of `ModuleSessions.endSessionInternal`. Without this flush,
-    // pending events would have to wait for the eventsModule.onEnterBackground
-    // pass that follows in `lifecycleBackground`, which lands them AFTER
-    // end_session in the queue (wrong order, orphans events server-side).
+    // Without this flush, pending events would have to wait for the
+    // eventsModule.onEnterBackground pass that follows in `lifecycleBackground`,
+    // which lands them AFTER end_session in the queue (wrong order, orphans
+    // events server-side).
     await this.core.flushEvents();
+    // Then ship pending user-profile changes so user_details lands between
+    // events and end_session — mid-session UP mutations must fall inside
+    // the session window on the server.
+    await this.core.saveUserProfileIfPending();
 
     const params: Record<string, string> = this.core.requestBuilder.baseParams();
     params['end_session'] = '1';
@@ -234,10 +233,24 @@ export class ModuleSessions extends ModuleBase {
     const intervalMs: number = this.config.sessionUpdateIntervalSec * 1000;
     this.updateTimer = setInterval(() => {
       if (this.config.manualSessionControl && !this.config.manualSessionHybridMode) return;
-      this.sendUpdate().catch((err: Object) => {
-        this.config.logger.e(`[ModuleSessions] updateTimer, sendUpdate rejected: ${err}`);
+      this.heartbeatTick().catch((err: Object) => {
+        this.config.logger.e(`[ModuleSessions] updateTimer, heartbeatTick rejected: ${err}`);
       });
     }, intervalMs) as number;
+  }
+
+  /**
+   * Heartbeat cascade: after the session-duration enqueue, force-flush
+   * events and run a second user-profile save. Without these, events
+   * buffered mid-session sit until the size threshold or background, and
+   * UP changes wait for the next mutation auto-trigger. Manual
+   * `updateSession()` keeps the lighter contract (just saveUP →
+   * update_session); only the timer tick reaches this fuller cascade.
+   */
+  private async heartbeatTick(): Promise<void> {
+    await this.sendUpdate();
+    await this.core.flushEvents();
+    await this.core.saveUserProfileIfPending();
   }
 
   private attachLocation(params: Record<string, string>): void {
@@ -258,32 +271,40 @@ export class ModuleSessions extends ModuleBase {
     if (ip && ip.length > 0) params['ip_address'] = ip;
   }
 
+  /**
+   * Pre-swap closer for the changeWithoutMerge path. CountlyInstance's
+   * pre-swap hook calls this UNDER THE OLD ID, before commit, so the wire
+   * `end_session=1` carries the previous user's device_id. Emit only in
+   * non-manual mode — the caller is responsible for checking
+   * `manualSessionControl`.
+   */
+  public async endSessionForDeviceIdChange(): Promise<void> {
+    if (!this.sessionActive) return;
+    await this.endSessionInternal(true);
+  }
+
   public override async onDeviceIdChangedNotMerged(_oldId: string, _newId: string): Promise<void> {
-    // Android-parity: a device-id change without merge is a "user switch"
-    // gesture. The old session belongs to the previous user — end it
-    // silently (emit=false) so no end_session lands on the OLD id. The new
-    // user's session only begins when the host re-fires onEnterForeground
-    // (or explicitly calls beginSession in manual mode). Don't auto-restart
-    // here, even when consent is still in effect — the host hasn't told us
-    // the new user is in foreground.
-    if (this.sessionActive) {
-      await this.endSessionInternal(false);
-    }
+    // The session-end emission already happened pre-swap (see
+    // CountlyInstance's `setBeforeNonMergedSwapHook`). All that's left here
+    // is resetting the lifecycle counter so a subsequent foreground replays
+    // a clean begin_session under the new id.
     this.lifecycleCounter = 0;
   }
 
   public override async onConsentChanged(_added: string[], removed: string[], source: ConsentChangeSource): Promise<void> {
-    // Sessions consent revoked mid-session → stop the timer and clear state,
-    // but DO NOT emit a final end_session request. The whole point of
-    // revocation is to stop sending session data.
+    // Sessions consent revoked mid-session → emit a final end_session so the
+    // server closes the session window. `endSessionInternal` has no internal
+    // consent gate, so passing emit=true ships the request even though the
+    // consent map already reflects the revocation.
     //
     // Skip the device-id-changed-notMerged source: that path runs the consent
-    // reset upstream of the device-id fan-out, so this hook would land first
-    // and end the session with emit=false BEFORE onDeviceIdChangedNotMerged
-    // gets a chance to emit it. Defer to the device-id hook instead.
+    // reset from CountlyInstance's pre-swap hook, AFTER the hook has already
+    // emitted end_session under the OLD id (when applicable). Letting this
+    // hook fire too would either double-emit (non-manual mode) or wrongly
+    // emit under the new id (manual mode, where end_session is skipped).
     if (source === ConsentChangeSource.DeviceIDChangedNotMerged) return;
     if (removed.indexOf(CountlyFeature.SESSIONS) !== -1 && this.sessionActive) {
-      await this.endSessionInternal(false);
+      await this.endSessionInternal(true);
     }
   }
 

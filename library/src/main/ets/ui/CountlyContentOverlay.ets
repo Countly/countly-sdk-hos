@@ -160,9 +160,9 @@ export struct CountlyContentOverlay {
   }
 
   /**
-   * Page-load watchdog. Mirrors Android's 60s timeout. onPageEnd cancels
-   * it — that event fires on the DOM `window.load` event, which itself
-   * fires only after all sub-resources have loaded or failed.
+   * Page-load watchdog (60s timeout). onPageEnd cancels it — that event
+   * fires on the DOM `window.load` event, which itself fires only after
+   * all sub-resources have loaded or failed.
    */
   private startLoadTimer(): void {
     this.cancelLoadTimer();

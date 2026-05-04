@@ -56,6 +56,61 @@ export default function eventsTest() {
       expect(h.network.findCallsWithParam('events=').length >= 1).assertTrue();
     });
 
+    it('recordEvent_starRating_acceptsEitherStarRatingOrFeedbackConsent', 0, async () => {
+      // Mirror Android sdk/ModuleEvents.java:185-186 — `[CLY]_star_rating`
+      // accepts the dual gate `starRating` OR `feedback`. Either one alone
+      // unlocks the event; neither granted drops it.
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true);
+        cfg.events.setQueueSizeToSend(1);
+      });
+      // Neither granted → dropped.
+      await h.instance.events.recordEvent('[CLY]_star_rating');
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
+
+      // Only starRating → accepted.
+      h.instance.consent.giveConsent(['star-rating']);
+      await h.instance.events.recordEvent('[CLY]_star_rating');
+      await flushTick(60);
+      const afterStarRating: number = h.network.findCallsWithParam('events=').length;
+      expect(afterStarRating >= 1).assertTrue();
+
+      // Now revoke starRating, grant feedback → still accepted.
+      h.instance.consent.removeConsent(['star-rating']);
+      h.instance.consent.giveConsent(['feedback']);
+      await h.instance.events.recordEvent('[CLY]_star_rating');
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('events=').length > afterStarRating).assertTrue();
+    });
+
+    it('recordEvent_action_acceptsEitherClicksOrScrollsConsent', 0, async () => {
+      // Mirror Android sdk/ModuleEvents.java:219 — `[CLY]_action` accepts
+      // the dual gate `clicks` OR `scrolls`.
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true);
+        cfg.events.setQueueSizeToSend(1);
+      });
+      // Neither granted → dropped.
+      await h.instance.events.recordEvent('[CLY]_action');
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
+
+      // Only clicks → accepted.
+      h.instance.consent.giveConsent(['clicks']);
+      await h.instance.events.recordEvent('[CLY]_action');
+      await flushTick(60);
+      const afterClicks: number = h.network.findCallsWithParam('events=').length;
+      expect(afterClicks >= 1).assertTrue();
+
+      // Now revoke clicks, grant scrolls → still accepted.
+      h.instance.consent.removeConsent(['clicks']);
+      h.instance.consent.giveConsent(['scrolls']);
+      await h.instance.events.recordEvent('[CLY]_action');
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('events=').length > afterClicks).assertTrue();
+    });
+
     it('timedEvent_endRecordsDuration', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       h.instance.events.startEvent('action');

@@ -281,33 +281,79 @@ export default function countlyFacadeTest() {
     /** addDirectRequest enqueues a request honoring consent gate. */
     it('addDirectRequest_consentGate_dropsWhenNoConsent', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      const before: number = h.instance.requestQueue.size();
+      // Init may emit a `location=` erasure (no consent → wipe server state,
+      // see ModuleLocation.onInit). Wait for init traffic to settle, then
+      // capture the post-init network call count so the direct-request gate
+      // is what we're measuring, not init wire activity.
+      await flushTick(60);
+      const beforeCalls: number = h.network.calls.length;
       const directA: Record<string, string> = { 'custom_key': 'custom_value' };
       await h.instance.requests.addDirectRequest(directA);
       await flushTick(50);
       // Consent required + no feature has consent → request is dropped.
-      expect(h.instance.requestQueue.size()).assertEqual(before);
+      expect(h.network.calls.length).assertEqual(beforeCalls);
       const calls: number = h.network.findCallsWithParam('custom_key=custom_value').length;
       expect(calls).assertEqual(0);
     });
 
-    /** addDirectRequest — cannot override SDK base params. */
-    it('addDirectRequest_baseParamsLocked', 0, async () => {
+    /** addDirectRequest — reserved-key denylist matches Android
+     *  ModuleRequestQueue.preDefinedKeys (sdk/ModuleRequestQueue.java:34):
+     *  app_key, hour, dow, tz, sdk_version, sdk_name, device_id, old_device_id,
+     *  checksum, checksum256. `timestamp` is NOT reserved. */
+    it('addDirectRequest_reservedKeysStripped', 0, async () => {
       const h: Harness = await buildHarness();
       h.instance.requests.enableOfflineMode();
       const hijack: Record<string, string> = {
+        // All 10 reserved keys per Android parity:
         'device_id': 'HIJACKED',
         'app_key': 'HIJACKED_KEY',
-        'timestamp': '0',
+        'old_device_id': 'HIJACKED_OLD',
+        'checksum': 'HIJACKED_CS',
+        'checksum256': 'HIJACKED_CS256',
+        'sdk_version': '0.0.0',
+        'sdk_name': 'evil',
+        'hour': '99',
+        'dow': '99',
+        'tz': '999',
+        // Allowed: timestamp + custom keys
         'my_custom': 'ok'
       };
       await h.instance.requests.addDirectRequest(hijack);
       const pending: string[] = h.instance.requestQueue.peekAll();
       expect(pending.length >= 1).assertTrue();
       const last: string = pending[pending.length - 1];
-      expect(last.indexOf('device_id=HIJACKED') === -1).assertTrue();
-      expect(last.indexOf('app_key=HIJACKED_KEY') === -1).assertTrue();
+      // None of the hijack values should reach the wire.
+      expect(last.indexOf('=HIJACKED') === -1).assertTrue();
+      expect(last.indexOf('=HIJACKED_KEY') === -1).assertTrue();
+      expect(last.indexOf('=HIJACKED_OLD') === -1).assertTrue();
+      expect(last.indexOf('=HIJACKED_CS') === -1).assertTrue();
+      expect(last.indexOf('sdk_name=evil') === -1).assertTrue();
+      expect(last.indexOf('sdk_version=0.0.0') === -1).assertTrue();
+      // The custom key passes through.
       expect(last.indexOf('my_custom=ok') !== -1).assertTrue();
+    });
+
+    /** addDirectRequest — `timestamp` IS allowed through (not in Android's
+     *  preDefinedKeys list). Lets developers backfill events with explicit
+     *  timestamps. */
+    it('addDirectRequest_timestampOverrideAllowed', 0, async () => {
+      const h: Harness = await buildHarness();
+      h.instance.requests.enableOfflineMode();
+      await h.instance.requests.addDirectRequest({ 'timestamp': '111', 'k': 'v' });
+      const pending: string[] = h.instance.requestQueue.peekAll();
+      const last: string = pending[pending.length - 1];
+      expect(last.indexOf('timestamp=111') !== -1).assertTrue();
+    });
+
+    /** addDirectRequest — wire request carries the `&dr=1` marker per
+     *  Android sdk/ConnectionQueue.java:553. */
+    it('addDirectRequest_wireCarriesDrMarker', 0, async () => {
+      const h: Harness = await buildHarness();
+      h.instance.requests.enableOfflineMode();
+      await h.instance.requests.addDirectRequest({ 'k': 'v' });
+      const pending: string[] = h.instance.requestQueue.peekAll();
+      const last: string = pending[pending.length - 1];
+      expect(last.indexOf('dr=1') !== -1).assertTrue();
     });
 
     /** addDirectRequest with granted consent actually enqueues. */

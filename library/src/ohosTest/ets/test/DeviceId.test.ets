@@ -98,20 +98,24 @@ export default function deviceIdTest() {
       expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
     });
 
-    it('changeWithoutMerge_endsSessionSilently_resumesOnForeground', 0, async () => {
-      // Android-parity: changeWithoutMerge is a user-switch. The old session
-      // ends silently (no end_session=1 on the OLD id) and the new session
-      // only begins on the next foreground cycle. See
-      // ModuleSessions.onDeviceIdChangedNotMerged for the rationale; the
-      // sibling Sessions.test.ets#automatic_deviceIdChangeWithoutMerge_endsSilently_thenResumes
-      // pins the same contract from the sessions side.
+    it('changeWithoutMerge_emitsEndSessionUnderOldId_resumesOnForeground', 0, async () => {
+      // Mirror Android sdk/ModuleDeviceId.changeDeviceIdWithoutMergeInternal:140
+      // and scenario 20 step 4 of SDK_REQUEST_SCENARIOS.md: in non-manual mode
+      // a changeWithoutMerge during an active session emits a closing
+      // end_session=1 under the OLD device_id before the swap. The new
+      // session only begins on the next foreground cycle.
       const h: Harness = await buildHarness();
       h.instance.lifecycleForeground();
       await flushTick(60);
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
+      const oldId: string = h.instance.deviceId.getID();
       await h.instance.deviceId.changeWithoutMerge('nextUser');
       await flushTick(120);
-      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(0);
+      const endCalls = h.network.findCallsWithParam('end_session=1');
+      expect(endCalls.length).assertEqual(1);
+      // The closing end_session must carry the OLD device_id.
+      expect(endCalls[0].data.indexOf(`device_id=${oldId}`) !== -1).assertTrue();
+      // No automatic begin yet — fresh session waits for the next foreground.
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
 
       // Background → foreground cycles the session under the new id.
@@ -122,6 +126,21 @@ export default function deviceIdTest() {
       const beginCalls = h.network.findCallsWithParam('begin_session=1');
       expect(beginCalls.length).assertEqual(2);
       expect(beginCalls[1].data.indexOf('device_id=nextUser') !== -1).assertTrue();
+    });
+
+    it('changeWithoutMerge_manualMode_skipsEndSession', 0, async () => {
+      // Mirror Android sdk/ModuleDeviceId.changeDeviceIdWithoutMergeInternal:138
+      // and scenario 20 step 4 ("Skipped in manual session mode"): in manual
+      // session mode the SDK does NOT emit end_session on changeWithoutMerge.
+      // The integrator owns session lifecycle in manual mode.
+      const h: Harness = await buildHarness((cfg) => { cfg.sessions.enableManualControl(); });
+      await h.instance.sessions.beginSession();
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
+      await h.instance.deviceId.changeWithoutMerge('manualNextUser');
+      await flushTick(120);
+      // No closing end_session emitted in manual mode.
+      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(0);
     });
 
     // --- Ports of Android DeviceIdTests.java ---

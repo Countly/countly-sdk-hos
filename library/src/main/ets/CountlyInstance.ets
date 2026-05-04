@@ -266,8 +266,7 @@ export class CountlyInstance implements SdkCore {
 
     this.sessionsModule = new ModuleSessions(this.config, this);
     this.sessionsModule.setFirstViewFlagHost(this.viewsModule.getFirstViewFlagHost());
-    // Orientation baseline at session begin — Android parity with
-    // sdk/ModuleSessions.java:67-68. Gated on `trackOrientationChanges`
+    // Orientation baseline at session begin. Gated on `trackOrientationChanges`
     // AND on the lifecycle observer being registered: tests use a fake
     // `{}` context that fails registration, and we don't want test-driven
     // beginSession calls to accumulate phantom orientation events from a
@@ -312,8 +311,8 @@ export class CountlyInstance implements SdkCore {
 
     // Content-emitted events ride the same pipeline so consent is respected
     // and the events join any in-flight batch. The queue flush afterwards
-    // matches Android (ContentOverlayView.java:620): content actions are
-    // short-lived interactions we want to surface quickly.
+    // surfaces content actions quickly — they are short-lived interactions
+    // that integrators expect to land promptly.
     this.contentModule.setContentEventRecorder(async (key: string, seg: SegmentationMap): Promise<void> => {
       await this.eventsModule.recordEvent(key, seg, 1, 0, 0);
     });
@@ -417,6 +416,17 @@ export class CountlyInstance implements SdkCore {
       new LabeledModule(this.configurationModule, 'configuration')
     ];
 
+    // Pre-swap hook for changeWithoutMerge: emit end_session (non-manual + active
+    // session only) and reset consent UNDER THE OLD ID, before the device-id
+    // commit. Manual mode skips end_session entirely (the integrator owns
+    // session lifecycle).
+    this.deviceIdModule.setBeforeNonMergedSwapHook(async (_oldId: string, _newId: string): Promise<void> => {
+      if (!this.config.manualSessionControl && this.sessionsModule.isSessionActive()) {
+        await this.sessionsModule.endSessionForDeviceIdChange();
+      }
+      await this.consentModule.resetForDeviceIdChangeNotMerged();
+    });
+
     this.deviceIdModule.setChangeListener(async (oldId: string, newId: string, merged: boolean): Promise<void> => {
       if (merged) {
         const promises: Promise<void>[] = this.deviceIdMergedRecipients.map((lm: LabeledModule): Promise<void> =>
@@ -424,9 +434,9 @@ export class CountlyInstance implements SdkCore {
         );
         await Promise.all(promises);
       } else {
-        // Reset consent FIRST so modules reacting to the deviceId change see
-        // consent already cleared (they may skip enqueue decisions on that).
-        await this.consentModule.resetForDeviceIdChangeNotMerged();
+        // Consent reset + session end already happened pre-swap; this fan-out
+        // is purely for modules that need to react to the new identity (cache
+        // invalidation, RC re-download, lifecycle counter resets, etc.).
         const promises: Promise<void>[] = this.deviceIdNotMergedRecipients.map((lm: LabeledModule): Promise<void> =>
           this.captureRejection(`${lm.label}.onDeviceIdChangedNotMerged`, lm.module.onDeviceIdChangedNotMerged(oldId, newId))
         );
@@ -585,9 +595,8 @@ export class CountlyInstance implements SdkCore {
     this.viewsModule.onEnterForeground();
     // Note: the post-foreground orientation baseline is now driven by
     // `ModuleSessions.beginSessionInternal` via the orientation-baseline
-    // emitter wired in the constructor (Android parity, sdk/ModuleSessions.java:67-68).
-    // That insertion point fires only when a session actually begins,
-    // matching Android's gating exactly. The display read for rotations
+    // emitter wired in the constructor. That insertion point fires only
+    // when a session actually begins. The display read for rotations
     // that happened while backgrounded still happens — it just lives
     // inside that emitter path now.
   }
@@ -600,10 +609,8 @@ export class CountlyInstance implements SdkCore {
 
   /**
    * Wired into `LifecycleObserver`'s `environment.onConfigurationUpdated`
-   * when `trackOrientationChanges` is on. Mirrors Android's per-Activity
-   * orientation check (sdk/ModuleViews.java:585), but driven by the system
-   * config update instead of a per-Activity hook — HMOS's config-update
-   * channel is the platform-correct trigger for rotation events.
+   * when `trackOrientationChanges` is on. HMOS's config-update channel is
+   * the platform-correct trigger for rotation events.
    *
    * `Configuration.direction` is the canonical orientation field:
    *   DIRECTION_VERTICAL (0)   → portrait
@@ -636,8 +643,7 @@ export class CountlyInstance implements SdkCore {
    *
    * `forceSend=true` at this insertion point bypasses
    * `ModuleViews.updateOrientation`'s dedupe so each session begin sees
-   * its own orientation event, matching Android's behavior at
-   * sdk/ModuleSessions.java:67-68.
+   * its own orientation event.
    */
   private maybeUpdateOrientationFromDisplay(forceSend: boolean): void {
     let mode: string = '';
@@ -655,12 +661,10 @@ export class CountlyInstance implements SdkCore {
 
   /**
    * Wired into `LifecycleObserver`'s `abilityLifecycle.onAbilityForeground`
-   * when `enableAutomaticViewTracking()` is set. Mirrors Android's
-   * `ModuleViews.onActivityStarted` (sdk/ModuleViews.java:564):
+   * when `enableAutomaticViewTracking()` is set:
    *
-   *   1. Pick the long form (`bundle.Ability`) by default to match Android's
-   *      `getName()`; switch to the short form (`Ability`) when
-   *      `enableAutomaticViewShortNames()` is on, matching `getSimpleName()`.
+   *   1. Pick the long form (`bundle.Ability`) by default; switch to the
+   *      short form (`Ability`) when `enableAutomaticViewShortNames()` is on.
    *   2. Skip ability names listed via `setAutomaticViewTrackingExclusions`.
    *   3. Hand the chosen name + global segmentation to
    *      `viewsModule.startAutoStoppedView` — same entrypoint manual code

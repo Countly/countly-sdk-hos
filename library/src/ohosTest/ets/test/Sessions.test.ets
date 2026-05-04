@@ -87,6 +87,35 @@ export default function sessionsTest() {
       expect(h.network.findCallsWithParam('session_duration').length).assertEqual(0);
     });
 
+    it('heartbeatTick_flushesEventsAfterSessionDuration', 0, async () => {
+      // Mirror Android sdk/Countly.java:1125-1147 (`onTimer`) and scenario 8
+      // of SDK_REQUEST_SCENARIOS.md: each timer tick produces session_duration
+      // followed by an events flush. Without the cascade, mid-session events
+      // sit in the buffer until the size threshold or background.
+      // 1s is the minimum allowed interval (CountlyConfig.setUpdateIntervalSec).
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.sessions.setUpdateIntervalSec(1);
+      });
+      h.network.reset();
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
+
+      // Record an event mid-session. No UP mutation, so the autosave gate
+      // does not trigger an early flush — the event sits in the buffer
+      // until the heartbeat cascade ships it.
+      await h.instance.events.recordEvent('mid_session_event');
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
+
+      // Wait past the 1s tick (1200ms for jitter headroom).
+      await flushTick(1200);
+
+      assertWireOrder(h.network.calls, ['begin_session=1', 'session_duration', 'events=']);
+      const eventCalls = h.network.findCallsWithParam('events=');
+      expect(eventCalls.length).assertLarger(0);
+      expect(eventCalls[0].data.indexOf('mid_session_event') !== -1).assertTrue();
+    });
+
     it('consentRequired_beginSession_gatedByConsent', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
       h.instance.lifecycleForeground();
@@ -232,11 +261,11 @@ export default function sessionsTest() {
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
     });
 
-    it('sessionsConsent_revokedMidSession_stopsSilently_grantingResumes', 0, async () => {
-      // Port of ModuleSessionsTests#sessionBeginEndConsentChanges — when
-      // sessions consent is revoked while a session is active, the SDK must
-      // NOT emit a closing end_session (the point of revocation). A later
-      // grant + foreground must start a fresh session.
+    it('sessionsConsent_revokedMidSession_emitsEndSession_grantingResumes', 0, async () => {
+      // Mirror Android sdk/ModuleSessions.java:155-178 (and scenario 16 of
+      // SDK_REQUEST_SCENARIOS.md): revoking sessions consent mid-session
+      // ships a final end_session so the server closes the session window.
+      // A later grant + foreground starts a fresh session.
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true);
         cfg.consent.setEnabled(['sessions', 'location']);
@@ -249,8 +278,8 @@ export default function sessionsTest() {
       await flushTick(1100);
       h.instance.consent.removeConsent(['sessions']);
       await flushTick(60);
-      // Revocation must NOT ship an end_session.
-      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(0);
+      // Revocation MUST ship a closing end_session.
+      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(1);
 
       // Re-grant + re-foreground cycles a new session.
       h.instance.lifecycleBackground();
@@ -409,25 +438,24 @@ export default function sessionsTest() {
       expect(endCalls[0].data.indexOf('session_duration=') !== -1).assertTrue();
     });
 
-    it('automatic_deviceIdChangeWithoutMerge_endsSilently_thenResumes', 0, async () => {
-      // Intent port of scSE_SessionsTests#SE_204_CNR_A_id_change — in
-      // automatic mode, a changeWithoutMerge during an active session must
-      // cycle the session: the old session ends WITHOUT an emitted end
-      // request under consent-required (HOS resets consent on without-merge);
-      // under consent-not-required here, the old session ends AND a fresh
-      // begin fires for the new id only after a background→foreground cycle.
+    it('automatic_deviceIdChangeWithoutMerge_emitsEndSessionUnderOldId_thenResumes', 0, async () => {
+      // Mirror Android sdk/ModuleDeviceId.changeDeviceIdWithoutMergeInternal:140
+      // and scenario 20 of SDK_REQUEST_SCENARIOS.md: in automatic mode a
+      // changeWithoutMerge during an active session ships end_session=1 under
+      // the OLD device_id before the swap, then a fresh begin fires for the
+      // new id when the next foreground cycle replays.
       const h: Harness = await buildHarness();
       h.instance.lifecycleForeground();
       await flushTick(60);
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
+      const oldId: string = h.instance.deviceId.getID();
 
       await flushTick(1100);
       await h.instance.deviceId.changeWithoutMerge('newID_2');
       await flushTick(60);
-      // Device-ID without-merge in automatic mode ends the current session
-      // silently (emit=false) inside ModuleSessions.onDeviceIdChangedNotMerged,
-      // so no end_session=1 is shipped — the lifecycleCounter is reset to 0.
-      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(0);
+      const endCalls = h.network.findCallsWithParam('end_session=1');
+      expect(endCalls.length).assertEqual(1);
+      expect(endCalls[0].data.indexOf(`device_id=${oldId}`) !== -1).assertTrue();
 
       h.instance.lifecycleForeground();
       await flushTick(60);

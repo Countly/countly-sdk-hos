@@ -132,7 +132,7 @@ export class ModuleEvents extends ModuleBase {
    * forcing the event's `id` field to equal the view's id. Without this, view
    * start/stop events would each generate a fresh event id and the
    * dashboard's view-id chain (start.id == stop.id, next-view.pvid ==
-   * previous-view.id) would break. Mirrors Android's `recordView` path.
+   * previous-view.id) would break.
    */
   public async recordViewEvent(
     viewId: string,
@@ -156,12 +156,20 @@ export class ModuleEvents extends ModuleBase {
       return;
     }
     const isInternal: boolean = key.startsWith('[CLY]_');
-    const requiredConsent: string | null = isInternal
+    const requiredConsents: string[] = isInternal
       ? ModuleEvents.consentForInternalEvent(key)
-      : CountlyFeature.EVENTS;
-    if (requiredConsent !== null && !this.core.consentModule.hasConsent(requiredConsent)) {
-      this.config.logger.v(`[ModuleEvents] recordEvent, no '${requiredConsent}' consent — omitted (key=${key})`);
-      return;
+      : [CountlyFeature.EVENTS];
+    if (requiredConsents.length > 0) {
+      // Multi-consent gate: rating events accept `starRating` OR `feedback`,
+      // action events accept `clicks` OR `scrolls`.
+      let granted: boolean = false;
+      for (let i = 0; i < requiredConsents.length; i++) {
+        if (this.core.consentModule.hasConsent(requiredConsents[i])) { granted = true; break; }
+      }
+      if (!granted) {
+        this.config.logger.v(`[ModuleEvents] recordEvent, none of [${requiredConsents.join(',')}] consent — omitted (key=${key})`);
+        return;
+      }
     }
     if (count < 1) {
       this.config.logger.w('[ModuleEvents] recordEvent, count < 1 — clamped to 1');
@@ -173,7 +181,7 @@ export class ModuleEvents extends ModuleBase {
     // the generic "customEventTrackingEnabled" flag or a name filter would
     // corrupt sessions/views/crashes on the dashboard. Filters MUST run on
     // the original key (not the truncated one) so integrators can configure
-    // them against the keys they actually pass in — Android does the same.
+    // them against the keys they actually pass in.
     if (!isInternal) {
       if (!this.config.serverConfig.customEventTrackingEnabled) {
         this.config.logger.d(`[ModuleEvents] recordEvent, custom event tracking disabled by server config — dropped (key=${key})`);
@@ -378,18 +386,22 @@ export class ModuleEvents extends ModuleBase {
   }
 
   /**
-   * Map a [CLY]_* internal event key to the feature consent that gates it.
-   * Unknown internal events return null (allow). Reflects the dev guide's
+   * Map a [CLY]_* internal event key to the feature consents that gate it.
+   * Returns an OR-set: any single consent in the array unlocks the event.
+   * Unknown internal events return `[]` (allow). Reflects the dev guide's
    * "Internal Events" consent mapping table.
    */
-  private static consentForInternalEvent(key: string): string | null {
-    if (key === '[CLY]_view') return CountlyFeature.VIEWS;
-    if (key === '[CLY]_nps' || key === '[CLY]_survey') return CountlyFeature.FEEDBACK;
-    if (key === '[CLY]_star_rating') return CountlyFeature.STAR_RATING;
-    if (key === '[CLY]_push_action') return CountlyFeature.PUSH;
-    if (key === '[CLY]_orientation') return CountlyFeature.USERS;
-    if (key === '[CLY]_action') return CountlyFeature.CLICKS;
-    return null;
+  private static consentForInternalEvent(key: string): string[] {
+    if (key === '[CLY]_view') return [CountlyFeature.VIEWS];
+    if (key === '[CLY]_nps' || key === '[CLY]_survey') return [CountlyFeature.FEEDBACK];
+    // Rating + action events accept multiple consents — gives integrators
+    // the flexibility to grant the narrow consent (starRating / clicks /
+    // scrolls) without also having to grant the broader feedback consent.
+    if (key === '[CLY]_star_rating') return [CountlyFeature.STAR_RATING, CountlyFeature.FEEDBACK];
+    if (key === '[CLY]_push_action') return [CountlyFeature.PUSH];
+    if (key === '[CLY]_orientation') return [CountlyFeature.USERS];
+    if (key === '[CLY]_action') return [CountlyFeature.CLICKS, CountlyFeature.SCROLLS];
+    return [];
   }
 
   private static serializeEvent(e: QueuedEvent): Record<string, Object> {

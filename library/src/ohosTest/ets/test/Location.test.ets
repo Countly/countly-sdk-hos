@@ -121,6 +121,23 @@ export default function locationTest() {
       expect(threw).assertFalse();
     });
 
+    /** init-time location consent missing → standalone `location=` erasure
+     *  request is enqueued. Mirrors Android sdk/ModuleLocation.java:99-103
+     *  (`initFinished` → `performLocationErasure`). */
+    it('initConsentMissing_emitsLocationErasureAtInit', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true);
+        cfg.consent.setEnabled(['sessions']);
+      });
+      await flushTick(60);
+      // Erasure has empty value `location=` (note: trailing & or end of string,
+      // not `location=<gps>`). Filter callouts that carry only the empty form.
+      const erasureCalls = h.network.calls.filter((c) =>
+        /(?:^|&)location=(?:&|$)/.test(c.data)
+      );
+      expect(erasureCalls.length).assertLarger(0);
+    });
+
     /** init-time config.location.disable() → locationDisabled=true on
      *  InternalConfig and begin_session carries an empty `location=`. */
     it('initConfig_locationDisabled_propagates', 0, async () => {

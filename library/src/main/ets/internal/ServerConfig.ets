@@ -6,9 +6,9 @@ import { SegmentationMap } from '../types/Types';
  * list" and false means "drop items IN the list". Empty list means "allow
  * everything" regardless of the flag — that's the default state.
  *
- * Android uses a `FilterList<T>` parametric class so the payload can be a
- * plain set of names for event/segmentation filters OR a per-event map for
- * event-specific segmentation filters. We keep that shape.
+ * Parametric over `T` so the payload can be a plain set of names (for
+ * event/segmentation filters) OR a per-event map (for event-specific
+ * segmentation filters).
  */
 export class FilterList<T> {
   public filterList: T;
@@ -21,10 +21,9 @@ export class FilterList<T> {
 
 /**
  * Runtime-tunable configuration the server pushes to the SDK via the
- * SDK-Behavior-Settings endpoint (Android: `ModuleConfiguration`). Mirrors
- * the dev guide §SDK Behavior Settings table — every field has a sensible
- * default that keeps the SDK behaving identically when no settings are
- * present.
+ * SDK-Behavior-Settings endpoint. Mirrors the dev guide §SDK Behavior
+ * Settings table — every field has a sensible default that keeps the
+ * SDK behaving identically when no settings are present.
  *
  * `ConfigurationProvider` (the public read interface in the dev guide)
  * is realised by direct field access on this class — modules read e.g.
@@ -107,9 +106,9 @@ export class ServerConfig {
 }
 
 /**
- * Listing filter pipeline. Pure static helpers — no module state. Matches
- * Android's `UtilsListingFilters` semantics so behaviour is portable across
- * SDKs when the server sends the same filter config to both.
+ * Listing filter pipeline. Pure static helpers — no module state. The
+ * filter semantics match the cross-SDK contract so the same server-side
+ * filter config produces equivalent behaviour everywhere.
  */
 export class ListingFilters {
   /**
@@ -141,9 +140,9 @@ export class ListingFilters {
   }
 
   /**
-   * Per-event segmentation filter. Android's config is a map of
-   * `eventName → set<segKey>`; an event with no entry in the map keeps all
-   * its segmentation. We preserve that semantics.
+   * Per-event segmentation filter. The config is a map of
+   * `eventName → set<segKey>`; an event with no entry in the map keeps
+   * all its segmentation.
    */
   public static applyEventSegmentationFilter(eventName: string, segmentation: SegmentationMap, sc: ServerConfig, logger: Logger): SegmentationMap {
     const fl: FilterList<Record<string, string[]>> = sc.eventSegmentationFilter;

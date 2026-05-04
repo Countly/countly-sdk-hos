@@ -1000,9 +1000,9 @@ export default function configurationTest() {
       const a: CountlyInstance = new CountlyInstance(cfgA, storage, network1);
       await a.init();
       await flushTick(120);
-      // Drive a SECOND server fetch that delivers a whitelist — onDeviceIdChangedNotMerged
-      // would normally trigger this, but driving it explicitly via halt+re-init
-      // keeps the test focused on the apply-merge logic.
+      // Drive a SECOND server fetch that delivers a whitelist via halt+re-init
+      // (Android-parity: SBS is fetched once at init time, not on device-id
+      // change). This keeps the test focused on the apply-merge logic.
       await a.halt();
 
       const network2: FakeNetwork = new FakeNetwork(logger);

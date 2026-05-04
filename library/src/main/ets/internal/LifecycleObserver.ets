@@ -45,11 +45,10 @@ class CountlyAppStateObserver extends ApplicationStateChangeCallback {
  * eight hooks are stubbed because `AbilityLifecycleCallback` is an
  * abstract-ish class: ArkTS requires every method body even when empty.
  *
- * Long name is synthesised as `${bundleName}.${name}` to give integrators
- * Android-like parity (Android `Activity.getName()` returns the
- * package-qualified name, but HMOS `abilityInfo.name` is just the simple
- * class name). Without the synthesis, short and long modes would be
- * identical strings on HOS.
+ * Long name is synthesised as `${bundleName}.${name}` so integrators get
+ * a fully-qualified ability name (HMOS `abilityInfo.name` is just the
+ * simple class name). Without the synthesis, short and long modes would
+ * be identical strings.
  */
 class CountlyAbilityLifecycleObserver extends AbilityLifecycleCallback {
   private readonly logger: Logger;
@@ -287,10 +286,9 @@ export class LifecycleObserver {
    * `abilityLifecycle`, `environment`) fire on transitions only and never
    * replay the current state. If `register()` is called after the platform
    * has already fired the cold-boot foreground transition, that transition
-   * is lost — the recommended init point is `AbilityStage.onCreate` (HMOS
-   * equivalent of Android's Application.onCreate), which runs before any
-   * UIAbility, so registration is always in place ahead of every
-   * transition.
+   * is lost — the recommended init point is `AbilityStage.onCreate`, which
+   * runs before any UIAbility, so registration is always in place ahead
+   * of every transition.
    */
   public register(ctx: common.Context | null): void {
     if (this.appStateObserver !== null) return;

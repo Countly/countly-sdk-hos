@@ -44,8 +44,7 @@ export class ModuleConsent extends ModuleBase {
       // emit=false skips the will/did-change module dispatch — at construction
       // time other modules aren't wired into core yet, so dispatching their
       // hooks would NPE. We still schedule the coalesced server snapshot so
-      // the initial-consent state reaches the wire (matches Android's
-      // initTimeSetConsentRQ behavior).
+      // the initial-consent state reaches the wire.
       let initialMutationApplied: boolean = false;
       if (config.initialConsentAll) {
         this.giveConsentAllInternal(false).catch((err: Object) => {
@@ -178,8 +177,7 @@ export class ModuleConsent extends ModuleBase {
    * Three-phase consent change:
    *   1. compute the diff
    *   2. apply the diff synchronously so a sync `hasConsent` call right after
-   *      `giveConsent` returns sees the new value (Android parity — Java's
-   *      synchronous listeners can't observe a pre-mutation state either)
+   *      `giveConsent` returns sees the new value
    *   3. await notifyConsentWillChange so modules can flush in-flight work
    *   4. await notifyConsentDidChange; schedule the coalesced server snapshot
    *

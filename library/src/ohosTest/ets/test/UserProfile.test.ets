@@ -1329,7 +1329,12 @@ export default function userProfileTest() {
      * setProperty WITH a queued event auto-saves — the events flush rides
      * with the user_details enqueue, both land on the wire.
      */
-    it('autoSave_setPropertyWithQueuedEvents_emitsBoth', 0, async () => {
+    it('autoSave_setPropertyWithQueuedEvents_flushesEventsOnly_noUserDetails', 0, async () => {
+      // Mirror Android `onUserPropertiesChanged → sendEventsIfNeeded(true)`
+      // and SDK_REQUEST_SCENARIOS.md cascade #3: setProperty with queued
+      // events flushes the events queue but does NOT enqueue user_details.
+      // user_details only ships on explicit save() or a save-triggering
+      // callsite (recordEvent prelude, sessions, device-id change).
       const h: Harness = await buildHarness();
       await h.instance.events.recordEvent('e1');
       // Event sits in memory queue (threshold 100); no requests yet.
@@ -1338,85 +1343,65 @@ export default function userProfileTest() {
       h.instance.userProfile.setProperty('level', 10);
       await flushTick(60);
 
+      // Events flushed, but user_details stays buffered until explicit save.
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(1);
+      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(0);
+
+      // Explicit save() ships the buffered properties.
+      await h.instance.userProfile.save();
+      await flushTick(60);
       const upCalls = h.network.findCallsWithParam('user_details=');
       expect(upCalls.length).assertEqual(1);
       expect((parseUserDetails(upCalls[0].data)['custom'] as Record<string, Object>)['level'] as number).assertEqual(10);
-      expect(h.network.findCallsWithParam('events=').length).assertEqual(1);
     });
 
     /**
      * Each modifier method (increment / incrementBy / multiply / saveMax /
-     * saveMin / setOnce / push / pushUnique / pull) auto-saves on its own
-     * when an event is queued ahead of it. The chain entry for each
-     * modifier flushes the events (draining the queue) and saves
-     * user_details — so subsequent modifiers need a fresh recordEvent to
-     * fire again.
+     * saveMin / setOnce / push / pushUnique / pull) auto-flushes events
+     * when an event is queued ahead of it (cascade #3 of the spec). They
+     * do NOT auto-emit user_details — that requires an explicit save() or
+     * a save-triggering callsite. Note: each subsequent `recordEvent` call
+     * runs `saveUserProfileIfPending` as its prelude (Android cascade #2),
+     * so it will SHIP the previous iteration's pending user_details — that's
+     * `recordEvent`'s contract, not the modifier's auto-trigger.
      */
-    it('autoSave_eachModifierMethodWithQueuedEvent_emitsUserDetails', 0, async () => {
+    it('autoSave_eachModifierMethodWithQueuedEvent_flushesEventsOnly', 0, async () => {
       const h: Harness = await buildHarness();
 
-      // increment
-      await h.instance.events.recordEvent('e_inc');
-      h.instance.userProfile.increment('inc1');
-      await flushTick(40);
-      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(1);
-
-      // incrementBy
-      await h.instance.events.recordEvent('e_incBy');
-      h.instance.userProfile.incrementBy('inc2', 5);
-      await flushTick(40);
-      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(2);
-
-      // multiply
-      await h.instance.events.recordEvent('e_mul');
-      h.instance.userProfile.multiply('mul1', 2);
-      await flushTick(40);
-      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(3);
-
-      // saveMax
-      await h.instance.events.recordEvent('e_max');
-      h.instance.userProfile.saveMax('max1', 100);
-      await flushTick(40);
-      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(4);
-
-      // saveMin
-      await h.instance.events.recordEvent('e_min');
-      h.instance.userProfile.saveMin('min1', 1);
-      await flushTick(40);
-      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(5);
-
-      // setOnce
-      await h.instance.events.recordEvent('e_once');
-      h.instance.userProfile.setOnce('once1', 'first');
-      await flushTick(40);
-      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(6);
-
-      // push
-      await h.instance.events.recordEvent('e_push');
-      h.instance.userProfile.push('arr1', 'a');
-      await flushTick(40);
-      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(7);
-
-      // pushUnique
-      await h.instance.events.recordEvent('e_pushUnique');
-      h.instance.userProfile.pushUnique('arr2', 'b');
-      await flushTick(40);
-      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(8);
-
-      // pull
-      await h.instance.events.recordEvent('e_pull');
-      h.instance.userProfile.pull('arr3', 'c');
-      await flushTick(40);
-      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(9);
+      const steps: ((() => void) | string)[][] = [
+        ['e_inc', (): void => { h.instance.userProfile.increment('inc1'); }],
+        ['e_incBy', (): void => { h.instance.userProfile.incrementBy('inc2', 5); }],
+        ['e_mul', (): void => { h.instance.userProfile.multiply('mul1', 2); }],
+        ['e_max', (): void => { h.instance.userProfile.saveMax('max1', 100); }],
+        ['e_min', (): void => { h.instance.userProfile.saveMin('min1', 1); }],
+        ['e_once', (): void => { h.instance.userProfile.setOnce('once1', 'first'); }],
+        ['e_push', (): void => { h.instance.userProfile.push('arr1', 'a'); }],
+        ['e_pushUnique', (): void => { h.instance.userProfile.pushUnique('arr2', 'b'); }],
+        ['e_pull', (): void => { h.instance.userProfile.pull('arr3', 'c'); }]
+      ];
+      for (let i = 0; i < steps.length; i++) {
+        const record: string = steps[i][0] as string;
+        const mutate: () => void = steps[i][1] as () => void;
+        await h.instance.events.recordEvent(record);
+        mutate();
+        await flushTick(40);
+        // Events flush: one per iteration (the modifier's auto-trigger drains
+        // the just-recorded event).
+        expect(h.network.findCallsWithParam('events=').length).assertEqual(i + 1);
+        // user_details: recordEvent's prelude in iteration i+1 saves the
+        // pending UP from iteration i. So count = i (zero on first iter).
+        expect(h.network.findCallsWithParam('user_details=').length).assertEqual(i);
+      }
     });
 
     /**
      * Burst coalescing: with one queued event and four synchronous setProperty
-     * calls on the same key, the first chain entry sees the merged buffer
-     * (a='4') and the queued event, flushes both into one user_details + one
-     * events= request, then later entries see an empty events queue and bail.
+     * calls on the same key, the first chain entry flushes the queued event,
+     * then later entries see an empty events queue and bail. No user_details
+     * lands until explicit save(); when it does it carries the merged final
+     * buffer (a='4').
      */
-    it('autoSave_burstWithEventCoalescesToSingleRequest', 0, async () => {
+    it('autoSave_burstWithEventCoalescesToSingleEventsRequest', 0, async () => {
       const h: Harness = await buildHarness();
       await h.instance.events.recordEvent('e1');
 
@@ -1426,19 +1411,25 @@ export default function userProfileTest() {
       h.instance.userProfile.setProperty('a', '4');
       await flushTick(60);
 
+      // One events flush from the burst, no user_details yet.
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(1);
+      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(0);
+
+      // Explicit save() ships the merged buffer (last-write-wins).
+      await h.instance.userProfile.save();
+      await flushTick(60);
       const upCalls = h.network.findCallsWithParam('user_details=');
       expect(upCalls.length).assertEqual(1);
       expect((parseUserDetails(upCalls[0].data)['custom'] as Record<string, Object>)['a'] as string).assertEqual('4');
     });
 
     /**
-     * Wire ordering: the trigger flushes events BEFORE enqueuing user_details.
-     * Two recordEvent calls leave the events queue at length 2 (default
-     * threshold 100 — no auto-flush yet); a setProperty afterwards drains
-     * those events into one events= request, then enqueues user_details.
-     * The events= request must appear earlier in the call log than user_details=.
+     * Auto-trigger drains events queue immediately on mutation when events
+     * are pending. user_details does NOT ride along — that requires
+     * an explicit save(). When save() runs after the flush, the wire order
+     * is events= → user_details=.
      */
-    it('autoSave_flushesEventsQueueBeforeUserDetails', 0, async () => {
+    it('autoSave_setProperty_flushesEventsImmediately_explicitSaveLandsAfter', 0, async () => {
       const h: Harness = await buildHarness();
       await h.instance.events.recordEvent('e1');
       await h.instance.events.recordEvent('e2');
@@ -1447,9 +1438,15 @@ export default function userProfileTest() {
       h.instance.userProfile.setProperty('theme', 'dark');
       await flushTick(60);
 
+      // Events flushed by the auto-trigger; no user_details yet.
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(1);
+      expect(h.network.findCallsWithParam('user_details=').length).assertEqual(0);
+
+      // Explicit save() lands user_details — strictly AFTER the events= flush.
+      await h.instance.userProfile.save();
+      await flushTick(60);
       const eventCalls = h.network.findCallsWithParam('events=');
       const upCalls = h.network.findCallsWithParam('user_details=');
-      expect(eventCalls.length).assertEqual(1);
       expect(upCalls.length).assertEqual(1);
       const eventsIdx: number = h.network.calls.indexOf(eventCalls[0]);
       const upIdx: number = h.network.calls.indexOf(upCalls[0]);

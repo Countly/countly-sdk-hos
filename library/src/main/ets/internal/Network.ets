@@ -118,7 +118,7 @@ export class Network {
 
   public shouldUsePost(data: string): boolean {
     if (this.forcePost) return true;
-    // Android/iOS threshold from the dev guide.
+    // 2 KB threshold per the dev guide.
     return data.length > 2048;
   }
 }

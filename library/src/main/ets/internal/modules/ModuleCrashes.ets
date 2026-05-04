@@ -309,9 +309,9 @@ export class ModuleCrashes extends ModuleBase {
    * Append Worker/background-thread stacks to the primary stack trace when
    * `recordAllThreadsWithCrash` is enabled. If no provider is wired we log a
    * one-time warning (not per-crash — that would drown the log listener
-   * during a crash loop) so integrators notice the flag is effectively inert
-   * without needing to diff behaviour against Android. Returns the original
-   * stack unchanged when the flag is off or the provider yields nothing.
+   * during a crash loop) so integrators notice the flag is effectively inert.
+   * Returns the original stack unchanged when the flag is off or the provider
+   * yields nothing.
    */
   private appendThreadStacks(primaryStack: string): string {
     if (!this.config.recordAllThreadsWithCrash) return primaryStack;
@@ -339,7 +339,7 @@ export class ModuleCrashes extends ModuleBase {
     for (let i = 0; i < extras.length && added < maxThreads; i++) {
       const entry: ThreadStackEntry = extras[i];
       if (!entry || !entry.name || !entry.stack) continue;
-      // Android format: blank line, "Thread <name>", then stack lines. Cap
+      // Wire format: blank line, "Thread <name>", then stack lines. Cap
       // each thread's stack at maxStackTraceLinesPerThread individually so
       // one runaway Worker can't starve subsequent threads of budget.
       const truncated: string = this.truncatePerThread(entry.stack);

@@ -153,10 +153,8 @@ export class Utils {
     const out: SegmentationMap = {};
     if (!input) return out;
     // First pass: filter/normalize every entry without applying the entry
-    // cap. Android's `applySdkInternalLimits` operates on a LinkedHashMap and
-    // trims the oldest entries when over capacity, so the surviving entries
-    // are the most recently inserted N. Match that: iterate, skip invalid
-    // entries, then truncate from the head.
+    // cap. The cap trims oldest entries when over capacity, so the
+    // surviving entries are the most recently inserted N.
     const filteredKeys: string[] = [];
     const filteredValues: SegmentationValue[] = [];
     const keys: string[] = Object.keys(input);
@@ -178,9 +176,9 @@ export class Utils {
       filteredKeys.push(truncatedKey);
       filteredValues.push(truncatedValue);
     }
-    // Drop oldest until we're at the cap (matching Android's iterator-removal
-    // pattern). After-cap-collision keys (truncated to the same prefix) still
-    // collapse via the assignment loop below.
+    // Drop oldest until we're at the cap. After-cap-collision keys
+    // (truncated to the same prefix) still collapse via the assignment
+    // loop below.
     let startIdx: number = 0;
     while (filteredKeys.length - startIdx > maxEntries) {
       if (onDrop) onDrop(`segmentation entry count exceeded (${maxEntries})`);
