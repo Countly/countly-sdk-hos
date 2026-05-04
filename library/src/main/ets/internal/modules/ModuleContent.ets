@@ -33,7 +33,7 @@ const WAIT_TICKS_AFTER_CLOSE: number = 2;
  */
 const CONTENT_START_DELAY_MS: number = 4000;
 
-/** Retry tuning for refreshContentZone. Mirrors Android. */
+/** Retry tuning for refreshContentZone. */
 const REFRESH_RETRY_MAX: number = 3;
 const REFRESH_RETRY_DELAY_MS: number = 1000;
 
@@ -323,7 +323,7 @@ export class ModuleContent extends ModuleBase {
       if (typeof keyRaw !== 'string' || keyRaw.length === 0) continue;
       // Segmentation may arrive under either "sg" (short form used by some
       // content templates) or "segmentation" (long form). "sg" wins if both
-      // are present — matches Android's behaviour (ContentOverlayView.java:591).
+      // are present.
       let segRaw: Object | undefined = e['sg'];
       if (segRaw === undefined || segRaw === null) segRaw = e['segmentation'];
       const seg: SegmentationMap = {};

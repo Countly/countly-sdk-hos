@@ -24,6 +24,27 @@ export class ModuleLocation extends ModuleBase {
     this.sessionStartedProvider = cb;
   }
 
+  public override async onInit(): Promise<void> {
+    // If location consent is missing at init, ship a `location=` erasure to
+    // wipe any server-side state held over from a previous session. The
+    // integrator explicitly opting out via `cfg.location.disable()` follows
+    // the same path. When consent IS given and a session will fuse the
+    // location into begin_session, no init-time request is needed.
+    if (!this.core.consentModule.hasConsent(CountlyFeature.LOCATION)) {
+      const params: Record<string, string> = this.core.requestBuilder.baseParams();
+      params['location'] = '';
+      const body: string = Utils.buildQueryString(params);
+      await this.core.requestQueue.enqueue(body);
+      return;
+    }
+    if (this.config.locationDisabled) {
+      const params: Record<string, string> = this.core.requestBuilder.baseParams();
+      params['location'] = '';
+      const body: string = Utils.buildQueryString(params);
+      await this.core.requestQueue.enqueue(body);
+    }
+  }
+
   public async setLocation(country: string | null, city: string | null, gps: string | null, ip: string | null): Promise<void> {
     if (!this.core.consentModule.hasConsent(CountlyFeature.LOCATION)) {
       this.config.logger.v('[ModuleLocation] setLocation, no location consent — ignored');
@@ -46,7 +67,14 @@ export class ModuleLocation extends ModuleBase {
     this.config.initialLocationGps = gps;
     this.config.initialLocationIp = ip;
 
-    if (this.sessionStartedProvider()) {
+    // Emit a standalone request when begin_session has already shipped OR
+    // when sessions consent / sessionTracking is missing (so the SDK won't
+    // get a chance to fuse later). Otherwise cache for fusion into the
+    // next begin_session.
+    const sessionsConsent: boolean = this.core.consentModule.hasConsent(CountlyFeature.SESSIONS);
+    const sessionTrackingOn: boolean = this.config.serverConfig.sessionTrackingEnabled;
+    const willFuseLater: boolean = !this.sessionStartedProvider() && sessionsConsent && sessionTrackingOn;
+    if (!willFuseLater) {
       // Send immediately (without IP — IP only geolocates with begin_session).
       const params: Record<string, string> = this.core.requestBuilder.baseParams();
       if (country) params['country_code'] = country;

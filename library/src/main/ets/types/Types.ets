@@ -62,11 +62,11 @@ export type SegmentationMap = Record<string, SegmentationValue>;
 export type LogListener = (message: string, level: LogLevel) => void;
 
 /**
- * One thread's stack in Android's `Thread.getAllStackTraces()` format.
- * ArkTS isolates can't enumerate each other's stacks natively, so integrators
- * who care about Worker-thread crash context supply these via
- * `setThreadStackProvider()` — typically by maintaining a registry of
- * running Workers and calling their own recorded last-known stack on demand.
+ * One thread's stack as `{ name, stack[] }`. ArkTS isolates can't enumerate
+ * each other's stacks natively, so integrators who care about Worker-thread
+ * crash context supply these via `setThreadStackProvider()` — typically by
+ * maintaining a registry of running Workers and calling their own recorded
+ * last-known stack on demand.
  */
 export interface ThreadStackEntry {
   /** Display name used in the serialised `Thread <name>` header. */
@@ -162,7 +162,7 @@ export class ContentData {
 }
 
 /**
- * Overlay display mode. Matches Android's WebViewDisplayOption 1-to-1.
+ * Overlay display mode.
  *
  * - IMMERSIVE: Full screen, ignores safe-area insets. Content covers notch,
  *   status bar, and navigation bar areas. Default.
@@ -269,8 +269,7 @@ export type GlobalCrashFilterCallback = (crash: CrashData) => boolean;
  */
 export enum ConsentChangeSource {
   DeveloperSet = 'DeveloperSet',
-  DeviceIDChangedNotMerged = 'DeviceIDChangedNotMerged',
-  ServerConfig = 'ServerConfig'
+  DeviceIDChangedNotMerged = 'DeviceIDChangedNotMerged'
 }
 
 /**

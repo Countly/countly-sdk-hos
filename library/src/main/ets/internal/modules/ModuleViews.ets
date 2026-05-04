@@ -48,8 +48,7 @@ export class ModuleViews extends ModuleBase {
   private globalSegmentation: SegmentationMap = {};
   // Last orientation emitted so we can dedupe redundant [CLY]_orientation
   // events. Empty string means "nothing sent yet" so the first call always
-  // gets through (matches Android, where currentOrientation defaults to
-  // Configuration.ORIENTATION_UNDEFINED/0 and any real value differs).
+  // gets through.
   private lastOrientationMode: string = '';
 
   constructor(config: InternalConfig, core: SdkCore, events: ModuleEvents) {
@@ -130,8 +129,8 @@ export class ModuleViews extends ModuleBase {
     if (this.currentAutoStoppedId === id) this.currentAutoStoppedId = '';
 
     // Force the stop event's `id` field to the view id, so start/stop pairs
-    // share the same id on the wire — Android-parity, the dashboard relies on
-    // it to attribute the duration to the right view.
+    // share the same id on the wire — the dashboard relies on it to
+    // attribute the duration to the right view.
     await this.events.recordViewEvent(id, finalSeg, durSec);
   }
 
@@ -202,8 +201,14 @@ export class ModuleViews extends ModuleBase {
    * consecutive identical values so rapid redundant calls (e.g. a
    * config-update fired with no actual orientation change) don't inflate
    * the event queue.
+   *
+   * `forceSend=true` bypasses the dedupe — used at session boundaries so
+   * every begin_session emits a fresh orientation baseline. Dashboards
+   * always see the orientation that was current when the session started,
+   * even if the device hasn't rotated since the last session. The
+   * default-false matches the config-update path which should keep deduping.
    */
-  public async updateOrientation(mode: string): Promise<void> {
+  public async updateOrientation(mode: string, forceSend: boolean = false): Promise<void> {
     if (!this.config.trackOrientationChanges) {
       this.config.logger.v('[ModuleViews] updateOrientation, trackOrientationChanges disabled — ignored');
       return;
@@ -217,7 +222,7 @@ export class ModuleViews extends ModuleBase {
       this.config.logger.w(`[ModuleViews] updateOrientation, unsupported mode '${mode}' — expected 'portrait' or 'landscape'`);
       return;
     }
-    if (normalized === this.lastOrientationMode) {
+    if (!forceSend && normalized === this.lastOrientationMode) {
       this.config.logger.d(`[ModuleViews] updateOrientation, unchanged (${normalized}) — skipped`);
       return;
     }
@@ -329,9 +334,9 @@ export class ModuleViews extends ModuleBase {
       willStartAgain: false
     });
 
-    // Force the start event's `id` field to the freshly minted view id so the
-    // wire format mirrors Android: subsequent stop events and the next view's
-    // pvid resolve against this same id.
+    // Force the start event's `id` field to the freshly minted view id so
+    // subsequent stop events and the next view's pvid resolve against this
+    // same id.
     await this.events.recordViewEvent(id, finalSeg, 0);
     return id;
   }

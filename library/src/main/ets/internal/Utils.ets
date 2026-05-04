@@ -70,6 +70,32 @@ export class Utils {
     return url.startsWith('http://') || url.startsWith('https://');
   }
 
+  /**
+   * Detailed server-URL validation. Returns a short reason code so callers
+   * (CountlyConfig constructor, CountlyInstance.setServerURL) can map it to
+   * their own throw / log-and-ignore behaviour.
+   *
+   * Codes:
+   *   ''          — valid
+   *   'empty'     — null / undefined / whitespace-only
+   *   'scheme'    — missing http:// or https://
+   *   'authority' — contains userinfo (`@` before the path), e.g.
+   *                 "https://legit.server.com@evil.com" — RFC 3986 parses
+   *                 the authority as `evil.com` so a misconfiguration here
+   *                 silently redirects all telemetry.
+   */
+  public static validateServerUrl(url: string | null | undefined): string {
+    if (url === null || url === undefined || url.trim().length === 0) return 'empty';
+    if (!url.startsWith('http://') && !url.startsWith('https://')) return 'scheme';
+    const schemeEnd: number = url.indexOf('://');
+    const authorityEnd: number = url.indexOf('/', schemeEnd + 3);
+    const authority: string = authorityEnd === -1
+      ? url.substring(schemeEnd + 3)
+      : url.substring(schemeEnd + 3, authorityEnd);
+    if (authority.indexOf('@') !== -1) return 'authority';
+    return '';
+  }
+
   public static truncate(value: string, max: number): string {
     if (!value) return value;
     if (value.length <= max) return value;
@@ -127,10 +153,8 @@ export class Utils {
     const out: SegmentationMap = {};
     if (!input) return out;
     // First pass: filter/normalize every entry without applying the entry
-    // cap. Android's `applySdkInternalLimits` operates on a LinkedHashMap and
-    // trims the oldest entries when over capacity, so the surviving entries
-    // are the most recently inserted N. Match that: iterate, skip invalid
-    // entries, then truncate from the head.
+    // cap. The cap trims oldest entries when over capacity, so the
+    // surviving entries are the most recently inserted N.
     const filteredKeys: string[] = [];
     const filteredValues: SegmentationValue[] = [];
     const keys: string[] = Object.keys(input);
@@ -152,9 +176,9 @@ export class Utils {
       filteredKeys.push(truncatedKey);
       filteredValues.push(truncatedValue);
     }
-    // Drop oldest until we're at the cap (matching Android's iterator-removal
-    // pattern). After-cap-collision keys (truncated to the same prefix) still
-    // collapse via the assignment loop below.
+    // Drop oldest until we're at the cap. After-cap-collision keys
+    // (truncated to the same prefix) still collapse via the assignment
+    // loop below.
     let startIdx: number = 0;
     while (filteredKeys.length - startIdx > maxEntries) {
       if (onDrop) onDrop(`segmentation entry count exceeded (${maxEntries})`);

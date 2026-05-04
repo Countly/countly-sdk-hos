@@ -47,7 +47,8 @@ export struct CountlyContentOverlay {
   @StorageProp('cly_content_overlay_immersive') immersive: number = 1;
 
   private webController: webview.WebviewController = new webview.WebviewController();
-  private loadTimer: number = 0;
+  // null = no timer scheduled (HMOS setTimeout may legitimately return 0).
+  private loadTimer: number | null = null;
   @State hasTimedOut: boolean = false;
   /**
    * True once `onPageEnd` fires for the current URL. Controls the Web's
@@ -61,7 +62,7 @@ export struct CountlyContentOverlay {
   /** Retained for clean `display.off` (same function ref required). */
   private displayChangeListener: ((id: number) => void) | null = null;
   /** Debounce handle for SDK→content resize postMessage notifications. */
-  private resizeDebounceTimer: number = 0;
+  private resizeDebounceTimer: number | null = null;
 
   onUrlChanged(): void {
     this.pageLoaded = false;
@@ -81,9 +82,9 @@ export struct CountlyContentOverlay {
 
   aboutToDisappear(): void {
     this.cancelLoadTimer();
-    if (this.resizeDebounceTimer !== 0) {
+    if (this.resizeDebounceTimer !== null) {
       clearTimeout(this.resizeDebounceTimer);
-      this.resizeDebounceTimer = 0;
+      this.resizeDebounceTimer = null;
     }
     try {
       if (this.displayChangeListener !== null) {
@@ -138,11 +139,11 @@ export struct CountlyContentOverlay {
    * to avoid flooding on rapid orientation changes.
    */
   private scheduleResizeNotify(): void {
-    if (this.resizeDebounceTimer !== 0) {
+    if (this.resizeDebounceTimer !== null) {
       clearTimeout(this.resizeDebounceTimer);
     }
     this.resizeDebounceTimer = setTimeout((): void => {
-      this.resizeDebounceTimer = 0;
+      this.resizeDebounceTimer = null;
       if (!this.contentActive || this.contentUrl.length === 0) return;
       try {
         const d: display.Display = display.getDefaultDisplaySync();
@@ -159,9 +160,9 @@ export struct CountlyContentOverlay {
   }
 
   /**
-   * Page-load watchdog. Mirrors Android's 60s timeout. onPageEnd cancels
-   * it — that event fires on the DOM `window.load` event, which itself
-   * fires only after all sub-resources have loaded or failed.
+   * Page-load watchdog (60s timeout). onPageEnd cancels it — that event
+   * fires on the DOM `window.load` event, which itself fires only after
+   * all sub-resources have loaded or failed.
    */
   private startLoadTimer(): void {
     this.cancelLoadTimer();
@@ -177,9 +178,9 @@ export struct CountlyContentOverlay {
   }
 
   private cancelLoadTimer(): void {
-    if (this.loadTimer !== 0) {
+    if (this.loadTimer !== null) {
       clearTimeout(this.loadTimer);
-      this.loadTimer = 0;
+      this.loadTimer = null;
     }
   }
 

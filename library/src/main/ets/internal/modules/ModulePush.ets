@@ -273,7 +273,6 @@ export class ModulePush extends ModuleBase {
   }
 
   /** Strip query/fragment from a URL before logging so we don't leak tokens. */
-  // Replace nested ternary + confusing `cut` naming with a single earliest-delim scan.
   private redactUrl(url: string): string {
     let cut: number = url.length;
     const q: number = url.indexOf('?');

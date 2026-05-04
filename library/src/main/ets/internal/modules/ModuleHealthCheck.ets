@@ -1,7 +1,6 @@
 import { ModuleBase } from '../ModuleBase';
 import { SdkCore } from '../SdkCore';
 import { InternalConfig } from '../InternalConfig';
-import { DeviceInfo } from '../DeviceInfo';
 import { Utils } from '../Utils';
 import { HealthListener } from '../RequestQueue';
 
@@ -141,10 +140,13 @@ export class ModuleHealthCheck extends ModuleBase {
     this.logConsecutiveBackoffEnd();
 
     const base: Record<string, string> = this.core.requestBuilder.baseParams();
-    // Metrics contains only app version per dev guide.
+    // Metrics contains only app version per dev guide. The override (if any)
+    // is the same value `DeviceInfo.collect` would return for `_app_version`
+    // since collect's only contribution to that field is `out['_app_version']
+    // = appVersion`, so resolve it directly without the full metrics gather.
     const appVersion: string = this.config.metricOverride['_app_version'] !== undefined
       ? this.config.metricOverride['_app_version']
-      : DeviceInfo.collect(this.config.appVersion, this.config.metricOverride)['_app_version'];
+      : this.config.appVersion;
     // ArkTS strict mode: object-literal → typed Record so JSON.stringify gets
     // a nominally-typed value rather than a free-form literal.
     const metricsObj: Record<string, string> = { '_app_version': appVersion };

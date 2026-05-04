@@ -1,10 +1,12 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
 import { Utils } from '../../../main/ets/internal/Utils';
 import { RecordedCall } from './doubles/FakeNetwork';
 
 export default function requestBuilderTest() {
   describe('RequestBuilderTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('baseParams_includesRequiredFields', 0, async () => {
       const h: Harness = await buildHarness();
       const params: Record<string, string> = h.instance.requestBuilder.baseParams();

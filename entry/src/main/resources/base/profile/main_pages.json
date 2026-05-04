@@ -13,6 +13,8 @@
     "pages/RemoteConfigPage",
     "pages/ConfigurationPage",
     "pages/MultiInstancePage",
-    "pages/ShutdownPage"
+    "pages/ShutdownPage",
+    "pages/SecondaryPage",
+    "pages/TertiaryPage"
   ]
 }

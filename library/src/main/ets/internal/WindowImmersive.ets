@@ -54,6 +54,11 @@ export class WindowImmersive {
     try {
       const uiCtx: common.UIAbilityContext = ctx as common.UIAbilityContext;
       window.getLastWindow(uiCtx).then((win: window.Window): void => {
+        // HOS: setWindowLayoutFullScreen is a no-op on PC/2-in-1 devices in free multi-window mode
+        // since 5.0.2(14). Phone/tablet behavior is unchanged. To support immersive overlays on
+        // PC/2-in-1, also call win.maximize(window.MaximizePresentation.ENTER_IMMERSIVE) — but that
+        // resizes the user's window, which is too invasive for a momentary overlay. Revisit if the
+        // content/feedback overlay modules (currently disabled) ship to PC form factors.
         win.setWindowLayoutFullScreen(fullscreen).catch((err: Object): void => {
           logger.w(`[WindowImmersive] setWindowLayoutFullScreen(${fullscreen}) failed: ${err}`);
         });

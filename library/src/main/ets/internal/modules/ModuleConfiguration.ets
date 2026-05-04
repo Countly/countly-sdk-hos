@@ -69,16 +69,17 @@ const HOUR_IN_MS: number = 60 * 60 * 1000;
  * against the post-applied values). The fetch happens in `onInit`, after
  * the device-id resolves — temporary mode skips fetch entirely per dev guide.
  *
- * Differences from Android (kept tight on purpose):
- *   - HOS: storage key is `cly_sbs` (matches the comment in `Storage.ets`).
- *   - HOS: applies values directly to `InternalConfig` + `Limits` instead of
+ * Implementation notes:
+ *   - Storage key is `cly_sbs` (matches the comment in `Storage.ets`).
+ *   - Values apply directly to `InternalConfig` + `Limits` instead of
  *     mutating the user-facing `CountlyConfig` (which is consumed once at
  *     construction). End shape on the wire is the same.
  */
 export class ModuleConfiguration extends ModuleBase {
   private core: SdkCore;
-  private fetchTimer: number = 0;
-  private lastFetchTimestamp: number = 0;
+  // null = no timer scheduled (see ModuleConsent.pendingCoalesceTimer for the
+  // sentinel-collision rationale: HMOS's setInterval may legitimately return 0).
+  private fetchTimer: number | null = null;
   private latestRetrievedFull: Record<string, Object> | null = null;
   private latestRetrievedInner: Record<string, Object> | null = null;
 
@@ -148,21 +149,12 @@ export class ModuleConfiguration extends ModuleBase {
     this.stopFetchTimer();
   }
 
-  public override async onDeviceIdChangedNotMerged(oldId: string, newId: string): Promise<void> {
-    // After a device-id swap (user switch), refresh once — settings can be
-    // user-segment-targeted on the server. Skip if temp / disabled.
-    if (this.config.sdkBehaviorSettingsRequestsDisabled) return;
-    if (this.core.deviceIdModule.isTemporary()) return;
-    await this.fetchFromServer();
-  }
-
   // -- Fetch + persistence --
 
   private async fetchFromServer(): Promise<void> {
     const base: Record<string, string> = this.core.requestBuilder.baseParams();
     base['method'] = 'sc';
     const qs: string = Utils.buildQueryString(base);
-    this.lastFetchTimestamp = Date.now();
     this.config.logger.d('[ModuleConfiguration] fetchFromServer, sending /o/sdk?method=sc');
 
     try {
@@ -196,9 +188,9 @@ export class ModuleConfiguration extends ModuleBase {
   }
 
   private stopFetchTimer(): void {
-    if (this.fetchTimer !== 0) {
+    if (this.fetchTimer !== null) {
       clearInterval(this.fetchTimer);
-      this.fetchTimer = 0;
+      this.fetchTimer = null;
     }
   }
 
@@ -239,8 +231,7 @@ export class ModuleConfiguration extends ModuleBase {
     this.latestRetrievedFull[K_VERSION] = full[K_VERSION];
 
     // Filter-key opposition: a non-empty whitelist for a category clears any
-    // previously-stored blacklist for that category, and vice-versa. Mirrors
-    // Android's `removeListingFilterKeysFromConfig`.
+    // previously-stored blacklist for that category, and vice-versa.
     this.purgeOppositeFilterKeys(cleaned);
     const innerKeys: string[] = Object.keys(cleaned);
     for (let i = 0; i < innerKeys.length; i++) {
@@ -272,7 +263,7 @@ export class ModuleConfiguration extends ModuleBase {
   /**
    * Filter inner-config keys to those the SDK knows about AND whose value
    * type matches the expected schema. Returns a new object — does not mutate
-   * the input. Mirrors Android's `removeUnsupportedKeys` switch.
+   * the input.
    */
   private removeUnsupportedKeys(inner: Record<string, Object>): Record<string, Object> {
     const out: Record<string, Object> = {};
@@ -289,6 +280,12 @@ export class ModuleConfiguration extends ModuleBase {
     return out;
   }
 
+  private isIntegerAtLeast(value: Object, lowerBound: number): boolean {
+    if (typeof value !== 'number') return false;
+    const n: number = value as number;
+    return Number.isFinite(n) && n >= lowerBound && Math.floor(n) === n;
+  }
+
   private isValidKeyValue(key: string, value: Object): boolean {
     // Booleans
     if (key === K_TRACKING || key === K_NETWORKING || key === K_SESSION_TRACKING ||
@@ -297,21 +294,21 @@ export class ModuleConfiguration extends ModuleBase {
         key === K_BACKOFF_MECHANISM || key === K_LOGGING || key === K_CONSENT_REQUIRED) {
       return typeof value === 'boolean';
     }
-    // Positive integers
+    // Positive integers (>= 1)
     if (key === K_REQUEST_QUEUE_SIZE || key === K_EVENT_QUEUE_SIZE || key === K_SESSION_UPDATE_INTERVAL ||
         key === K_LIMIT_KEY_LENGTH || key === K_LIMIT_VALUE_SIZE || key === K_LIMIT_SEG_VALUES ||
         key === K_LIMIT_BREADCRUMB || key === K_LIMIT_TRACE_LINE || key === K_LIMIT_TRACE_LENGTH ||
         key === K_SERVER_CONFIG_UPDATE_INTERVAL || key === K_BOM_ACCEPTED_TIMEOUT ||
         key === K_BOM_REQUEST_AGE || key === K_BOM_DURATION || key === K_USER_PROPERTY_CACHE_LIMIT) {
-      return typeof value === 'number' && Number.isFinite(value as number) && (value as number) > 0 && Math.floor(value as number) === (value as number);
+      return this.isIntegerAtLeast(value, 1);
     }
-    // Non-negative integer
+    // Non-negative integer (>= 0)
     if (key === K_DROP_OLD_REQUEST_TIME) {
-      return typeof value === 'number' && Number.isFinite(value as number) && (value as number) >= 0 && Math.floor(value as number) === (value as number);
+      return this.isIntegerAtLeast(value, 0);
     }
     // Min-16 integer
     if (key === K_CONTENT_ZONE_INTERVAL) {
-      return typeof value === 'number' && Number.isFinite(value as number) && (value as number) >= 16 && Math.floor(value as number) === (value as number);
+      return this.isIntegerAtLeast(value, 16);
     }
     // Open (0,1) double
     if (key === K_BOM_RQ_PERCENTAGE) {
@@ -443,8 +440,7 @@ export class ModuleConfiguration extends ModuleBase {
     // Propagate to live mutables ONLY for keys that arrived in this apply.
     // Skipping the propagation for absent keys preserves integrator-supplied
     // defaults (e.g. `requestDropAgeHours=168` from `NetworkConfig`) when the
-    // server response doesn't override them. Mirrors Android's `extractValue`
-    // contract: "no value present → keep existing".
+    // server response doesn't override them — "no value present → keep existing".
     if (inner[K_LIMIT_KEY_LENGTH] !== undefined) this.config.limits.maxKeyLength = sc.limitKeyLength;
     if (inner[K_LIMIT_VALUE_SIZE] !== undefined) this.config.limits.maxValueSize = sc.limitValueSize;
     if (inner[K_LIMIT_SEG_VALUES] !== undefined) this.config.limits.maxSegmentationValues = sc.limitSegmentationValues;
@@ -457,11 +453,10 @@ export class ModuleConfiguration extends ModuleBase {
     if (inner[K_SESSION_UPDATE_INTERVAL] !== undefined) this.config.sessionUpdateIntervalSec = sc.sessionUpdateInterval;
     if (inner[K_DROP_OLD_REQUEST_TIME] !== undefined) this.config.requestDropAgeHours = sc.dropOldRequestTime;
     if (inner[K_BACKOFF_MECHANISM] !== undefined) this.config.backoffEnabled = sc.bomEnabled;
-    // `consentRequired` from server is documented as a one-way override:
-    // server says "you MUST require consent" — flip the integrator-set field
-    // on, but never flip it OFF (an integrator who set requiresConsent=true
-    // for a regulatory reason should not have it silently removed).
-    // HOS: deliberately diverges from Android's bidirectional flip.
+    // `consentRequired` from server is a one-way override: server says
+    // "you MUST require consent" — flip the integrator-set field on, but
+    // never flip it OFF (an integrator who set requiresConsent=true for
+    // a regulatory reason should not have it silently removed).
     if (inner[K_CONSENT_REQUIRED] !== undefined && sc.consentRequired) {
       this.config.requiresConsent = true;
     }

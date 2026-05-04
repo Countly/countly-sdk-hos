@@ -1,5 +1,5 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
 import { RCData, RequestResult } from '../../../main/ets/types/Types';
 import { CountlyConfig } from '../../../main/ets/CountlyConfig';
 import { CountlyInstance } from '../../../main/ets/CountlyInstance';
@@ -23,6 +23,8 @@ const RC_BODY: string = JSON.stringify({ flag_a: true, count_n: 42, label_s: 'he
 
 export default function remoteConfigTest() {
   describe('RemoteConfigTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('downloadAllKeys_noConsent_callbackReportsError', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true);

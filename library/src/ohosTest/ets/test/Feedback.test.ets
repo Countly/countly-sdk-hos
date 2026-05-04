@@ -1,5 +1,5 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
 import { OverlayKeys } from '../../../main/ets/internal/OverlayStore';
 import {
   CountlyFeedbackWidget,
@@ -30,6 +30,8 @@ function resetStore(): void {
 
 export default function feedbackTest() {
   describe('FeedbackTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('getAvailableFeedbackWidgets_noConsent_returnsError', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => {

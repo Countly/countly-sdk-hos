@@ -7,6 +7,13 @@ import { ModuleDeviceId } from './ModuleDeviceId';
 import { DeviceInfo } from '../DeviceInfo';
 import { Utils } from '../Utils';
 
+const DIRECT_REQUEST_RESERVED_KEYS: string[] = [
+  'app_key', 'hour', 'dow', 'tz',
+  'sdk_version', 'sdk_name',
+  'device_id', 'old_device_id',
+  'checksum', 'checksum256'
+];
+
 /**
  * Owns the integration-wide queue operations: offline mode, queue flushing,
  * app-key rewrites, direct request injection, and the standalone metrics
@@ -14,10 +21,9 @@ import { Utils } from '../Utils';
  * still owned by CountlyInstance via SdkCore — this module is the policy
  * layer that decides when/how to mutate it.
  *
- * Mirrors Android's `ModuleRequestQueue.java` (Countly Android SDK) so the
- * cross-SDK shape stays consistent. Per Android-parity rule the methods that
- * exist there live here; HOS-specific helpers (`enableOfflineMode`,
- * `disableOfflineMode`) join them since they are also queue-policy decisions.
+ * Surface includes integration-wide queue policy methods (offline mode,
+ * flush, app-key rewrite, direct request) plus the standalone metrics
+ * request.
  */
 export class ModuleRequestQueue extends ModuleBase {
   private core: SdkCore;
@@ -92,8 +98,9 @@ export class ModuleRequestQueue extends ModuleBase {
    * Add a raw request directly to the queue. Honors consent: if consent is
    * required and no feature has consent, the request is dropped. Keys/values
    * are URL-encoded by the SDK — do not pre-encode. Attempts to override
-   * SDK-owned base params (device_id, app_key, timestamp, etc.) are logged
-   * and ignored.
+   * any reserved key (see DIRECT_REQUEST_RESERVED_KEYS) are logged and ignored.
+   * The wire request carries `&dr=1` so server-side analytics can distinguish
+   * direct requests from SDK-emitted ones.
    */
   public async addDirectRequest(requestParameters: Record<string, string>): Promise<void> {
     if (this.config.requiresConsent && !this.consentModule.hasAnyConsent()) {
@@ -104,12 +111,17 @@ export class ModuleRequestQueue extends ModuleBase {
     const keys: string[] = Object.keys(requestParameters);
     for (let i = 0; i < keys.length; i++) {
       const k: string = keys[i];
-      if (params[k] !== undefined) {
-        this.config.logger.w(`[ModuleRequestQueue] addDirectRequest, cannot override SDK-owned base param '${k}' — skipped`);
+      // Explicit denylist: base params (app_key, device_id, hour/dow/tz,
+      // sdk_*) plus security-sensitive merge/integrity fields (old_device_id,
+      // checksum, checksum256). `timestamp` is intentionally NOT reserved —
+      // developers can override it for backfill scenarios.
+      if (DIRECT_REQUEST_RESERVED_KEYS.indexOf(k) !== -1) {
+        this.config.logger.w(`[ModuleRequestQueue] addDirectRequest, cannot override reserved key '${k}' — skipped`);
         continue;
       }
       params[k] = requestParameters[k];
     }
+    params['dr'] = '1';
     const body: string = Utils.buildQueryString(params);
     await this.core.requestQueue.enqueue(body);
   }

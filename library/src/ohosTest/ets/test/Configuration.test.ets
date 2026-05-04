@@ -1,5 +1,5 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness, TestableCountlyConfig } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, TestableCountlyConfig, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
 import { FilterList } from '../../../main/ets/internal/ServerConfig';
 import { CountlyInstance } from '../../../main/ets/CountlyInstance';
 import { CountlyConfig } from '../../../main/ets/CountlyConfig';
@@ -98,6 +98,8 @@ function countModifierPropsOnWire(data: string): number {
  */
 export default function configurationTest() {
   describe('ConfigurationTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
 
     it('init_noBootstrap_defaultsArePermissive', 0, async () => {
       // No dev-supplied SBS, no stored SBS — the SDK should run with all
@@ -998,9 +1000,9 @@ export default function configurationTest() {
       const a: CountlyInstance = new CountlyInstance(cfgA, storage, network1);
       await a.init();
       await flushTick(120);
-      // Drive a SECOND server fetch that delivers a whitelist — onDeviceIdChangedNotMerged
-      // would normally trigger this, but driving it explicitly via halt+re-init
-      // keeps the test focused on the apply-merge logic.
+      // Drive a SECOND server fetch that delivers a whitelist via halt+re-init
+      // (Android-parity: SBS is fetched once at init time, not on device-id
+      // change). This keeps the test focused on the apply-merge logic.
       await a.halt();
 
       const network2: FakeNetwork = new FakeNetwork(logger);

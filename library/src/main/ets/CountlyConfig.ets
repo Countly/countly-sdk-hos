@@ -1,4 +1,5 @@
 import common from '@ohos.app.ability.common';
+import { Utils } from './internal/Utils';
 import {
   LogLevel,
   LogListener,
@@ -23,7 +24,7 @@ export class LoggingConfig {
   public minLevel: LogLevel = LogLevel.DEBUG;
 
   public enableLogging(): LoggingConfig { this.enabled = true; return this; }
-  public setListener(listener: LogListener): LoggingConfig { this.listener = listener; return this; }
+  public setListener(listener: LogListener | null): LoggingConfig { this.listener = listener; return this; }
   public setMinLevel(level: LogLevel): LoggingConfig { this.minLevel = level; return this; }
 }
 
@@ -539,27 +540,20 @@ export class CountlyConfig {
     // Validate here so misconfiguration surfaces at config-construction time,
     // not hidden inside the async init. Console.error too — the logger isn't
     // attached to this CountlyConfig until init copies it over.
-    if (!serverUrl || serverUrl.trim().length === 0) {
-      console.error('[Countly] CountlyConfig constructor, serverUrl must be non-empty');
-      throw new Error('[Countly] CountlyConfig, serverUrl is required');
-    }
     if (!appKey || appKey.trim().length === 0) {
       console.error('[Countly] CountlyConfig constructor, appKey must be non-empty');
       throw new Error('[Countly] CountlyConfig, appKey is required');
     }
-    if (!serverUrl.startsWith('http://') && !serverUrl.startsWith('https://')) {
+    const urlReason: string = Utils.validateServerUrl(serverUrl);
+    if (urlReason === 'empty') {
+      console.error('[Countly] CountlyConfig constructor, serverUrl must be non-empty');
+      throw new Error('[Countly] CountlyConfig, serverUrl is required');
+    }
+    if (urlReason === 'scheme') {
       console.error('[Countly] CountlyConfig constructor, serverUrl must start with http:// or https://');
       throw new Error('[Countly] CountlyConfig, invalid serverUrl scheme');
     }
-    // Reject userinfo in the URL — e.g. "https://legit.server.com@evil.com"
-    // parses as authority=evil.com under RFC 3986. Without this check a
-    // supply-chain or config injection can silently redirect all telemetry.
-    const schemeEnd: number = serverUrl.indexOf('://');
-    const authorityEnd: number = serverUrl.indexOf('/', schemeEnd + 3);
-    const authority: string = authorityEnd === -1
-      ? serverUrl.substring(schemeEnd + 3)
-      : serverUrl.substring(schemeEnd + 3, authorityEnd);
-    if (authority.indexOf('@') !== -1) {
+    if (urlReason === 'authority') {
       console.error('[Countly] CountlyConfig constructor, serverUrl must not contain "@" in the authority');
       throw new Error('[Countly] CountlyConfig, serverUrl authority must not contain userinfo');
     }

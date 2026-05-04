@@ -16,6 +16,7 @@ export class ModuleDeviceId extends ModuleBase {
   private currentId: string = '';
   private currentType: DeviceIdType = DeviceIdType.SDK_GENERATED;
   private onChange: ((oldId: string, newId: string, merged: boolean) => Promise<void>) | null = null;
+  private onBeforeNonMergedSwap: ((oldId: string, newId: string) => Promise<void>) | null = null;
 
   constructor(config: InternalConfig, core: SdkCore) {
     super(config);
@@ -25,6 +26,16 @@ export class ModuleDeviceId extends ModuleBase {
 
   public setChangeListener(cb: (oldId: string, newId: string, merged: boolean) => Promise<void>): void {
     this.onChange = cb;
+  }
+
+  /**
+   * Pre-swap hook for the changeWithoutMerge path. Fires UNDER THE OLD ID,
+   * after events/UP have flushed but before commit(). Used by CountlyInstance
+   * to emit end_session (non-manual + active session) and consent-reset
+   * requests under the old identity before the device-id swap.
+   */
+  public setBeforeNonMergedSwapHook(cb: (oldId: string, newId: string) => Promise<void>): void {
+    this.onBeforeNonMergedSwap = cb;
   }
 
   public async resolveInitial(): Promise<void> {
@@ -125,10 +136,18 @@ export class ModuleDeviceId extends ModuleBase {
 
     const oldId: string = this.currentId;
     const comingFromTemp: boolean = this.isTemporary();
-    // Flush pending user-profile changes BEFORE the id switch so they attach
-    // to the OLD device id (the user that accumulated them). After commit,
-    // baseParams() returns the new id and any save would mis-attribute.
+    // Wire order under the OLD id:
+    //   1. flush buffered events
+    //   2. save pending user-profile changes
+    //   3. (CountlyInstance hook) end_session + consent-reset
+    //   4. swap the id (commit)
+    // baseParams() returns the OLD id until commit() runs, so every request
+    // built in 1–3 carries the old device_id. Steps 1–2 are gated internally
+    // (events queue empty, UP not dirty) so they no-op when there's nothing
+    // to ship.
+    await this.core.flushEvents();
     await this.core.saveUserProfileIfPending();
+    if (this.onBeforeNonMergedSwap) await this.onBeforeNonMergedSwap(oldId, newId);
     await this.commit(newId, DeviceIdType.DEVELOPER_SUPPLIED);
 
     // Drain queued temp requests now we have a real ID.
