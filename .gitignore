@@ -4,6 +4,7 @@
 .preview/
 .test/
 build/
+dist/
 oh_modules/
 **/oh_modules/
 *.har

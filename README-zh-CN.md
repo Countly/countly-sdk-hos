@@ -37,15 +37,33 @@
 
 ## 安装
 
-在模块级 `oh-package.json5` 的 `dependencies:` 中添加:
+SDK 以预编译的 **`.har`** 形式随每个 [GitHub Release](https://github.com/Countly/countly-sdk-hos/releases) 发布。发布到 ohpm 的计划仍在推进中,目前尚未上架。
 
-```json
-{
-  "dependencies": {
-    "countly-sdk-hos": "^26.1.0"
-  }
-}
-```
+1. 从最新 Release 下载 `countly-sdk-hos-<version>.har`。可选:使用同 Release 中的 `.sha256` 校验文件完整性:
+
+   ```bash
+   shasum -a 256 -c countly-sdk-hos-<version>.har.sha256
+   ```
+
+2. 将 `.har` 放入应用模块中,例如 `entry/libs/countly-sdk-hos-<version>.har`。
+
+3. 在模块级 `oh-package.json5` 中通过 `file:` 引用:
+
+   ```json5
+   {
+     "dependencies": {
+       "countly-sdk-hos": "file:./libs/countly-sdk-hos-26.1.0.har"
+     }
+   }
+   ```
+
+4. 运行 `ohpm install`(或在 DevEco Studio 中同步)。按常规方式导入:
+
+   ```typescript
+   import { Countly, CountlyConfig } from 'countly-sdk-hos';
+   ```
+
+> 一旦 SDK 上架 ohpm,即可将 `file:` 引用替换为常规的 `"countly-sdk-hos": "^26.1.0"`。
 
 ### 支持的平台
 
