@@ -266,9 +266,18 @@ export class ModuleRemoteConfig extends ModuleBase {
   }
 
   public override async onDeviceIdChangedMerged(oldId: string, _newId: string): Promise<void> {
-    // With-merge keeps the previous user's identity — values stay valid.
-    // Still re-trigger an automatic download so the new session picks up
-    // anything the server routed under the new id.
+    // `_cly.moduleRemoteConfig.clearAndDownloadAfterIdChange()` — both the
+    // merge and non-merge paths clear the cache and re-download. Even though
+    // a merge preserves identity server-side, the new id may map to a
+    // different segment that returns different RC values.
+    if (this.config.remoteConfigValueCaching) {
+      const keys: string[] = Object.keys(this.cache);
+      for (let i = 0; i < keys.length; i++) this.cache[keys[i]] = { v: this.cache[keys[i]].v, c: 0 };
+      await this.persistCache();
+    } else {
+      this.cache = {};
+      if (this.config.storage) await this.config.storage.remove(STORAGE_KEY);
+    }
     if (this.config.remoteConfigAutomaticTriggers
         && this.core.consentModule.hasConsent(CountlyFeature.REMOTE_CONFIG)
         && !this.core.deviceIdModule.isTemporary()) {

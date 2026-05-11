@@ -1,5 +1,5 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses, assertWireOrder } from './TestHelpers';
 import { CrashData, SegmentationMap, ThreadStackEntry } from '../../../main/ets/types/Types';
 
 class TestThreadStack implements ThreadStackEntry {
@@ -27,6 +27,8 @@ class NestedBag {
 
 export default function crashesTest() {
   describe('CrashesTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('recordHandled_addsCrashParam', 0, async () => {
       const h: Harness = await buildHarness();
       await h.instance.crashes.recordHandledException(new Error('boom'), null);
@@ -643,6 +645,17 @@ export default function crashesTest() {
       expect(cd.crashSegmentation['key']).assertEqual('value');
       expect(cd.crashMetrics['key']).assertEqual('value');
       expect(cd.fatal).assertTrue();
+    });
+
+    it('crashWireOrder_consentBeforeBeginSessionBeforeCrash', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'crashes']);
+      });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      await h.instance.crashes.recordHandledException(new Error('boom'), null);
+      await flushTick(60);
+      assertWireOrder(h.network.calls, ['consent=', 'begin_session=1', 'crash=']);
     });
   });
 }

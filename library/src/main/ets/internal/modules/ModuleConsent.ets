@@ -23,7 +23,14 @@ export class ModuleConsent extends ModuleBase {
   private requiresConsent: boolean = false;
   private consent: Record<string, boolean> = {};
   private featureGroups: Record<string, string[]> = {};
-  private pendingCoalesceTimer: number = 0;
+  // `null` = no timer scheduled. We can't use 0 as a sentinel because HMOS's
+  // setTimeout may legitimately return 0 as the first timer id of the process,
+  // causing a collision with "no timer scheduled" — manifests as the
+  // init-time `flushInitialConsentIfPending` no-op'ing and the consent
+  // snapshot deferring to the 1-second coalesce timer instead of shipping
+  // before begin_session. Browsers and Node return positive ids so the older
+  // `=== 0` sentinel was idiomatic but not portable.
+  private pendingCoalesceTimer: number | null = null;
 
   constructor(config: InternalConfig, core: SdkCore) {
     super(config);
@@ -37,8 +44,7 @@ export class ModuleConsent extends ModuleBase {
       // emit=false skips the will/did-change module dispatch — at construction
       // time other modules aren't wired into core yet, so dispatching their
       // hooks would NPE. We still schedule the coalesced server snapshot so
-      // the initial-consent state reaches the wire (matches Android's
-      // initTimeSetConsentRQ behavior).
+      // the initial-consent state reaches the wire.
       let initialMutationApplied: boolean = false;
       if (config.initialConsentAll) {
         this.giveConsentAllInternal(false).catch((err: Object) => {
@@ -171,8 +177,7 @@ export class ModuleConsent extends ModuleBase {
    * Three-phase consent change:
    *   1. compute the diff
    *   2. apply the diff synchronously so a sync `hasConsent` call right after
-   *      `giveConsent` returns sees the new value (Android parity — Java's
-   *      synchronous listeners can't observe a pre-mutation state either)
+   *      `giveConsent` returns sees the new value
    *   3. await notifyConsentWillChange so modules can flush in-flight work
    *   4. await notifyConsentDidChange; schedule the coalesced server snapshot
    *
@@ -229,11 +234,11 @@ export class ModuleConsent extends ModuleBase {
    * a cluster of toggles (from a consent dialog) produces one request.
    */
   private scheduleConsentRequest(): void {
-    if (this.pendingCoalesceTimer !== 0) {
+    if (this.pendingCoalesceTimer !== null) {
       clearTimeout(this.pendingCoalesceTimer);
     }
     this.pendingCoalesceTimer = setTimeout(() => {
-      this.pendingCoalesceTimer = 0;
+      this.pendingCoalesceTimer = null;
       this.sendSnapshot();
     }, 1000) as number;
   }
@@ -251,9 +256,27 @@ export class ModuleConsent extends ModuleBase {
    * shutdown (would produce "already halted" races in tests).
    */
   public cancelPendingTimers(): void {
-    if (this.pendingCoalesceTimer !== 0) {
+    if (this.pendingCoalesceTimer !== null) {
       clearTimeout(this.pendingCoalesceTimer);
-      this.pendingCoalesceTimer = 0;
+      this.pendingCoalesceTimer = null;
     }
+  }
+
+  /**
+   * Send any init-time consent snapshot synchronously, bypassing the 1-second
+   * coalesce timer scheduled by the constructor. Called from
+   * `CountlyInstance.init()` after `deviceIdModule.resolveInitial()` so the
+   * initial consent state lands on the wire ahead of any `begin_session` /
+   * other module request — the platform's `onApplicationForeground` arrives
+   * after `init()` resolves but well before the 1s timer would fire, so
+   * without this flush the queue ends up with `begin_session` ahead of the
+   * consent change. (The 1s timer remains correct for runtime consent dialog
+   * toggles where multiple changes coalesce to a single request.)
+   */
+  public async flushInitialConsentIfPending(): Promise<void> {
+    if (this.pendingCoalesceTimer === null) return;
+    clearTimeout(this.pendingCoalesceTimer);
+    this.pendingCoalesceTimer = null;
+    await this.sendSnapshot();
   }
 }

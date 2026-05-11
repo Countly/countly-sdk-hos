@@ -13,13 +13,12 @@ const PICTURE_MAX_LEN: number = 4096;
  * everything else is nested under "custom". Modifier ops ($inc, $push, ...)
  * accumulate per-key so multiple push() calls become one array.
  *
- * every public mutation method here auto-triggers a
- * "flush events queue → save user properties" sequence after the buffer
- * change — but ONLY when the events queue currently has buffered events.
- * Without events to flush there's nothing to ride along with, so the
- * auto-trigger no-ops. Explicit `save()` (and the `saveUserProfileIfPending`
- * path that ModuleEvents/Sessions/DeviceId use) is NOT gated — those
- * preserve Android's "save always ships user_details" contract.
+ * Mutation methods (setProperty / setProperties / modifiers / clear)
+ * auto-trigger an EVENTS-ONLY flush when the events queue is non-empty.
+ * They do NOT enqueue `user_details`;
+ * that ships only on explicit `save()` or a save-triggering callsite
+ * (recordEvent prelude, begin/update/end session, heartbeat tick,
+ * device-id change). With no events buffered the auto-trigger no-ops.
  *
  * Triggers serialize through `this.chain` so a burst of synchronous calls
  * (e.g. `setProperty('a','1'); setProperty('a','2'); ...`) coalesces into
@@ -138,24 +137,27 @@ export class ModuleUserProfile extends ModuleBase {
   }
 
   /**
-   * Mutation auto-trigger: append a chain task that flushes events and
-   * saves user properties, but ONLY when the events queue currently has
-   * events. With no events the task no-ops (no flush, no user_details
-   * enqueue) — the auto-save piggybacks on event activity.
+   * Mutation auto-trigger: when properties change while events are pending,
+   * flush the events queue so the wire ordering puts events before any
+   * later user_details. Does NOT enqueue a `user_details` request — that
+   * only ships on explicit `save()` or a save-triggering callsite
+   * (recordEvent prelude, begin/end session, heartbeat, device-id change).
+   * With no events the task no-ops.
    */
   private scheduleAutoSave(): Promise<void> {
-    const next: Promise<void> = this.chain.then((): Promise<void> => this.gatedFlushAndSave());
+    const next: Promise<void> = this.chain.then((): Promise<void> => this.gatedEventsFlushOnly());
     this.chain = next.catch((err: Object): void => {
-      this.config.logger.e(`[ModuleUserProfile] auto flush+save failed: ${err}`);
+      this.config.logger.e(`[ModuleUserProfile] auto events flush failed: ${err}`);
     });
     return next;
   }
 
   /**
-   * Explicit-save chain entry — bypasses the events-queue gate. Used by
-   * the public `save()` method so integrators (and `saveUserProfileIfPending`
-   * callers) can ship a user_details request without first recording an
-   * event.
+   * Explicit-save chain entry — flushes events first (so the wire orders
+   * events= before user_details=) and then ships the bundled user_details.
+   * Used by the public `save()` method so integrators (and
+   * `saveUserProfileIfPending` callers) can land a user_details request
+   * without first recording an event.
    */
   private scheduleUnconditionalSave(): Promise<void> {
     const next: Promise<void> = this.chain.then((): Promise<void> => this.flushEventsThenSave());
@@ -165,9 +167,9 @@ export class ModuleUserProfile extends ModuleBase {
     return next;
   }
 
-  private async gatedFlushAndSave(): Promise<void> {
+  private async gatedEventsFlushOnly(): Promise<void> {
     if (!this.core.hasPendingEvents()) return;
-    await this.flushEventsThenSave();
+    await this.core.flushEvents();
   }
 
   private async flushEventsThenSave(): Promise<void> {
@@ -275,10 +277,10 @@ export class ModuleUserProfile extends ModuleBase {
 
   /**
    * SDK Behavior Settings `upcl` enforcement: cap distinct custom keys at
-   * the server-configured `userPropertyCacheLimit`. Mirrors Android's
-   * `applyUserPropertyCacheLimit` — drop oldest insertion-order keys until
-   * size ≤ limit. ArkTS strict mode bans `delete record[key]`, so we
-   * rebuild a survivors-only Record and swap the field reference.
+   * the server-configured `userPropertyCacheLimit`. Drops oldest
+   * insertion-order keys until size ≤ limit. ArkTS strict mode bans
+   * `delete record[key]`, so we rebuild a survivors-only Record and swap
+   * the field reference.
    */
   private applyCustomCacheLimit(): void {
     const limit: number = this.config.serverConfig.userPropertyCacheLimit;
@@ -295,10 +297,9 @@ export class ModuleUserProfile extends ModuleBase {
 
   private applyCacheLimitToMods(): void {
     const limit: number = this.config.serverConfig.userPropertyCacheLimit;
-    // Aggregate distinct keys across all modifier ops — Android counts
-    // distinct keys in `customMods`, which is a flat key→opObject map. Our
-    // shape is `op → key → value`; a "distinct key" is the union of inner
-    // keys across ops. Drop the oldest (insertion order across the union).
+    // Aggregate distinct keys across all modifier ops. Our shape is
+    // `op → key → value`; a "distinct key" is the union of inner keys
+    // across ops. Drop the oldest (insertion order across the union).
     const seen: string[] = [];
     const owners: Record<string, string[]> = {};
     const opKeys: string[] = Object.keys(this.modifiers);

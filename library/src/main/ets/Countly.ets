@@ -82,11 +82,12 @@ export class Countly {
       await Countly.shared.halt();
       Countly.shared = null;
     }
-    const names: string[] = [];
-    Countly.namedInstances.forEach((_instance: CountlyInstance, key: string) => names.push(key));
-    for (let i = 0; i < names.length; i++) {
-      const instance: CountlyInstance | undefined = Countly.namedInstances.get(names[i]);
-      if (instance) await instance.halt();
+    // Snapshot values into an array so a halt() that mutates the map (none
+    // currently does, but be defensive) can't invalidate the iteration.
+    const instances: CountlyInstance[] = [];
+    Countly.namedInstances.forEach((instance: CountlyInstance) => instances.push(instance));
+    for (let i = 0; i < instances.length; i++) {
+      await instances[i].halt();
     }
     Countly.namedInstances.clear();
   }

@@ -1,6 +1,6 @@
-import { describe, it, expect } from '@ohos/hypium';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
 import common from '@ohos.app.ability.common';
-import { buildHarness, flushTick, Harness, TestableCountlyConfig } from './TestHelpers';
+import { buildHarness, flushTick, Harness, TestableCountlyConfig, assertAllRecordedCallsValid, clearTestHarnesses, assertWireOrder } from './TestHelpers';
 import { DeviceIdType } from '../../../main/ets/types/Types';
 import { TEMP_DEVICE_ID } from '../../../main/ets/internal/RequestQueue';
 import { CountlyInstance } from '../../../main/ets/CountlyInstance';
@@ -9,6 +9,8 @@ import { Logger } from '../../../main/ets/internal/Logger';
 
 export default function deviceIdTest() {
   describe('DeviceIdTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('firstInit_generatesUuid', 0, async () => {
       const h: Harness = await buildHarness();
       expect(h.instance.deviceId.getID().length > 0).assertTrue();
@@ -89,23 +91,31 @@ export default function deviceIdTest() {
       // key is a no-op (no events request produced).
       await h.instance.events.endEvent('checkout');
       await flushTick(60);
-      expect(h.network.findCallsWithParam('events').length).assertEqual(0);
+      // Match on `events=` (the URL-encoded query param) — NOT bare `events`,
+      // which would also match the init-time consent snapshot whose JSON body
+      // contains the feature name `"events":true` URL-encoded as %22events%22.
+      // The init-time consent flush legitimately ships before this assertion.
+      expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
     });
 
-    it('changeWithoutMerge_endsSessionSilently_resumesOnForeground', 0, async () => {
-      // Android-parity: changeWithoutMerge is a user-switch. The old session
-      // ends silently (no end_session=1 on the OLD id) and the new session
-      // only begins on the next foreground cycle. See
-      // ModuleSessions.onDeviceIdChangedNotMerged for the rationale; the
-      // sibling Sessions.test.ets#automatic_deviceIdChangeWithoutMerge_endsSilently_thenResumes
-      // pins the same contract from the sessions side.
+    it('changeWithoutMerge_emitsEndSessionUnderOldId_resumesOnForeground', 0, async () => {
+      // Mirror Android sdk/ModuleDeviceId.changeDeviceIdWithoutMergeInternal:140
+      // and scenario 20 step 4 of SDK_REQUEST_SCENARIOS.md: in non-manual mode
+      // a changeWithoutMerge during an active session emits a closing
+      // end_session=1 under the OLD device_id before the swap. The new
+      // session only begins on the next foreground cycle.
       const h: Harness = await buildHarness();
       h.instance.lifecycleForeground();
       await flushTick(60);
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
+      const oldId: string = h.instance.deviceId.getID();
       await h.instance.deviceId.changeWithoutMerge('nextUser');
       await flushTick(120);
-      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(0);
+      const endCalls = h.network.findCallsWithParam('end_session=1');
+      expect(endCalls.length).assertEqual(1);
+      // The closing end_session must carry the OLD device_id.
+      expect(endCalls[0].data.indexOf(`device_id=${oldId}`) !== -1).assertTrue();
+      // No automatic begin yet — fresh session waits for the next foreground.
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
 
       // Background → foreground cycles the session under the new id.
@@ -116,6 +126,21 @@ export default function deviceIdTest() {
       const beginCalls = h.network.findCallsWithParam('begin_session=1');
       expect(beginCalls.length).assertEqual(2);
       expect(beginCalls[1].data.indexOf('device_id=nextUser') !== -1).assertTrue();
+    });
+
+    it('changeWithoutMerge_manualMode_skipsEndSession', 0, async () => {
+      // Mirror Android sdk/ModuleDeviceId.changeDeviceIdWithoutMergeInternal:138
+      // and scenario 20 step 4 ("Skipped in manual session mode"): in manual
+      // session mode the SDK does NOT emit end_session on changeWithoutMerge.
+      // The integrator owns session lifecycle in manual mode.
+      const h: Harness = await buildHarness((cfg) => { cfg.sessions.enableManualControl(); });
+      await h.instance.sessions.beginSession();
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
+      await h.instance.deviceId.changeWithoutMerge('manualNextUser');
+      await flushTick(120);
+      // No closing end_session emitted in manual mode.
+      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(0);
     });
 
     // --- Ports of Android DeviceIdTests.java ---
@@ -488,6 +513,15 @@ export default function deviceIdTest() {
       const dump: Record<string, string> = h.storage.dump();
       expect(dump['cly_device_id']).assertEqual('merged');
       expect(dump['cly_device_id_type']).assertEqual(DeviceIdType.DEVELOPER_SUPPLIED);
+    });
+
+    it('changeWithMergeWireOrder_beginSessionBeforeOldDeviceId', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('original_id'); });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      await h.instance.deviceId.changeWithMerge('merged_id');
+      await flushTick(80);
+      assertWireOrder(h.network.calls, ['begin_session=1', 'old_device_id=']);
     });
   });
 }

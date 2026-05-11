@@ -29,7 +29,8 @@ export struct CountlyFeedbackOverlay {
   @StorageProp('cly_feedback_overlay_immersive') immersive: number = 1;
 
   private webController: webview.WebviewController = new webview.WebviewController();
-  private loadTimer: number = 0;
+  // null = no timer scheduled (HMOS setTimeout may legitimately return 0).
+  private loadTimer: number | null = null;
   @State hasTimedOut: boolean = false;
   @State pageLoaded: boolean = false;
 
@@ -72,9 +73,9 @@ export struct CountlyFeedbackOverlay {
   }
 
   private cancelLoadTimer(): void {
-    if (this.loadTimer !== 0) {
+    if (this.loadTimer !== null) {
       clearTimeout(this.loadTimer);
-      this.loadTimer = 0;
+      this.loadTimer = null;
     }
   }
 

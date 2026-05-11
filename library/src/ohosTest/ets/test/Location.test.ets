@@ -1,8 +1,10 @@
-import { describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness } from './TestHelpers';
+import { afterEach, describe, it, expect } from '@ohos/hypium';
+import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTestHarnesses, assertWireOrder } from './TestHelpers';
 
 export default function locationTest() {
   describe('LocationTest', () => {
+    afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
+
     it('initialLocation_attachedToBeginSession', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
         cfg.location.set('US', 'NY', '40.7,-74.0', null);
@@ -119,6 +121,23 @@ export default function locationTest() {
       expect(threw).assertFalse();
     });
 
+    /** init-time location consent missing → standalone `location=` erasure
+     *  request is enqueued. Mirrors Android sdk/ModuleLocation.java:99-103
+     *  (`initFinished` → `performLocationErasure`). */
+    it('initConsentMissing_emitsLocationErasureAtInit', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true);
+        cfg.consent.setEnabled(['sessions']);
+      });
+      await flushTick(60);
+      // Erasure has empty value `location=` (note: trailing & or end of string,
+      // not `location=<gps>`). Filter callouts that carry only the empty form.
+      const erasureCalls = h.network.calls.filter((c) =>
+        /(?:^|&)location=(?:&|$)/.test(c.data)
+      );
+      expect(erasureCalls.length).assertLarger(0);
+    });
+
     /** init-time config.location.disable() → locationDisabled=true on
      *  InternalConfig and begin_session carries an empty `location=`. */
     it('initConfig_locationDisabled_propagates', 0, async () => {
@@ -156,6 +175,17 @@ export default function locationTest() {
       await flushTick(120);
       const after: number = h.network.calls.length;
       expect(after > before).assertTrue();
+    });
+
+    it('locationWireOrder_consentBeforeBeginSessionBeforeLocation', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'location']);
+      });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      await h.instance.location.setLocation('US', 'NYC', '40.7,-74.0', null);
+      await flushTick(60);
+      assertWireOrder(h.network.calls, ['consent=', 'begin_session=1', 'location=']);
     });
   });
 }
