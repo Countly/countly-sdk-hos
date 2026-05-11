@@ -37,15 +37,33 @@ This SDK supports the following features:
 
 ## Installation
 
-In the `dependencies:` section of your module-level `oh-package.json5`, add the following line:
+The SDK is distributed as a prebuilt **`.har`** attached to each [GitHub Release](https://github.com/Countly/countly-sdk-hos/releases). Publication to ohpm is planned but not yet available.
 
-```json
-{
-  "dependencies": {
-    "countly-sdk-hos": "^26.1.0"
-  }
-}
-```
+1. Download `countly-sdk-hos-<version>.har` from the latest release. Optionally verify the artifact against the published `.sha256`:
+
+   ```bash
+   shasum -a 256 -c countly-sdk-hos-<version>.har.sha256
+   ```
+
+2. Drop the file into your application module — for example `entry/libs/countly-sdk-hos-<version>.har`.
+
+3. Reference it from your module-level `oh-package.json5`:
+
+   ```json5
+   {
+     "dependencies": {
+       "countly-sdk-hos": "file:./libs/countly-sdk-hos-26.1.0.har"
+     }
+   }
+   ```
+
+4. Run `ohpm install` (or sync from DevEco Studio). Import as usual:
+
+   ```typescript
+   import { Countly, CountlyConfig } from 'countly-sdk-hos';
+   ```
+
+> Once the SDK is published to ohpm, the `file:` reference can be swapped for a normal `"countly-sdk-hos": "^26.1.0"` entry.
 
 ### Supported platforms
 
