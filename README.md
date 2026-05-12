@@ -1,13 +1,10 @@
 ![API](https://img.shields.io/badge/API-12%2B-brightgreen.svg?style=flat)
-![Status](https://img.shields.io/badge/status-experimental-orange.svg?style=flat)
 
 **English** · [简体中文](./README-zh-CN.md)
 
 # Countly HarmonyOS SDK
 
-This repository contains the **experimental** Countly HarmonyOS SDK, which can be integrated into HarmonyOS NEXT Stage-model applications written in ArkTS. The Countly HarmonyOS SDK is intended to be used with [Countly Lite](https://countly.com/lite), [Countly Flex](https://countly.com/flex), [Countly Enterprise](https://countly.com/enterprise).
-
-> **Experimental.** This SDK is under active development. Public APIs follow the Countly cross-SDK conventions.
+This repository contains the Countly HarmonyOS SDK, which can be integrated into HarmonyOS NEXT Stage-model applications written in ArkTS. The Countly HarmonyOS SDK is intended to be used with [Countly Lite](https://countly.com/lite), [Countly Flex](https://countly.com/flex), [Countly Enterprise](https://countly.com/enterprise).
 
 ## What is Countly?
 

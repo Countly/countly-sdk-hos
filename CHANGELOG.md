@@ -1,6 +1,6 @@
 ## 26.1.0
 
-* Initial release of the Countly HarmonyOS / OpenHarmony SDK (ArkTS).
+* Initial release of the Countly HarmonyOS SDK (ArkTS).
 
 * Added multi-instance entrypoints on "Countly":
   * "Countly.initShared(config)" / "Countly.sharedInstance()"

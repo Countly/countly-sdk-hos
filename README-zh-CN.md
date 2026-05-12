@@ -1,13 +1,10 @@
 ![API](https://img.shields.io/badge/API-12%2B-brightgreen.svg?style=flat)
-![Status](https://img.shields.io/badge/status-experimental-orange.svg?style=flat)
 
 [English](./README.md) · **简体中文**
 
 # Countly HarmonyOS SDK
 
-本仓库包含 **实验性** 的 Countly HarmonyOS SDK，可集成到使用 ArkTS 编写的 HarmonyOS NEXT Stage 模型应用中。Countly HarmonyOS SDK 适用于 [Countly Lite](https://countly.com/lite)、[Countly Flex](https://countly.com/flex) 与 [Countly Enterprise](https://countly.com/enterprise)。
-
-> **实验性版本。** SDK 正在持续开发中，公开 API 遵循 Countly 跨平台 SDK 的统一约定。
+本仓库包含 Countly HarmonyOS SDK，可集成到使用 ArkTS 编写的 HarmonyOS NEXT Stage 模型应用中。Countly HarmonyOS SDK 适用于 [Countly Lite](https://countly.com/lite)、[Countly Flex](https://countly.com/flex) 与 [Countly Enterprise](https://countly.com/enterprise)。
 
 ## Countly 是什么？
 
