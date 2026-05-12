@@ -1537,7 +1537,7 @@ export default function userProfileTest() {
 
     it('userProfileWireOrder_consentBeforeBeginSessionBeforeUserDetails', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'users']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       h.instance.lifecycleForeground();
       await flushTick(60);

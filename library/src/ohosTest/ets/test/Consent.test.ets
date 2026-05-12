@@ -29,31 +29,31 @@ export default function consentTest() {
 
     it('consentNotRequired_allGranted', 0, async () => {
       const h: Harness = await buildHarness();
-      expect(h.instance.consent.getConsent('events')).assertTrue();
-      expect(h.instance.consent.getConsent('views')).assertTrue();
+      expect(h.instance.consentModule.hasConsent('events')).assertTrue();
+      expect(h.instance.consentModule.hasConsent('views')).assertTrue();
       expect(h.instance.consent.checkAllConsent()).assertTrue();
     });
 
     it('consentRequired_initialState_allDenied', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      expect(h.instance.consent.getConsent('events')).assertFalse();
-      expect(h.instance.consent.getConsent('views')).assertFalse();
+      expect(h.instance.consentModule.hasConsent('events')).assertFalse();
+      expect(h.instance.consentModule.hasConsent('views')).assertFalse();
       expect(h.instance.consent.checkAllConsent()).assertFalse();
     });
 
     it('giveConsent_turnsFeatureOn', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      h.instance.consent.giveConsent(['events']);
-      expect(h.instance.consent.getConsent('events')).assertTrue();
-      expect(h.instance.consent.getConsent('views')).assertFalse();
+      h.instance.consentModule.giveConsent(['events']);
+      expect(h.instance.consentModule.hasConsent('events')).assertTrue();
+      expect(h.instance.consentModule.hasConsent('views')).assertFalse();
     });
 
     it('removeConsent_turnsFeatureOff', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      h.instance.consent.giveConsent(['events', 'views']);
-      h.instance.consent.removeConsent(['views']);
-      expect(h.instance.consent.getConsent('events')).assertTrue();
-      expect(h.instance.consent.getConsent('views')).assertFalse();
+      h.instance.consentModule.giveConsent(['events', 'views']);
+      h.instance.consentModule.removeConsent(['views']);
+      expect(h.instance.consentModule.hasConsent('events')).assertTrue();
+      expect(h.instance.consentModule.hasConsent('views')).assertFalse();
     });
 
     it('giveAllConsents_inInitialConfig', 0, async () => {
@@ -73,20 +73,20 @@ export default function consentTest() {
 
     it('featureGroup_toggleAllAtOnce', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      h.instance.consent.createFeatureGroup('activity', ['sessions', 'events', 'views']);
-      h.instance.consent.setConsentFeatureGroup('activity', true);
-      expect(h.instance.consent.getConsent('sessions')).assertTrue();
-      expect(h.instance.consent.getConsent('events')).assertTrue();
-      expect(h.instance.consent.getConsent('views')).assertTrue();
-      h.instance.consent.setConsentFeatureGroup('activity', false);
-      expect(h.instance.consent.getConsent('sessions')).assertFalse();
+      h.instance.consentModule.createFeatureGroup('activity', ['sessions', 'events', 'views']);
+      h.instance.consentModule.setConsentFeatureGroup('activity', true);
+      expect(h.instance.consentModule.hasConsent('sessions')).assertTrue();
+      expect(h.instance.consentModule.hasConsent('events')).assertTrue();
+      expect(h.instance.consentModule.hasConsent('views')).assertTrue();
+      h.instance.consentModule.setConsentFeatureGroup('activity', false);
+      expect(h.instance.consentModule.hasConsent('sessions')).assertFalse();
     });
 
     it('coalescedRequest_oneSnapshotPerBurst', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      h.instance.consent.giveConsent(['events']);
-      h.instance.consent.giveConsent(['views']);
-      h.instance.consent.giveConsent(['sessions']);
+      h.instance.consentModule.giveConsent(['events']);
+      h.instance.consentModule.giveConsent(['views']);
+      h.instance.consentModule.giveConsent(['sessions']);
       // Wait past the 1s coalesce window.
       await flushTick(1200);
       expect(h.network.findCallsWithParam('consent=').length).assertEqual(1);
@@ -94,10 +94,10 @@ export default function consentTest() {
 
     it('setConsent_booleanDispatcher', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      h.instance.consent.setConsent(['events'], true);
-      expect(h.instance.consent.getConsent('events')).assertTrue();
-      h.instance.consent.setConsent(['events'], false);
-      expect(h.instance.consent.getConsent('events')).assertFalse();
+      h.instance.consentModule.setConsent(['events'], true);
+      expect(h.instance.consentModule.hasConsent('events')).assertTrue();
+      h.instance.consentModule.setConsent(['events'], false);
+      expect(h.instance.consentModule.hasConsent('events')).assertFalse();
     });
 
     it('deviceIdChangeNotMerged_doesNotSendConsentSnapshotRequest', 0, async () => {
@@ -121,7 +121,7 @@ export default function consentTest() {
       expect(after).assertEqual(before);
       // Sanity check: internal consent state WAS reset (new user starts with
       // no consents until the integrator grants them again).
-      expect(h.instance.consent.getConsent('events')).assertFalse();
+      expect(h.instance.consentModule.hasConsent('events')).assertFalse();
     });
 
     // Ported from Android ModuleConsentTests#usingValidFeatureList — HOS
@@ -139,18 +139,18 @@ export default function consentTest() {
     it('enableConsentWithoutConsentGiven_allFeaturesDenied', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
       for (let i = 0; i < ALL_FEATURES.length; i++) {
-        expect(h.instance.consent.getConsent(ALL_FEATURES[i])).assertFalse();
+        expect(h.instance.consentModule.hasConsent(ALL_FEATURES[i])).assertFalse();
       }
     });
 
-    // Ported from Android ModuleConsentTests#enableConsentGiveAll — every
-    // feature listed in setEnabled(...) is granted at init time.
+    // Ported from Android ModuleConsentTests#enableConsentGiveAll — config-time
+    // `giveAll()` grants every feature at init time.
     it('enableConsentGiveAll_allFeaturesGranted', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(ALL_FEATURES);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       for (let i = 0; i < ALL_FEATURES.length; i++) {
-        expect(h.instance.consent.getConsent(ALL_FEATURES[i])).assertTrue();
+        expect(h.instance.consentModule.hasConsent(ALL_FEATURES[i])).assertTrue();
       }
     });
 
@@ -159,18 +159,18 @@ export default function consentTest() {
     // should flip every feature together.
     it('enableConsent_removeAllThenGiveAll_togglesEveryFeature', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(ALL_FEATURES);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       for (let i = 0; i < ALL_FEATURES.length; i++) {
-        expect(h.instance.consent.getConsent(ALL_FEATURES[i])).assertTrue();
+        expect(h.instance.consentModule.hasConsent(ALL_FEATURES[i])).assertTrue();
       }
       h.instance.consent.removeConsentAll();
       for (let i = 0; i < ALL_FEATURES.length; i++) {
-        expect(h.instance.consent.getConsent(ALL_FEATURES[i])).assertFalse();
+        expect(h.instance.consentModule.hasConsent(ALL_FEATURES[i])).assertFalse();
       }
       h.instance.consent.giveConsentAll();
       for (let i = 0; i < ALL_FEATURES.length; i++) {
-        expect(h.instance.consent.getConsent(ALL_FEATURES[i])).assertTrue();
+        expect(h.instance.consentModule.hasConsent(ALL_FEATURES[i])).assertTrue();
       }
     });
 
@@ -182,12 +182,12 @@ export default function consentTest() {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
       expect(h.instance.consent.checkAllConsent()).assertFalse();
       for (let a = 0; a < ALL_FEATURES.length; a++) {
-        h.instance.consent.giveConsent([ALL_FEATURES[a]]);
+        h.instance.consentModule.giveConsent([ALL_FEATURES[a]]);
         for (let b = 0; b < ALL_FEATURES.length; b++) {
           if (b <= a) {
-            expect(h.instance.consent.getConsent(ALL_FEATURES[b])).assertTrue();
+            expect(h.instance.consentModule.hasConsent(ALL_FEATURES[b])).assertTrue();
           } else {
-            expect(h.instance.consent.getConsent(ALL_FEATURES[b])).assertFalse();
+            expect(h.instance.consentModule.hasConsent(ALL_FEATURES[b])).assertFalse();
           }
         }
       }
@@ -233,26 +233,26 @@ export default function consentTest() {
       expect(h.network.findCallsWithParam('consent=').length).assertEqual(0);
     });
 
-    // Ported from Android ModuleConsentTests#initTimeSetConsentRQ_2 (adapted)
-    // — when initial consent is set via setEnabled, a single coalesced
-    // consent= snapshot is sent. The JSON payload should reflect the
-    // requested features as true and the rest as false.
-    it('consentRequired_initialGrants_emitsSnapshotWithFullState', 0, async () => {
-      const initial: string[] = [CountlyFeature.CLICKS, CountlyFeature.PUSH, CountlyFeature.USERS, CountlyFeature.FEEDBACK];
+    // Post-init coalesced grants emit a single consent= snapshot whose JSON
+    // payload reflects the granted features as true and the rest as false.
+    // (Replaces the deprecated init-time setEnabled granular path.)
+    it('consentRequired_postInitGrants_emitsSnapshotWithFullState', 0, async () => {
+      const granted: string[] = [CountlyFeature.CLICKS, CountlyFeature.PUSH, CountlyFeature.USERS, CountlyFeature.FEEDBACK];
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(initial);
+        cfg.consent.setRequiresConsent(true);
       });
+      h.instance.consentModule.giveConsent(granted);
       await flushTick(1200);
       const calls = h.network.findCallsWithParam('consent=');
       expect(calls.length).assertEqual(1);
       const data: string = calls[0].data;
       // Granted features should appear with true, omitted ones with false.
       // Data is URL-encoded JSON so quote characters are escaped (%22).
-      for (let i = 0; i < initial.length; i++) {
-        const needle: string = `%22${initial[i]}%22%3Atrue`;
+      for (let i = 0; i < granted.length; i++) {
+        const needle: string = `%22${granted[i]}%22%3Atrue`;
         expect(data.indexOf(needle) !== -1).assertTrue();
       }
-      // A feature not in the initial list should be present as false.
+      // A feature not in the granted list should be present as false.
       const notGranted: string = `%22${CountlyFeature.SESSIONS}%22%3Afalse`;
       expect(data.indexOf(notGranted) !== -1).assertTrue();
     });
@@ -270,7 +270,7 @@ export default function consentTest() {
     // sdk_name, sdk_version, av).
     it('initTimeConsent_precedesBeginSession_inWireOrder', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(CountlyFeatureNames);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       h.instance.lifecycleForeground();
       await flushTick(60);
@@ -288,8 +288,8 @@ export default function consentTest() {
     // should reflect the final true/false per feature.
     it('snapshotReflectsFullState_afterMultipleChanges', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      h.instance.consent.giveConsent([CountlyFeature.EVENTS, CountlyFeature.VIEWS, CountlyFeature.SESSIONS]);
-      h.instance.consent.removeConsent([CountlyFeature.VIEWS]);
+      h.instance.consentModule.giveConsent([CountlyFeature.EVENTS, CountlyFeature.VIEWS, CountlyFeature.SESSIONS]);
+      h.instance.consentModule.removeConsent([CountlyFeature.VIEWS]);
       await flushTick(1200);
       const calls = h.network.findCallsWithParam('consent=');
       expect(calls.length).assertEqual(1);
@@ -304,12 +304,12 @@ export default function consentTest() {
     // existing featureGroup_toggleAllAtOnce test.
     it('featureGroup_hasConsentAggregatesMembers', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      h.instance.consent.createFeatureGroup('activity', [CountlyFeature.SESSIONS, CountlyFeature.EVENTS, CountlyFeature.VIEWS]);
-      h.instance.consent.setConsentFeatureGroup('activity', true);
-      expect(h.instance.consent.getConsent('activity')).assertTrue();
-      h.instance.consent.removeConsent([CountlyFeature.EVENTS]);
+      h.instance.consentModule.createFeatureGroup('activity', [CountlyFeature.SESSIONS, CountlyFeature.EVENTS, CountlyFeature.VIEWS]);
+      h.instance.consentModule.setConsentFeatureGroup('activity', true);
+      expect(h.instance.consentModule.hasConsent('activity')).assertTrue();
+      h.instance.consentModule.removeConsent([CountlyFeature.EVENTS]);
       // One member revoked → the group-level query should now be false.
-      expect(h.instance.consent.getConsent('activity')).assertFalse();
+      expect(h.instance.consentModule.hasConsent('activity')).assertFalse();
     });
 
     // Granting remote-config consent with automatic triggers enabled fires a
@@ -320,7 +320,7 @@ export default function consentTest() {
         cfg.remoteConfig.enableAutomaticTriggers();
       });
       const before: number = h.network.findCallsWithParam('method=rc').length;
-      h.instance.consent.giveConsent([CountlyFeature.REMOTE_CONFIG]);
+      h.instance.consentModule.giveConsent([CountlyFeature.REMOTE_CONFIG]);
       await flushTick(200);
       const after: number = h.network.findCallsWithParam('method=rc').length;
       expect(after > before).assertTrue();
@@ -330,12 +330,12 @@ export default function consentTest() {
     // emitted if the effective state doesn't change (diff is empty).
     it('duplicateGrant_doesNotEmitExtraSnapshot', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      h.instance.consent.giveConsent([CountlyFeature.EVENTS]);
+      h.instance.consentModule.giveConsent([CountlyFeature.EVENTS]);
       await flushTick(1200);
       const firstCount: number = h.network.findCallsWithParam('consent=').length;
       expect(firstCount).assertEqual(1);
       // Same grant again — no-op.
-      h.instance.consent.giveConsent([CountlyFeature.EVENTS]);
+      h.instance.consentModule.giveConsent([CountlyFeature.EVENTS]);
       await flushTick(1200);
       expect(h.network.findCallsWithParam('consent=').length).assertEqual(firstCount);
     });
@@ -344,12 +344,71 @@ export default function consentTest() {
     // (every feature stays implicitly consented). No snapshot is emitted.
     it('noConsentRequired_mutationsAreNoOps', 0, async () => {
       const h: Harness = await buildHarness();
-      h.instance.consent.removeConsent([CountlyFeature.EVENTS]);
+      h.instance.consentModule.removeConsent([CountlyFeature.EVENTS]);
       h.instance.consent.removeConsentAll();
-      expect(h.instance.consent.getConsent(CountlyFeature.EVENTS)).assertTrue();
+      expect(h.instance.consentModule.hasConsent(CountlyFeature.EVENTS)).assertTrue();
       expect(h.instance.consent.checkAllConsent()).assertTrue();
       await flushTick(1200);
       expect(h.network.findCallsWithParam('consent=').length).assertEqual(0);
+    });
+
+    // Unknown consent mode: SDK collects telemetry into the queue but the
+    // queue is paused, so nothing reaches the wire until the integrator
+    // resolves the unknown state via give/removeConsentAll.
+    it('unknownConsentMode_implies_requires_and_pauses_queue', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.enableUnknownConsentMode();
+      });
+      expect(h.config.consent.requires).assertTrue();
+      // Every feature internally granted so modules actually buffer data.
+      expect(h.instance.consent.checkAllConsent()).assertTrue();
+
+      const direct: Record<string, string> = { 'custom_unknown': 'value' };
+      await h.instance.requests.addDirectRequest(direct);
+      await flushTick(200);
+      // Queue holds the request locally.
+      expect(h.instance.requestQueue.size() > 0).assertTrue();
+      // But nothing was actually sent.
+      expect(h.network.findCallsWithParam('custom_unknown=value').length).assertEqual(0);
+    });
+
+    it('unknownConsentMode_removeConsentAll_dropsBufferAndHalts', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.enableUnknownConsentMode();
+      });
+      const direct: Record<string, string> = { 'custom_unknown_remove': 'value' };
+      await h.instance.requests.addDirectRequest(direct);
+      expect(h.instance.requestQueue.size() > 0).assertTrue();
+
+      h.instance.consent.removeConsentAll();
+      // Resolve chain is async (halt + module onHalts + clear).
+      await flushTick(300);
+
+      expect(h.instance.requestQueue.size()).assertEqual(0);
+      expect(h.network.findCallsWithParam('custom_unknown_remove=value').length).assertEqual(0);
+      // Flag cleared so a re-init wouldn't re-enter unknown mode by accident.
+      expect(h.instance.config.unknownConsentMode).assertFalse();
+    });
+
+    it('unknownConsentMode_giveConsentAll_keepsBufferAndHalts', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.enableUnknownConsentMode();
+      });
+      const direct: Record<string, string> = { 'custom_unknown_give': 'value' };
+      await h.instance.requests.addDirectRequest(direct);
+      const before: number = h.instance.requestQueue.size();
+      expect(before > 0).assertTrue();
+
+      h.instance.consent.giveConsentAll();
+      await flushTick(300);
+
+      // Queue preserved so a subsequent re-init can drain it. Halt drained
+      // events/sessions/etc. into the queue too, so size may grow but never
+      // shrink in the giveAll path.
+      expect(h.instance.requestQueue.size() >= before).assertTrue();
+      // No requests went out from this halted instance.
+      expect(h.network.findCallsWithParam('custom_unknown_give=value').length).assertEqual(0);
+      expect(h.instance.config.unknownConsentMode).assertFalse();
     });
   });
 }

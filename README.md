@@ -159,7 +159,7 @@ config.deviceId.setId('custom-device-id');
 // Consent
 config.consent
   .setRequiresConsent(true)
-  .setEnabled([CountlyFeature.SESSIONS, CountlyFeature.EVENTS]);
+  .giveAll();
 
 // Location
 config.location.set('US', 'New York', '40.7,-74.0', null);
@@ -270,19 +270,40 @@ Countly.sharedInstance().crashes.addCrashBreadcrumb('tapped-pay');
 
 ### Consent Management
 
+The runtime consent surface is intentionally binary — only `giveConsentAll`,
+`removeConsentAll`, and `checkAllConsent` are exposed. Per-feature mutations
+are not user-callable; configure consent up front via `CountlyConfig.consent`.
+
 ```typescript
-// Grant consent for specific features
-Countly.sharedInstance().consent.giveConsent([
-  CountlyFeature.VIEWS, 
-  CountlyFeature.CRASHES
-]);
-
-// Revoke consent
-Countly.sharedInstance().consent.removeConsent([CountlyFeature.LOCATION]);
-
 // Grant consent for all features
 Countly.sharedInstance().consent.giveConsentAll();
+
+// Revoke consent for all features
+Countly.sharedInstance().consent.removeConsentAll();
+
+// Inspect whether every feature is currently consented
+const allGranted = Countly.sharedInstance().consent.checkAllConsent();
 ```
+
+#### Unknown Consent Mode
+
+When you need the SDK to collect telemetry while the user has not yet made a
+consent decision, enable Unknown Consent Mode at init. The SDK records
+sessions, views, events, etc. locally but the request queue is paused — nothing
+reaches the server until the integrator resolves the unknown state:
+
+```typescript
+config.consent.enableUnknownConsentMode();  // implies setRequiresConsent(true)
+```
+
+Once the user makes a decision, call exactly one of:
+
+* `giveConsentAll()` — keeps the buffered queue on disk; the next init drains it.
+* `removeConsentAll()` — drops the buffered queue.
+
+Either resolution halts the instance that was in unknown mode (only that
+instance — other instances and the rest of the SDK are untouched). To resume
+normal operation, re-init with your resolved consent configuration.
 
 ### Device ID Management
 

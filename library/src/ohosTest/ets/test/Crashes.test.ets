@@ -649,7 +649,7 @@ export default function crashesTest() {
 
     it('crashWireOrder_consentBeforeBeginSessionBeforeCrash', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'crashes']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       h.instance.lifecycleForeground();
       await flushTick(60);

@@ -224,7 +224,7 @@ export default function remoteConfigTest() {
       // original test asserts that consent removal does NOT wipe values (see
       // HOS ModuleRemoteConfig.onConsentChanged: revocation leaves cache).
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['remote-config']);
+        cfg.consent.setRequiresConsent(true).giveAll();
         cfg.remoteConfig.enableValueCaching();
       });
       h.network.nextBody = RC_BODY;
@@ -259,7 +259,7 @@ export default function remoteConfigTest() {
       await flushTick(60);
       const beforeGrant = h.network.calls.filter((c) => c.endpoint === '/o/sdk' && c.data.indexOf('method=rc') !== -1).length;
 
-      h.instance.consent.giveConsent(['remote-config']);
+      h.instance.consentModule.giveConsent(['remote-config']);
       await flushTick(60);
       const afterGrant = h.network.calls.filter((c) => c.endpoint === '/o/sdk' && c.data.indexOf('method=rc') !== -1).length;
       expect(afterGrant > beforeGrant).assertTrue();

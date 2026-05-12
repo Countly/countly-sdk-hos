@@ -37,8 +37,15 @@ export class InternalConfig {
   public startInTemporaryIdMode: boolean = false;
 
   public requiresConsent: boolean = false;
-  public initialConsent: string[] = [];
   public initialConsentAll: boolean = false;
+  /**
+   * Unknown consent mode (see ConsentConfig.enableUnknownConsentMode). When
+   * true at init, the request queue is paused and consents are internally
+   * granted so modules buffer telemetry locally. Cleared by
+   * `CountlyInstance.resolveUnknownConsent` so subsequent re-inits aren't
+   * trapped in unknown mode.
+   */
+  public unknownConsentMode: boolean = false;
 
   public eventQueueThreshold: number = 100;
   public maxRequestQueueSize: number = 1000;

@@ -57,4 +57,15 @@ export interface SdkCore {
    * (e.g. location erasure) and a subsequent consent snapshot is then real.
    */
   notifyConsentDidChange(added: string[], removed: string[], source: ConsentChangeSource): Promise<void>;
+
+  /**
+   * Exit unknown consent mode. Called by `ModuleConsent` when the integrator
+   * calls `giveConsentAll` / `removeConsentAll` while the instance was started
+   * in unknown mode. `givenAll=true` keeps the buffered request queue on disk
+   * so a subsequent re-init can ship it; `givenAll=false` drops it.
+   * Halts the instance either way — the integrator must call `Countly.haltAll()`
+   * (to clear the static handle) and `Countly.initShared(newConfig)` to resume
+   * normal operation.
+   */
+  resolveUnknownConsent(givenAll: boolean): Promise<void>;
 }

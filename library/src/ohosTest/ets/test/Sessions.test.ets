@@ -121,7 +121,7 @@ export default function sessionsTest() {
       h.instance.lifecycleForeground();
       await flushTick(60);
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(0);
-      h.instance.consent.giveConsent(['sessions']);
+      h.instance.consentModule.giveConsent(['sessions']);
       h.instance.lifecycleBackground();
       h.instance.lifecycleForeground();
       await flushTick(60);
@@ -267,8 +267,7 @@ export default function sessionsTest() {
       // ships a final end_session so the server closes the session window.
       // A later grant + foreground starts a fresh session.
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['sessions', 'location']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       h.network.reset();
       h.instance.lifecycleForeground();
@@ -276,7 +275,7 @@ export default function sessionsTest() {
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
 
       await flushTick(1100);
-      h.instance.consent.removeConsent(['sessions']);
+      h.instance.consentModule.removeConsent(['sessions']);
       await flushTick(60);
       // Revocation MUST ship a closing end_session.
       expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(1);
@@ -284,7 +283,7 @@ export default function sessionsTest() {
       // Re-grant + re-foreground cycles a new session.
       h.instance.lifecycleBackground();
       await flushTick(30);
-      h.instance.consent.giveConsent(['sessions']);
+      h.instance.consentModule.giveConsent(['sessions']);
       h.instance.lifecycleForeground();
       await flushTick(60);
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(2);
@@ -299,8 +298,7 @@ export default function sessionsTest() {
       // begin, two updates with non-zero duration, one end.
       const h: Harness = await buildHarness((cfg) => {
         cfg.sessions.enableManualControl();
-        cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['sessions', 'location']);
+        cfg.consent.setRequiresConsent(true).giveAll();
         cfg.views.setTrackOrientationChanges(false);
       });
       h.network.reset();
@@ -407,8 +405,7 @@ export default function sessionsTest() {
       //    new id must be silent (no sessions consent for new user).
       const h: Harness = await buildHarness((cfg) => {
         cfg.sessions.enableManualControl();
-        cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['sessions', 'location']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       h.network.reset();
 
@@ -640,8 +637,7 @@ export default function sessionsTest() {
       // HOS: no automatic orientation emission on rotate — already matches
       // Android's expected count (7) which excluded orientation.
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['sessions', 'location']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       h.network.reset();
 

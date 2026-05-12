@@ -474,9 +474,9 @@ export default function countlyFacadeTest() {
       cfgB.consent.setRequiresConsent(true);
       const a: CountlyInstance = await Countly.createInstance('A', cfgA, sA, nA);
       const b: CountlyInstance = await Countly.createInstance('B', cfgB, sB, nB);
-      a.consent.giveConsent(['events']);
-      expect(a.consent.getConsent('events')).assertTrue();
-      expect(b.consent.getConsent('events')).assertFalse();
+      a.consentModule.giveConsent(['events']);
+      expect(a.consentModule.hasConsent('events')).assertTrue();
+      expect(b.consentModule.hasConsent('events')).assertFalse();
       await Countly.haltAll();
     });
 

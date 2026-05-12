@@ -36,7 +36,7 @@ export default function eventsTest() {
       await flushTick(60);
       expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
       // Give events consent and confirm a custom event goes through.
-      h.instance.consent.giveConsent(['events']);
+      h.instance.consentModule.giveConsent(['events']);
       await h.instance.events.recordEvent('custom_event_2');
       await flushTick(1200);
       expect(h.network.findCallsWithParam('events=').length >= 0).assertTrue();
@@ -46,11 +46,11 @@ export default function eventsTest() {
       // Events consent alone is NOT enough for [CLY]_nps — the feedback
       // feature consent is what gates internal feedback events.
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
-      h.instance.consent.giveConsent(['events']);
+      h.instance.consentModule.giveConsent(['events']);
       await h.instance.events.recordEvent('[CLY]_nps');
       await flushTick(60);
       expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
-      h.instance.consent.giveConsent(['feedback']);
+      h.instance.consentModule.giveConsent(['feedback']);
       await h.instance.events.recordEvent('[CLY]_nps');
       await flushTick(60);
       expect(h.network.findCallsWithParam('events=').length >= 1).assertTrue();
@@ -70,15 +70,15 @@ export default function eventsTest() {
       expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
 
       // Only starRating → accepted.
-      h.instance.consent.giveConsent(['star-rating']);
+      h.instance.consentModule.giveConsent(['star-rating']);
       await h.instance.events.recordEvent('[CLY]_star_rating');
       await flushTick(60);
       const afterStarRating: number = h.network.findCallsWithParam('events=').length;
       expect(afterStarRating >= 1).assertTrue();
 
       // Now revoke starRating, grant feedback → still accepted.
-      h.instance.consent.removeConsent(['star-rating']);
-      h.instance.consent.giveConsent(['feedback']);
+      h.instance.consentModule.removeConsent(['star-rating']);
+      h.instance.consentModule.giveConsent(['feedback']);
       await h.instance.events.recordEvent('[CLY]_star_rating');
       await flushTick(60);
       expect(h.network.findCallsWithParam('events=').length > afterStarRating).assertTrue();
@@ -97,15 +97,15 @@ export default function eventsTest() {
       expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
 
       // Only clicks → accepted.
-      h.instance.consent.giveConsent(['clicks']);
+      h.instance.consentModule.giveConsent(['clicks']);
       await h.instance.events.recordEvent('[CLY]_action');
       await flushTick(60);
       const afterClicks: number = h.network.findCallsWithParam('events=').length;
       expect(afterClicks >= 1).assertTrue();
 
       // Now revoke clicks, grant scrolls → still accepted.
-      h.instance.consent.removeConsent(['clicks']);
-      h.instance.consent.giveConsent(['scrolls']);
+      h.instance.consentModule.removeConsent(['clicks']);
+      h.instance.consentModule.giveConsent(['scrolls']);
       await h.instance.events.recordEvent('[CLY]_action');
       await flushTick(60);
       expect(h.network.findCallsWithParam('events=').length > afterClicks).assertTrue();
@@ -208,7 +208,7 @@ export default function eventsTest() {
         cfg.events.setQueueSizeToSend(1);
         cfg.consent.setRequiresConsent(true);
       });
-      h.instance.consent.giveConsent(['feedback']);
+      h.instance.consentModule.giveConsent(['feedback']);
       // Try a nuclear-option blacklist that matches the NPS event key.
       h.instance.config.serverConfig.eventFilter = new FilterList<string[]>(['[CLY]_nps'], false);
       await h.instance.events.recordEvent('[CLY]_nps');
@@ -222,7 +222,7 @@ export default function eventsTest() {
         cfg.events.setQueueSizeToSend(1);
         cfg.consent.setRequiresConsent(true);
       });
-      h.instance.consent.giveConsent(['events', 'feedback']);
+      h.instance.consentModule.giveConsent(['events', 'feedback']);
       h.instance.config.serverConfig.customEventTrackingEnabled = false;
       await h.instance.events.recordEvent('custom_that_should_be_dropped', null, 1, 0, 0);
       await h.instance.events.recordEvent('[CLY]_nps');
@@ -646,7 +646,7 @@ export default function eventsTest() {
 
     it('eventsWireOrder_consentBeforeBeginSessionBeforeEvents', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'events']);
+        cfg.consent.setRequiresConsent(true).giveAll();
         cfg.events.setQueueSizeToSend(1);
       });
       h.instance.lifecycleForeground();

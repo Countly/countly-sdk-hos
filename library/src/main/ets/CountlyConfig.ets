@@ -49,15 +49,26 @@ export class DeviceIdConfig {
  */
 export class ConsentConfig {
   public requires: boolean = false;
-  public initial: string[] = [];
   public initialAll: boolean = false;
+  public unknownMode: boolean = false;
 
   public setRequiresConsent(requires: boolean): ConsentConfig { this.requires = requires; return this; }
-  public setEnabled(featureNames: string[]): ConsentConfig {
-    this.initial = featureNames.slice();
+  public giveAll(): ConsentConfig { this.initialAll = true; return this; }
+
+  /**
+   * Unknown consent mode: SDK collects everything into the request queue but
+   * holds it locally — nothing reaches the wire until the integrator calls
+   * `giveConsentAll()` or `removeConsentAll()`. On either resolution the
+   * instance self-halts and the integrator must re-init for the SDK to
+   * resume normal operation. Implies `setRequiresConsent(true)` — the
+   * feature-gating machinery needs to be active for collection to be
+   * audited at all.
+   */
+  public enableUnknownConsentMode(): ConsentConfig {
+    this.unknownMode = true;
+    this.requires = true;
     return this;
   }
-  public giveAll(): ConsentConfig { this.initialAll = true; return this; }
 }
 
 /**

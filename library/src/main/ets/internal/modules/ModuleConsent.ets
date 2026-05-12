@@ -40,26 +40,15 @@ export class ModuleConsent extends ModuleBase {
     for (let i = 0; i < CountlyFeatureNames.length; i++) {
       this.consent[CountlyFeatureNames[i]] = !this.requiresConsent;
     }
-    if (this.requiresConsent) {
+    if (this.requiresConsent && config.initialConsentAll) {
       // emit=false skips the will/did-change module dispatch — at construction
       // time other modules aren't wired into core yet, so dispatching their
       // hooks would NPE. We still schedule the coalesced server snapshot so
       // the initial-consent state reaches the wire.
-      let initialMutationApplied: boolean = false;
-      if (config.initialConsentAll) {
-        this.giveConsentAllInternal(false).catch((err: Object) => {
-          this.config.logger.e(`[ModuleConsent] constructor giveConsentAllInternal rejected: ${err}`);
-        });
-        initialMutationApplied = true;
-      } else if (config.initialConsent.length > 0) {
-        this.giveConsentInternal(config.initialConsent, false).catch((err: Object) => {
-          this.config.logger.e(`[ModuleConsent] constructor giveConsentInternal rejected: ${err}`);
-        });
-        initialMutationApplied = true;
-      }
-      if (initialMutationApplied) {
-        this.scheduleConsentRequest();
-      }
+      this.giveConsentAllInternal(false).catch((err: Object) => {
+        this.config.logger.e(`[ModuleConsent] constructor giveConsentAllInternal rejected: ${err}`);
+      });
+      this.scheduleConsentRequest();
     }
   }
 
@@ -99,6 +88,16 @@ export class ModuleConsent extends ModuleBase {
 
   public giveConsentAll(): void {
     if (!this.requiresConsent) return;
+    // Unknown consent mode resolves here: the buffered queue is left intact
+    // so the next init can drain it, and the instance self-halts. We skip
+    // the normal consent-snapshot path because every feature was already
+    // internally granted at init — there is no diff to ship.
+    if (this.config.unknownConsentMode) {
+      void this.core.resolveUnknownConsent(true).catch((err: Object) => {
+        this.config.logger.e(`[ModuleConsent] giveConsentAll unknown-mode resolve rejected: ${err}`);
+      });
+      return;
+    }
     void this.giveConsentAllInternal(true).catch((err: Object) => {
       this.config.logger.e(`[ModuleConsent] giveConsentAll chain rejected: ${err}`);
     });
@@ -106,6 +105,14 @@ export class ModuleConsent extends ModuleBase {
 
   public removeConsentAll(): void {
     if (!this.requiresConsent) return;
+    // Unknown consent mode resolves here: drop the buffered queue and halt
+    // the instance. Same snapshot-skip rationale as giveConsentAll above.
+    if (this.config.unknownConsentMode) {
+      void this.core.resolveUnknownConsent(false).catch((err: Object) => {
+        this.config.logger.e(`[ModuleConsent] removeConsentAll unknown-mode resolve rejected: ${err}`);
+      });
+      return;
+    }
     const all: string[] = CountlyFeatureNames.slice();
     void this.setConsentInternal(all, false, true).catch((err: Object) => {
       this.config.logger.e(`[ModuleConsent] removeConsentAll chain rejected: ${err}`);

@@ -3,8 +3,7 @@ import hilog from '@ohos.hilog';
 import {
   Countly,
   CountlyConfig,
-  LogLevel,
-  CountlyFeatureNames
+  LogLevel
 } from 'countly-sdk-hos';
 import { DemoLog, StoreKeys } from '../model/DemoState';
 
@@ -70,7 +69,7 @@ export default class MyAbilityStage extends AbilityStage {
     // box. In a real app you would gate these behind a consent flow.
     config.consent
       .setRequiresConsent(true)
-      .setEnabled(CountlyFeatureNames);
+      .giveAll();
 
     config.crashes.enableCrashReporting();
     config.views.enableAutomaticViewTracking();

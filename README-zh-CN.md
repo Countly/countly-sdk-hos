@@ -159,7 +159,7 @@ config.deviceId.setId('custom-device-id');
 // 用户授权
 config.consent
   .setRequiresConsent(true)
-  .setEnabled([CountlyFeature.SESSIONS, CountlyFeature.EVENTS]);
+  .giveAll();
 
 // 位置信息
 config.location.set('CN', 'Beijing', '39.9,116.4', null);
@@ -272,19 +272,39 @@ Countly.sharedInstance().crashes.addCrashBreadcrumb('tapped-pay');
 
 ### 用户授权管理
 
+运行时的授权接口被有意收窄为二选一:仅暴露 `giveConsentAll`、`removeConsentAll`、
+`checkAllConsent`。按功能粒度的授权变更不再对外开放,需要在初始化前通过
+`CountlyConfig.consent` 完成。
+
 ```typescript
-// 授权指定功能
-Countly.sharedInstance().consent.giveConsent([
-  CountlyFeature.VIEWS,
-  CountlyFeature.CRASHES
-]);
-
-// 撤销授权
-Countly.sharedInstance().consent.removeConsent([CountlyFeature.LOCATION]);
-
 // 一键授权全部功能
 Countly.sharedInstance().consent.giveConsentAll();
+
+// 一键撤销全部授权
+Countly.sharedInstance().consent.removeConsentAll();
+
+// 查询当前是否所有功能都已授权
+const allGranted = Countly.sharedInstance().consent.checkAllConsent();
 ```
+
+#### 未知授权模式 (Unknown Consent Mode)
+
+当用户尚未做出授权决定、但希望 SDK 先在本地收集数据时,可在初始化时启用未知授权
+模式。SDK 仍会记录会话、视图、事件等遥测数据,但请求队列处于暂停状态——在
+集成方解析未知授权状态之前,这些数据不会发往服务端:
+
+```typescript
+config.consent.enableUnknownConsentMode();  // 隐含 setRequiresConsent(true)
+```
+
+用户做出决定后,调用以下方法之一:
+
+* `giveConsentAll()` —— 保留本地排队的请求,下次初始化时会被发送出去。
+* `removeConsentAll()` —— 直接丢弃本地排队的请求。
+
+无论哪种方式,当时处于未知授权模式的实例都会被自动停止(仅该实例,其他
+实例与 SDK 其它状态不受影响)。要恢复正常运行,集成方需要使用解析后的
+授权配置重新初始化。
 
 ### 设备 ID 管理
 
@@ -327,7 +347,7 @@ await instanceB.crashes.recordHandledException(new Error('demo'));
 * **Push:** 中国大陆环境推荐使用 HMS Push 推送服务。SDK 中 `MessagingProvider.HMS` 已对应该路径。
 * **崩溃栈:** 崩溃栈与日志默认使用英文(JS/V8 栈格式),便于跨团队排查与社区检索。
 * **大请求体:** 含中文事件名 / 分段值的长 URL 在部分运营商网络可能被中间盒截断,可通过 `config.network` 中的相关开关启用 POST 兜底。
-* **授权弹窗:** GDPR / 个保法对应的授权流程可使用 `requiresConsent + giveConsent / removeConsent` 实现。授权撤销时 SDK 会自动结束当前会话(`end_session`)并发送授权快照。
+* **授权弹窗:** GDPR / 个保法对应的授权流程可使用 `requiresConsent` 配合运行时的 `giveConsentAll / removeConsentAll` 实现;若希望在用户作出决定之前先在本地缓冲数据,可启用 `enableUnknownConsentMode()`。授权撤销时 SDK 会自动结束当前会话(`end_session`)并发送授权快照。
 
 ## 安全
 

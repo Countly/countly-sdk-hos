@@ -102,8 +102,7 @@ export default function contentTest() {
     it('consentRevoked_exitsZone', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['content']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       h.network.nextBody = VALID_BODY;
       await h.instance.enterContentZone();

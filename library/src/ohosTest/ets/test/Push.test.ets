@@ -19,8 +19,7 @@ export default function pushTest() {
 
     it('onTokenRefresh_withConsent_sendsTokenSession', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['push']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       await h.instance.onTokenRefresh('tok_xyz', MessagingProvider.HMS);
       await flushTick(80);

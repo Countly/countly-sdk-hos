@@ -169,8 +169,19 @@ export class CountlyInstance implements SdkCore {
     this.config.clearStoredDeviceId = countlyConfig.deviceId.clearStored;
 
     this.config.requiresConsent = countlyConfig.consent.requires;
-    this.config.initialConsent = countlyConfig.consent.initial.slice();
     this.config.initialConsentAll = countlyConfig.consent.initialAll;
+    this.config.unknownConsentMode = countlyConfig.consent.unknownMode;
+    // Unknown consent mode internally grants every feature so module-level
+    // `hasConsent` gates open and telemetry actually reaches the request
+    // queue. The queue itself is paused in `init()` so the buffered data
+    // sits locally until `giveConsentAll` / `removeConsentAll` resolves the
+    // unknown state. `enableUnknownConsentMode()` already flips `requires=true`
+    // — re-asserting here so a future caller setting `unknownConsentMode`
+    // directly on InternalConfig (tests) can't bypass that invariant.
+    if (this.config.unknownConsentMode) {
+      this.config.requiresConsent = true;
+      this.config.initialConsentAll = true;
+    }
 
     this.config.eventQueueThreshold = countlyConfig.events.queueThreshold;
     this.config.maxRequestQueueSize = countlyConfig.network.maxRequestQueueSize;
@@ -493,6 +504,15 @@ export class CountlyInstance implements SdkCore {
       this.requestQueue.pause();
       this.config.logger.i('[Countly] init, starting in offline mode — no network traffic until disableOfflineMode()');
     }
+    if (this.config.unknownConsentMode) {
+      // Same pause primitive as offline mode — collected telemetry queues
+      // locally until `giveConsentAll` / `removeConsentAll` resolves the
+      // unknown state, at which point the instance self-halts. Loaded queue
+      // contents from a previous unknown-mode session also stay paused so a
+      // re-launch into unknown mode preserves "nothing leaves the device".
+      this.requestQueue.pause();
+      this.config.logger.i('[Countly] init, starting in unknown consent mode — telemetry held locally until giveConsentAll/removeConsentAll');
+    }
     await this.deviceIdModule.resolveInitial();
 
     // Send the init-time consent snapshot NOW — bypassing the 1-second
@@ -689,6 +709,35 @@ export class CountlyInstance implements SdkCore {
       .catch((err: Object): void => {
         this.config.logger.e(`[Countly] auto-view startAutoStoppedView rejected: ${err}`);
       });
+  }
+
+  /**
+   * Exit unknown consent mode (see SdkCore.resolveUnknownConsent).
+   * `givenAll=false` drops the buffered queue; `givenAll=true` leaves the
+   * persisted queue in place so the next init can drain it. Either path
+   * halts this instance — the integrator is expected to call
+   * `Countly.haltAll()` and `Countly.initShared(...)` again with their
+   * resolved consent configuration before the SDK does any more work.
+   */
+  public async resolveUnknownConsent(givenAll: boolean): Promise<void> {
+    if (!this.config.unknownConsentMode) {
+      this.config.logger.w('[Countly] resolveUnknownConsent called outside unknown mode — ignored');
+      return;
+    }
+    // Clear the flag BEFORE halt() so a re-init on the same JS instance
+    // wouldn't loop straight back into unknown-mode pause.
+    this.config.unknownConsentMode = false;
+    this.config.logger.i(`[Countly] resolveUnknownConsent, givenAll=${givenAll} — halting instance, re-init required`);
+    // Halt drains the events/sessions/etc. modules into the request queue
+    // before halting it. We always halt first so a `givenAll=false` clear
+    // wipes EVERYTHING — buffered-during-unknown-mode data plus any
+    // last-second drain — instead of getting repopulated by the halt drain.
+    await this.halt();
+    if (!givenAll) {
+      // Drop everything we buffered. clear() persists the empty queue so a
+      // subsequent re-init can't accidentally drain old unknown-mode data.
+      await this.requestQueue.clear();
+    }
   }
 
   public async halt(): Promise<void> {

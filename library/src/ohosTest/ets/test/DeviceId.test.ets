@@ -81,12 +81,12 @@ export default function deviceIdTest() {
       });
       // Start a timed event, then swap user without merge.
       h.instance.events.startEvent('checkout');
-      expect(h.instance.consent.getConsent('events')).assertTrue();
+      expect(h.instance.consentModule.hasConsent('events')).assertTrue();
       await h.instance.deviceId.changeWithoutMerge('newUser');
       await flushTick(100);
       // All consents should have been cleared as part of the not-merged flow.
-      expect(h.instance.consent.getConsent('events')).assertFalse();
-      expect(h.instance.consent.getConsent('crashes')).assertFalse();
+      expect(h.instance.consentModule.hasConsent('events')).assertFalse();
+      expect(h.instance.consentModule.hasConsent('crashes')).assertFalse();
       // Timed events should have been cleared, so endEvent on the previous
       // key is a no-op (no events request produced).
       await h.instance.events.endEvent('checkout');

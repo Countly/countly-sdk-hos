@@ -202,8 +202,7 @@ export default function feedbackTest() {
     it('consentRevoked_hidesFeedbackOverlay', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['feedback']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       const widget = new CountlyFeedbackWidget('w', FeedbackWidgetType.NPS, 'N', [], null);
       await h.instance.presentFeedbackWidget(widget, null);

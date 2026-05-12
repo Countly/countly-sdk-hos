@@ -127,7 +127,6 @@ export default function locationTest() {
     it('initConsentMissing_emitsLocationErasureAtInit', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['sessions']);
       });
       await flushTick(60);
       // Erasure has empty value `location=` (note: trailing & or end of string,
@@ -167,11 +166,11 @@ export default function locationTest() {
      *  (per dev guide). */
     it('consentRevoke_location_sendsErasure', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['location', 'sessions']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       const before: number = h.network.calls.length;
       // Revoke location consent → ModuleLocation.onConsentChanged enqueues erasure.
-      h.instance.consent.removeConsent(['location']);
+      h.instance.consentModule.removeConsent(['location']);
       await flushTick(120);
       const after: number = h.network.calls.length;
       expect(after > before).assertTrue();
@@ -179,7 +178,7 @@ export default function locationTest() {
 
     it('locationWireOrder_consentBeforeBeginSessionBeforeLocation', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'location']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       h.instance.lifecycleForeground();
       await flushTick(60);

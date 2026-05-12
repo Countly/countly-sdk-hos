@@ -39,7 +39,7 @@ export default function countlyConfigTest() {
         .setUpdateIntervalSec(30);
       cfg.consent
         .setRequiresConsent(true)
-        .setEnabled(['events', 'views']);
+        .giveAll();
       cfg.location.set('US', 'NY', '1.0,2.0', '8.8.8.8');
       const upProps: SegmentationMap = { 'name': 'Jane' };
       cfg.userProfile.setProperties(upProps);
@@ -60,7 +60,7 @@ export default function countlyConfigTest() {
       expect(cfg.network.maxRequestQueueSize).assertEqual(500);
       expect(cfg.sessions.manualControl).assertTrue();
       expect(cfg.consent.requires).assertTrue();
-      expect(cfg.consent.initial.length).assertEqual(2);
+      expect(cfg.consent.initialAll).assertTrue();
       expect(cfg.location.country).assertEqual('US');
       expect(cfg.metricOverride['_device']).assertEqual('Pixel');
       expect(cfg.userProfile.initialProperties['name']).assertEqual('Jane');
@@ -140,8 +140,8 @@ export default function countlyConfigTest() {
       expect(cfg.deviceId.clearStored).assertFalse();
 
       expect(cfg.consent.requires).assertFalse();
-      expect(cfg.consent.initial.length).assertEqual(0);
       expect(cfg.consent.initialAll).assertFalse();
+      expect(cfg.consent.unknownMode).assertFalse();
 
       expect(cfg.network.maxRequestQueueSize).assertEqual(1000);
       expect(cfg.network.requestDropAgeHours).assertEqual(168);
@@ -205,16 +205,6 @@ export default function countlyConfigTest() {
       expect(cfg.appVersion).assertEqual('9.9.9');
       expect(cfg.metricOverride['SomeKey']).assertEqual('123');
       expect(cfg.metricOverride['_Carrier']).assertEqual('BoneyK');
-    });
-
-    /** Consent `setEnabled(...)` is defensively copied so caller mutation
-     *  after the call cannot retro-corrupt the config. */
-    it('consentSetEnabled_defensivelyCopied', 0, () => {
-      const cfg: TestableCountlyConfig = new TestableCountlyConfig(ctx(), 'https://x', 'k');
-      const feats: string[] = ['events', 'views'];
-      cfg.consent.setEnabled(feats);
-      feats.push('crashes');
-      expect(cfg.consent.initial.length).assertEqual(2);
     });
 
     /** Custom headers accumulate across calls. */

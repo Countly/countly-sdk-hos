@@ -614,7 +614,7 @@ export default function viewsTest() {
       expect(id !== null).assertTrue();
       await flushTick(60);
       const beforeRevoke: number = h.network.findCallsWithParam('%5BCLY%5D_view').length;
-      h.instance.consent.removeConsent(['views']);
+      h.instance.consentModule.removeConsent(['views']);
       await flushTick(60);
       // No extra [CLY]_view event is emitted on revoke.
       expect(h.network.findCallsWithParam('%5BCLY%5D_view').length).assertEqual(beforeRevoke);
@@ -635,7 +635,7 @@ export default function viewsTest() {
       expect(id !== null).assertTrue();
       await flushTick(60);
       const beforeRevoke: number = h.network.findCallsWithParam('%5BCLY%5D_view').length;
-      h.instance.consent.removeConsent(['sessions']);
+      h.instance.consentModule.removeConsent(['sessions']);
       await flushTick(60);
       expect(h.network.findCallsWithParam('%5BCLY%5D_view').length).assertEqual(beforeRevoke);
     });
@@ -652,9 +652,9 @@ export default function viewsTest() {
       await flushTick(60);
       const first: number = h.network.findCallsWithParam('%5BCLY%5D_orientation').length;
       expect(first >= 1).assertTrue();
-      h.instance.consent.removeConsent(['users']);
+      h.instance.consentModule.removeConsent(['users']);
       await flushTick(60);
-      h.instance.consent.giveConsent(['users']);
+      h.instance.consentModule.giveConsent(['users']);
       await flushTick(60);
       await h.instance.views.updateOrientation('portrait');
       await flushTick(60);
@@ -667,8 +667,11 @@ export default function viewsTest() {
       const h: Harness = await buildHarness((cfg) => {
         cfg.events.setQueueSizeToSend(1);
         cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['sessions', 'events', 'views']); // explicitly NOT users
       });
+      // Grant everything EXCEPT users so the gating below is the only reason
+      // the orientation event could be suppressed.
+      h.instance.consentModule.giveConsent(['sessions', 'events', 'views']);
+      await flushTick(1100);
       await h.instance.views.updateOrientation('landscape');
       await flushTick(60);
       expect(h.network.findCallsWithParam('%5BCLY%5D_orientation').length).assertEqual(0);
@@ -982,7 +985,7 @@ export default function viewsTest() {
 
     it('viewWireOrder_consentBeforeBeginSessionBeforeViewEvent', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'views', 'events']);
+        cfg.consent.setRequiresConsent(true).giveAll();
         cfg.events.setQueueSizeToSend(1);
       });
       h.instance.lifecycleForeground();

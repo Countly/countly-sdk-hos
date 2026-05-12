@@ -40,12 +40,11 @@
   * Predefined properties: name, username, email, organization, phone, picture, gender, byear
 
 * Added the consent API on "countly.consent":
-  * "giveConsent(featureNames)" / "removeConsent(featureNames)"
   * "giveConsentAll()" / "removeConsentAll()"
-  * "setConsent(featureNames, given)"
-  * "getConsent(featureName)" / "checkAllConsent()"
-  * "createFeatureGroup(groupName, features)" / "setConsentFeatureGroup(groupName, given)"
-  * Init-time configuration via "CountlyConfig.consent.setRequiresConsent(true)" and "setEnabled(featureNames)"
+  * "checkAllConsent()"
+  * Init-time configuration via "CountlyConfig.consent.setRequiresConsent(true)" and "giveAll()"
+
+* Added Unknown Consent Mode via "CountlyConfig.consent.enableUnknownConsentMode()". When enabled, the SDK collects telemetry locally with the request queue paused and nothing reaches the server until the integrator calls "giveConsentAll()" (preserves the buffered queue for the next init) or "removeConsentAll()" (drops the buffered queue). Either resolution halts the instance that was in unknown mode — the integrator must re-init with their resolved consent configuration to resume normal operation. Implies "setRequiresConsent(true)".
 
 * Added the device ID API on "countly.deviceId":
   * "setID(deviceId)"
