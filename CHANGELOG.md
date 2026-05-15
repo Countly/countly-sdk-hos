@@ -83,6 +83,7 @@
   * Event and request queue size limits
   * Key and value length limits
   * Tracking control (global, events, views)
+  * Automatic view, session, and crash tracking toggles
   * Event and user-property allow/block lists
   * Segmentation allow/block lists, including per-event segmentation filtering
 

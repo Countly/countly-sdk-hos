@@ -61,7 +61,12 @@ export class ModuleCrashes extends ModuleBase {
   }
 
   public override async onInit(): Promise<void> {
-    if (this.config.enableCrashReporting) {
+    // Single gate: `serverConfig.automaticCrashReportingEnabled` is seeded from
+    // the integrator's `enableCrashReporting` flag in CountlyInstance before
+    // SBS apply, and SBS layers (storage / server) overwrite only when their
+    // payload carries `acr`. So this one read encodes the full precedence
+    // chain server > storage > integrator — either side enabling is enough.
+    if (this.config.serverConfig.automaticCrashReportingEnabled) {
       this.installErrorHandler();
     }
   }

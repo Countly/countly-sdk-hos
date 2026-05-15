@@ -21,7 +21,11 @@ struct ConfigurationPage {
   @State requestQueueSize: number = 1000;
   @State sessionUpdateInterval: number = 60;
   @State limitKeyLength: number = 128;
+  @State automaticViewTrackingEnabled: boolean = false;
+  @State automaticSessionTrackingEnabled: boolean = true;
+  @State automaticCrashReportingEnabled: boolean = false;
   @State journeyTriggerEvents: string = '';
+  @State journeyTriggerViews: string = '';
 
   private snapshot = (): Promise<void> => DemoLog.safe('snapshot SBS', async () => {
     const sc = Countly.sharedInstance().config.serverConfig;
@@ -35,7 +39,11 @@ struct ConfigurationPage {
     this.requestQueueSize = sc.requestQueueSize;
     this.sessionUpdateInterval = sc.sessionUpdateInterval;
     this.limitKeyLength = sc.limitKeyLength;
+    this.automaticViewTrackingEnabled = sc.automaticViewTrackingEnabled;
+    this.automaticSessionTrackingEnabled = sc.automaticSessionTrackingEnabled;
+    this.automaticCrashReportingEnabled = sc.automaticCrashReportingEnabled;
     this.journeyTriggerEvents = sc.journeyTriggerEvents.join(', ');
+    this.journeyTriggerViews = sc.journeyTriggerViews.join(', ');
   });
 
   build() {
@@ -53,7 +61,11 @@ struct ConfigurationPage {
           this.row('requestQueueSize',   String(this.requestQueueSize))
           this.row('sessionUpdateInt',   `${this.sessionUpdateInterval}s`)
           this.row('limitKeyLength',     `${this.limitKeyLength} chars`)
+          this.row('autoViewTracking',   String(this.automaticViewTrackingEnabled))
+          this.row('autoSessionTracking',String(this.automaticSessionTrackingEnabled))
+          this.row('autoCrashReporting', String(this.automaticCrashReportingEnabled))
           this.row('journeyTriggers',    this.journeyTriggerEvents.length > 0 ? this.journeyTriggerEvents : '(none)')
+          this.row('journeyTriggerViews',this.journeyTriggerViews.length > 0 ? this.journeyTriggerViews : '(none)')
         }
 
         SectionCard({ title: 'Notes' }) {

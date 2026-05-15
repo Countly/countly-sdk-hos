@@ -255,6 +255,16 @@ export class CountlyInstance implements SdkCore {
     // any other module's `onInit`; dev-supplied SBS applies synchronously
     // here so it covers downstream module constructors too.
     this.configurationModule = new ModuleConfiguration(this.config, this);
+    // Seed the automatic-tracking trio (avt/ast/acr) on ServerConfig FROM the
+    // integrator-supplied flags BEFORE any SBS layer applies. Precedence is
+    // server > storage > integrator, and SBS only overwrites keys that are
+    // actually present in the payload — so seeding here gives the integrator
+    // setting authority whenever the SBS layers are silent for that key.
+    // `automaticSessionTrackingEnabled` is the inverse of `manualSessionControl`:
+    // opting into manual control implies opting out of automatic.
+    this.config.serverConfig.automaticSessionTrackingEnabled = !this.config.manualSessionControl;
+    this.config.serverConfig.automaticCrashReportingEnabled = this.config.enableCrashReporting;
+    this.config.serverConfig.automaticViewTrackingEnabled = this.config.automaticViewTracking;
     this.configurationModule.applyDevSuppliedSettings();
     this.consentModule = new ModuleConsent(this.config, this);
 
@@ -326,16 +336,16 @@ export class CountlyInstance implements SdkCore {
     this.contentModule.setFeedbackShowingProvider((): boolean => this.feedbackModule.isShowing());
 
     this.healthCheckModule = new ModuleHealthCheck(this.config, this);
-    // Auto-view tracking is wired via the abilityLifecycle subscription
-    // ONLY when the integrator opted in via `enableAutomaticViewTracking()`.
-    // Auto-orientation tracking is wired via the environment subscription
-    // ONLY when `trackOrientationChanges` is on (default true). Passing
-    // `null` for either keeps LifecycleObserver from subscribing to that
-    // channel at all — saves a platform callback per ability/config event.
+    // Auto-view tracking is always wired so a runtime SBS flip to `avt=true`
+    // can activate it even when the integrator didn't call
+    // `enableAutomaticViewTracking()`. The actual decision lives inside
+    // `handleAutoTrackedAbilityForeground`, which reads
+    // `serverConfig.automaticViewTrackingEnabled` (seeded from the integrator
+    // flag, then overlaid by storage / server SBS layers).
+    // Auto-orientation tracking stays gated on `trackOrientationChanges` only —
+    // it's not part of the avt/ast/acr trio.
     const autoViewCallback: ((shortName: string, fullName: string) => void) | null =
-      this.config.automaticViewTracking
-        ? (shortName: string, fullName: string): void => this.handleAutoTrackedAbilityForeground(shortName, fullName)
-        : null;
+      (shortName: string, fullName: string): void => this.handleAutoTrackedAbilityForeground(shortName, fullName);
     const autoOrientationCallback: ((cfg: SystemConfig) => void) | null =
       this.config.trackOrientationChanges
         ? (cfg: SystemConfig): void => this.handleConfigurationUpdated(cfg)
@@ -676,6 +686,13 @@ export class CountlyInstance implements SdkCore {
    * platform's lifecycle dispatch isn't poisoned by a single SDK fault.
    */
   private handleAutoTrackedAbilityForeground(shortName: string, fullName: string): void {
+    // Single gate: `automaticViewTrackingEnabled` is seeded from the
+    // integrator's `enableAutomaticViewTracking()` opt-in, then overlaid by
+    // storage / server SBS layers (server > storage > integrator). Reading it
+    // here encodes the full precedence — either side enabling is enough.
+    if (!this.config.serverConfig.automaticViewTrackingEnabled) {
+      return;
+    }
     const name: string = this.config.automaticViewShortNames ? shortName : fullName;
     if (name.length === 0) {
       this.config.logger.d('[Countly] auto-view, empty ability name — skipped');
