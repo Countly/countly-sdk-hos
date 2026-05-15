@@ -1526,31 +1526,62 @@ export default function configurationTest() {
 
     it('precedence_acr_integratorEnabledServerSilent_handlerInstalls', 0, async () => {
       // Integrator alone is enough: enableCrashReporting seeds acr=true, and
-      // a silent SBS layer leaves it that way. The install gate then fires.
+      // a silent SBS layer leaves it that way. The install gate then fires —
+      // verified directly via the test seam, not just the flag.
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
         cfg.crashes.enableCrashReporting();
       });
       expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertTrue();
+      expect(h.instance.isAutomaticCrashHandlerInstalled()).assertTrue();
     });
 
     it('precedence_acr_integratorSilentServerEnabled_handlerInstalls', 0, async () => {
-      // Server alone is enough: integrator default is false, server says true,
-      // SBS overwrites the seed.
+      // Server alone is enough: integrator default is false, dev-supplied SBS
+      // says true, SBS overwrites the seed. Observer must be installed.
       const body: string = buildSbsBody({ 'acr': true });
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
         cfg.setSDKBehaviorSettings(body);
       });
       expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertTrue();
+      expect(h.instance.isAutomaticCrashHandlerInstalled()).assertTrue();
     });
 
-    it('precedence_acr_serverOverridesIntegrator', 0, async () => {
-      // Integrator opted in, server explicitly disables — server wins.
+    it('precedence_acr_serverOverridesIntegrator_handlerNotInstalled', 0, async () => {
+      // Integrator opted in, server (dev-supplied SBS) explicitly disables —
+      // server wins, observer must NOT be installed.
       const body: string = buildSbsBody({ 'acr': false });
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
         cfg.crashes.enableCrashReporting();
         cfg.setSDKBehaviorSettings(body);
       });
       expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertFalse();
+      expect(h.instance.isAutomaticCrashHandlerInstalled()).assertFalse();
+    });
+
+    it('precedence_acr_coldStart_serverFetchEnablesAfterIntegratorSilent', 0, async () => {
+      // True cold start: no dev-supplied SBS, no stored SBS, integrator silent.
+      // The server fetch lands DURING init() with acr=true. Without the
+      // post-fetch reconcile this regresses — ModuleCrashes.onInit ran before
+      // the server response arrived. With reconcile, the observer must end up
+      // installed by the time init() resolves.
+      const h: Harness = await buildHarness(
+        undefined,
+        (network: FakeNetwork) => { network.nextBody = buildSbsBody({ 'acr': true }); }
+      );
+      expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertTrue();
+      expect(h.instance.isAutomaticCrashHandlerInstalled()).assertTrue();
+    });
+
+    it('precedence_acr_coldStart_serverFetchDisablesAfterIntegratorEnabled', 0, async () => {
+      // Inverse cold start: integrator enabled (seeds acr=true → ModuleCrashes
+      // onInit installs the observer), but the server fetch returns acr=false
+      // during init. Reconcile must UNINSTALL — server precedence demands it.
+      const h: Harness = await buildHarness(
+        (cfg: TestableCountlyConfig) => { cfg.crashes.enableCrashReporting(); },
+        (network: FakeNetwork) => { network.nextBody = buildSbsBody({ 'acr': false }); }
+      );
+      expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertFalse();
+      expect(h.instance.isAutomaticCrashHandlerInstalled()).assertFalse();
     });
 
     it('precedence_ast_integratorManualSeedsAstFalse', 0, async () => {

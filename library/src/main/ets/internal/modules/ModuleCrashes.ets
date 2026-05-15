@@ -61,13 +61,24 @@ export class ModuleCrashes extends ModuleBase {
   }
 
   public override async onInit(): Promise<void> {
-    // Single gate: `serverConfig.automaticCrashReportingEnabled` is seeded from
-    // the integrator's `enableCrashReporting` flag in CountlyInstance before
-    // SBS apply, and SBS layers (storage / server) overwrite only when their
-    // payload carries `acr`. So this one read encodes the full precedence
-    // chain server > storage > integrator — either side enabling is enough.
-    if (this.config.serverConfig.automaticCrashReportingEnabled) {
+    this.reconcileAutoInstall();
+  }
+
+  /**
+   * Install or uninstall the platform error observer to match the current
+   * `serverConfig.automaticCrashReportingEnabled` value. Called from `onInit`
+   * (using the dev-supplied + stored SBS state) and again from
+   * `CountlyInstance.init` after the server fetch lands, so a server-returned
+   * `acr` flip during init takes effect on first run — both directions.
+   * Idempotent: a second call with no flag change is a no-op.
+   */
+  public reconcileAutoInstall(): void {
+    const want: boolean = this.config.serverConfig.automaticCrashReportingEnabled;
+    const have: boolean = this.errorObserverId !== -1;
+    if (want && !have) {
       this.installErrorHandler();
+    } else if (!want && have) {
+      this.uninstallErrorHandler('reconcileAutoInstall');
     }
   }
 
@@ -84,6 +95,15 @@ export class ModuleCrashes extends ModuleBase {
    */
   public setThreadStackProvider(provider: ThreadStackProvider | null): void {
     this.threadStackProvider = provider;
+  }
+
+  /**
+   * Test seam — true iff the platform `errorManager` observer is currently
+   * registered. Used by the acr precedence tests to verify the install
+   * decision (the underlying observer-id field is private).
+   */
+  public isErrorHandlerInstalled(): boolean {
+    return this.errorObserverId !== -1;
   }
 
   /**
@@ -134,14 +154,7 @@ export class ModuleCrashes extends ModuleBase {
   }
 
   public override async onHalt(): Promise<void> {
-    if (this.errorObserverId !== -1) {
-      try {
-        errorManager.off('error', this.errorObserverId);
-      } catch (e) {
-        this.config.logger.w(`[ModuleCrashes] onHalt, errorManager.off failed: ${e}`);
-      }
-      this.errorObserverId = -1;
-    }
+    this.uninstallErrorHandler('onHalt');
   }
 
   private installErrorHandler(): void {
@@ -154,6 +167,17 @@ export class ModuleCrashes extends ModuleBase {
       // manual recordHandled/Unhandled paths still work without it.
       this.config.logger.w(`[ModuleCrashes] installErrorHandler, errorManager.on failed: ${e}`);
     }
+  }
+
+  private uninstallErrorHandler(reason: string): void {
+    if (this.errorObserverId === -1) return;
+    try {
+      errorManager.off('error', this.errorObserverId);
+      this.config.logger.d(`[ModuleCrashes] uninstallErrorHandler (${reason}), removed observer id=${this.errorObserverId}`);
+    } catch (e) {
+      this.config.logger.w(`[ModuleCrashes] uninstallErrorHandler (${reason}), errorManager.off failed: ${e}`);
+    }
+    this.errorObserverId = -1;
   }
 
   /**

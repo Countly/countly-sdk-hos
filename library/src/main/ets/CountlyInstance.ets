@@ -536,6 +536,13 @@ export class CountlyInstance implements SdkCore {
     // (skips on temp mode) and the per-module init logs/requests. Awaited so
     // the next test-tick sees the timer armed and the request recorded.
     await this.configurationModule.onInit();
+    // Reconcile auto-crash install: ModuleCrashes.onInit ran BEFORE the server
+    // fetch landed, so a first-run server response that flipped `acr` (either
+    // direction — integrator-enabled but server says false, or integrator-
+    // silent but server says true) needs a second pass to install / uninstall
+    // the platform error observer accordingly. `reconcileAutoInstall` handles
+    // both directions and is a no-op when nothing changed.
+    this.crashesModule.reconcileAutoInstall();
     // Health check LAST so it can observe any error/warning logs + failed
     // requests from the earlier module inits before deciding what to ship.
     await this.healthCheckModule.onInit();
@@ -566,6 +573,15 @@ export class CountlyInstance implements SdkCore {
 
   public hasPendingEvents(): boolean {
     return this.eventsModule.hasPendingEvents();
+  }
+
+  /**
+   * Test seam — surfaces whether the HarmonyOS `errorManager` observer is
+   * currently registered. Lets acr precedence tests verify the actual install
+   * decision instead of just the underlying flag.
+   */
+  public isAutomaticCrashHandlerInstalled(): boolean {
+    return this.crashesModule.isErrorHandlerInstalled();
   }
 
   public async notifyConsentWillChange(added: string[], removed: string[], source: ConsentChangeSource): Promise<void> {
