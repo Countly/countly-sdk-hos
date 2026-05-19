@@ -19,7 +19,7 @@ export class RequestBuilder {
   }
 
   public baseParams(): Record<string, string> {
-    const ts: number = Utils.uniqueTimestampMs();
+    const ts: number = this.config.clock.nowMs();
     const out: Record<string, string> = {};
     out['app_key'] = this.config.appKey;
     out['device_id'] = this.deviceIdProvider();

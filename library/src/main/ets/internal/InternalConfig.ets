@@ -4,6 +4,7 @@ import { Limits } from './Limits';
 import { Network } from './Network';
 import { Storage } from './Storage';
 import { ServerConfig } from './ServerConfig';
+import { MonotonicClock } from './MonotonicClock';
 import {
   GlobalCrashFilterCallback,
   ContentCallback,
@@ -31,6 +32,11 @@ export class InternalConfig {
   public limits: Limits = new Limits();
   public network: Network;
   public storage: Storage | null = null;
+  // Per-instance monotonic clock + event-id generator. Lives on the config
+  // so every module reaches it the same way it reaches `logger` /
+  // `limits`. See MonotonicClock for why this is instance-scoped instead
+  // of a static on `Utils` (cross-instance drift contamination).
+  public clock: MonotonicClock = new MonotonicClock();
 
   public customDeviceId: string | null = null;
   public clearStoredDeviceId: boolean = false;

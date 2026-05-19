@@ -112,7 +112,7 @@ export class ModuleEvents extends ModuleBase {
     dur: number
   ): Promise<void> {
     if (this.rejectIfHalted('ModuleEvents', 'recordEvent')) return;
-    await this.recordEventAt(key, segmentation, count, sum, dur, Utils.uniqueTimestampMs());
+    await this.recordEventAt(key, segmentation, count, sum, dur, this.config.clock.nowMs());
   }
 
   /**
@@ -134,7 +134,7 @@ export class ModuleEvents extends ModuleBase {
     let ts: number = timestamp;
     if (!Number.isFinite(ts) || ts <= 0) {
       this.config.logger.w(`[ModuleEvents] recordPastEvent, timestamp must be > 0 (got ${timestamp}), falling back to current time`);
-      ts = Utils.uniqueTimestampMs();
+      ts = this.config.clock.nowMs();
     }
     await this.recordEventAt(key, segmentation, count, sum, dur, ts);
   }
@@ -151,7 +151,7 @@ export class ModuleEvents extends ModuleBase {
     segmentation: SegmentationMap | null,
     dur: number
   ): Promise<void> {
-    await this.recordEventAt('[CLY]_view', segmentation, 1, 0, dur, Utils.uniqueTimestampMs(), viewId);
+    await this.recordEventAt('[CLY]_view', segmentation, 1, 0, dur, this.config.clock.nowMs(), viewId);
   }
 
   private async recordEventAt(
@@ -246,7 +246,7 @@ export class ModuleEvents extends ModuleBase {
     // Before recording, save pending user profile changes so ordering is right.
     await this.core.saveUserProfileIfPending();
 
-    const id: string = forcedEventId !== undefined ? forcedEventId : Utils.generateEventId();
+    const id: string = forcedEventId !== undefined ? forcedEventId : this.config.clock.generateEventId();
     const viewIds: ViewIds = this.viewIdProvider();
     const cvid: string = key === '[CLY]_view' ? '' : viewIds.currentViewId;
     const pvid: string = key === '[CLY]_view' ? viewIds.previousViewId : '';
@@ -300,7 +300,7 @@ export class ModuleEvents extends ModuleBase {
       this.config.logger.w(`[ModuleEvents] startEvent, '${key}' already started, ignored`);
       return;
     }
-    const ts: number = Utils.uniqueTimestampMs();
+    const ts: number = this.config.clock.nowMs();
     this.timed.set(key, { startTs: ts });
     this.config.logger.i(`[ModuleEvents] startEvent, started timer for '${key}'`);
   }

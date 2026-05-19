@@ -408,7 +408,7 @@ export class ModuleViews extends ModuleBase {
   }
 
   private async startInternal(name: string, segmentation: SegmentationMap | null, autoStopped: boolean): Promise<string> {
-    const id: string = Utils.generateEventId();
+    const id: string = this.config.clock.generateEventId();
     this.previousViewId = this.currentViewId;
     this.currentViewId = id;
 
