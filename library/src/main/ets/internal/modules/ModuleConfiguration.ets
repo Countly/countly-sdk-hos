@@ -24,6 +24,9 @@ const K_REFRESH_CONTENT_ZONE: string = 'rcz';
 const K_BACKOFF_MECHANISM: string = 'bom';
 const K_LOGGING: string = 'log';
 const K_CONSENT_REQUIRED: string = 'cr';
+const K_AUTOMATIC_VIEW_TRACKING: string = 'avt';
+const K_AUTOMATIC_SESSION_TRACKING: string = 'ast';
+const K_AUTOMATIC_CRASH_REPORTING: string = 'acr';
 
 const K_REQUEST_QUEUE_SIZE: string = 'rqs';
 const K_EVENT_QUEUE_SIZE: string = 'eqs';
@@ -52,6 +55,7 @@ const K_SEGMENTATION_WHITELIST: string = 'sw';
 const K_EVENT_SEG_BLACKLIST: string = 'esb';
 const K_EVENT_SEG_WHITELIST: string = 'esw';
 const K_JOURNEY_TRIGGER_EVENTS: string = 'jte';
+const K_JOURNEY_TRIGGER_VIEWS: string = 'jtv';
 
 const HOUR_IN_MS: number = 60 * 60 * 1000;
 
@@ -321,7 +325,9 @@ export class ModuleConfiguration extends ModuleBase {
     if (key === K_TRACKING || key === K_NETWORKING || key === K_SESSION_TRACKING ||
         key === K_VIEW_TRACKING || key === K_CUSTOM_EVENT_TRACKING || key === K_CRASH_REPORTING ||
         key === K_LOCATION_TRACKING || key === K_ENTER_CONTENT_ZONE || key === K_REFRESH_CONTENT_ZONE ||
-        key === K_BACKOFF_MECHANISM || key === K_LOGGING || key === K_CONSENT_REQUIRED) {
+        key === K_BACKOFF_MECHANISM || key === K_LOGGING || key === K_CONSENT_REQUIRED ||
+        key === K_AUTOMATIC_VIEW_TRACKING || key === K_AUTOMATIC_SESSION_TRACKING ||
+        key === K_AUTOMATIC_CRASH_REPORTING) {
       return typeof value === 'boolean';
     }
     // Positive integers (>= 1)
@@ -348,7 +354,7 @@ export class ModuleConfiguration extends ModuleBase {
     if (key === K_EVENT_BLACKLIST || key === K_EVENT_WHITELIST ||
         key === K_USER_PROP_BLACKLIST || key === K_USER_PROP_WHITELIST ||
         key === K_SEGMENTATION_BLACKLIST || key === K_SEGMENTATION_WHITELIST ||
-        key === K_JOURNEY_TRIGGER_EVENTS) {
+        key === K_JOURNEY_TRIGGER_EVENTS || key === K_JOURNEY_TRIGGER_VIEWS) {
       return Array.isArray(value);
     }
     // Per-event segmentation filter object
@@ -419,6 +425,9 @@ export class ModuleConfiguration extends ModuleBase {
       this.config.logger.setEnabled(sc.loggingEnabled);
     }
     if (inner[K_CONSENT_REQUIRED] !== undefined) sc.consentRequired = inner[K_CONSENT_REQUIRED] as boolean;
+    if (inner[K_AUTOMATIC_VIEW_TRACKING] !== undefined) sc.automaticViewTrackingEnabled = inner[K_AUTOMATIC_VIEW_TRACKING] as boolean;
+    if (inner[K_AUTOMATIC_SESSION_TRACKING] !== undefined) sc.automaticSessionTrackingEnabled = inner[K_AUTOMATIC_SESSION_TRACKING] as boolean;
+    if (inner[K_AUTOMATIC_CRASH_REPORTING] !== undefined) sc.automaticCrashReportingEnabled = inner[K_AUTOMATIC_CRASH_REPORTING] as boolean;
 
     // Numbers
     if (inner[K_REQUEST_QUEUE_SIZE] !== undefined) sc.requestQueueSize = inner[K_REQUEST_QUEUE_SIZE] as number;
@@ -465,6 +474,9 @@ export class ModuleConfiguration extends ModuleBase {
     }
     if (inner[K_JOURNEY_TRIGGER_EVENTS] !== undefined) {
       sc.journeyTriggerEvents = this.toStringArray(inner[K_JOURNEY_TRIGGER_EVENTS]);
+    }
+    if (inner[K_JOURNEY_TRIGGER_VIEWS] !== undefined) {
+      sc.journeyTriggerViews = this.toStringArray(inner[K_JOURNEY_TRIGGER_VIEWS]);
     }
 
     // Propagate to live mutables ONLY for keys that arrived in this apply.

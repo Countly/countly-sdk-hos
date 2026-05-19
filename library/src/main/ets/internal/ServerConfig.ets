@@ -58,6 +58,12 @@ export class ServerConfig {
   public loggingEnabled: boolean = false;
   /** `cr`, consent required. */
   public consentRequired: boolean = false;
+  /** `avt` — automatic view tracking allowed. Default false. */
+  public automaticViewTrackingEnabled: boolean = false;
+  /** `ast` — automatic session tracking allowed. Default true. */
+  public automaticSessionTrackingEnabled: boolean = true;
+  /** `acr` — automatic crash reporting allowed. Default false. */
+  public automaticCrashReportingEnabled: boolean = false;
 
   // ---- Numeric settings (server-controllable knobs) ----
   /** `rqs`, request queue size. */
@@ -103,6 +109,8 @@ export class ServerConfig {
   public userPropertyFilter: FilterList<string[]> = new FilterList<string[]>([], false);
   /** `jte`, event names that trigger a content-zone refresh. */
   public journeyTriggerEvents: string[] = [];
+  /** `jtv` — view names that trigger a content-zone refresh. Default empty. */
+  public journeyTriggerViews: string[] = [];
 }
 
 /**

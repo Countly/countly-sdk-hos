@@ -117,6 +117,11 @@ export default function configurationTest() {
       expect(h.instance.config.serverConfig.requestQueueSize).assertEqual(1000);
       expect(h.instance.config.serverConfig.eventQueueSize).assertEqual(100);
       expect(h.instance.config.serverConfig.sessionUpdateInterval).assertEqual(60);
+      // Automatic-tracking trio: avt/acr default false, ast defaults true.
+      expect(h.instance.config.serverConfig.automaticViewTrackingEnabled).assertFalse();
+      expect(h.instance.config.serverConfig.automaticSessionTrackingEnabled).assertTrue();
+      expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertFalse();
+      expect(h.instance.config.serverConfig.journeyTriggerViews.length).assertEqual(0);
     });
 
     it('setSDKBehaviorSettings_validJSON_appliesBeforeOnInit', 0, async () => {
@@ -1369,6 +1374,259 @@ export default function configurationTest() {
         cfg.setSDKBehaviorSettings(body);
       });
       expect(h.instance.config.serverConfig.journeyTriggerEvents.length).assertEqual(0);
+    });
+
+    it('apply_autoTrackingTrio_flipsAllFlags', 0, async () => {
+      // Server payload flips each automatic-tracking flag away from its
+      // default — avt false→true, ast true→false, acr false→true.
+      const body: string = buildSbsBody({ 'avt': true, 'ast': false, 'acr': true });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(body);
+      });
+      const sc = h.instance.config.serverConfig;
+      expect(sc.automaticViewTrackingEnabled).assertTrue();
+      expect(sc.automaticSessionTrackingEnabled).assertFalse();
+      expect(sc.automaticCrashReportingEnabled).assertTrue();
+    });
+
+    it('apply_autoTrackingTrio_nonBooleanRejected', 0, async () => {
+      // Non-boolean values must be dropped by the validation pass — defaults
+      // stay intact.
+      const inner: Record<string, Object> = {};
+      inner['avt'] = 1 as Object;
+      inner['ast'] = 'no' as Object;
+      inner['acr'] = ['enabled'] as Object;
+      const body: string = buildSbsBody(inner);
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(body);
+      });
+      const sc = h.instance.config.serverConfig;
+      expect(sc.automaticViewTrackingEnabled).assertFalse();
+      expect(sc.automaticSessionTrackingEnabled).assertTrue();
+      expect(sc.automaticCrashReportingEnabled).assertFalse();
+    });
+
+    it('apply_journeyTriggerViews_storedInServerConfig', 0, async () => {
+      // jtv mirrors jte: array of view names that should trigger a content
+      // refresh. Current build only stores the list — same surface as jte.
+      const body: string = buildSbsBody({ 'jtv': ['HomePage', 'Checkout'] });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(body);
+      });
+      const jtv: string[] = h.instance.config.serverConfig.journeyTriggerViews;
+      expect(jtv.length).assertEqual(2);
+      expect(jtv.indexOf('HomePage') !== -1).assertTrue();
+      expect(jtv.indexOf('Checkout') !== -1).assertTrue();
+    });
+
+    it('apply_jtvEmptyArray_setsEmptyList', 0, async () => {
+      const body: string = buildSbsBody({ 'jtv': [] });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(body);
+      });
+      expect(h.instance.config.serverConfig.journeyTriggerViews.length).assertEqual(0);
+    });
+
+    it('apply_ast_falseBlocksAutoSessionFromLifecycle', 0, async () => {
+      // ast=false must short-circuit the automatic-session lifecycle path:
+      // a fg transition should NOT enqueue begin_session, and the matching
+      // bg must NOT enqueue end_session.
+      const body: string = buildSbsBody({ 'ast': false });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(body);
+      });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(0);
+      h.instance.lifecycleBackground();
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(0);
+    });
+
+    it('apply_ast_repeatedFgBgWithFalse_noNegativeCounter', 0, async () => {
+      // Both onEnterForeground AND onEnterBackground must early-return on
+      // ast=false; otherwise the lifecycle counter goes negative on bg, the
+      // clamp branch warns, and a later ast=true flip starts off-by-one.
+      const body: string = buildSbsBody({ 'ast': false });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(body);
+      });
+      h.instance.lifecycleForeground();
+      h.instance.lifecycleBackground();
+      h.instance.lifecycleForeground();
+      h.instance.lifecycleBackground();
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(0);
+      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(0);
+    });
+
+    it('apply_ast_true_lifecycleStillBeginsSession', 0, async () => {
+      // Default ast=true: the existing automatic-session flow is unchanged
+      // — a fg transition begins a session, bg ends it.
+      const body: string = buildSbsBody({ 'ast': true });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(body);
+      });
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
+      h.instance.lifecycleBackground();
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(1);
+    });
+
+    it('apply_acr_falseStillAllowsManualRecord', 0, async () => {
+      // acr gates the platform-observer path only; the public
+      // recordUnhandledException API stays callable so manually-reported
+      // crashes still ship when acr=false.
+      const body: string = buildSbsBody({ 'acr': false });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(body);
+      });
+      await h.instance.crashes.recordUnhandledException(new Error('manual_after_acr_false'), null);
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('crash=').length >= 1).assertTrue();
+    });
+
+    it('apply_acr_flagFlipsViaDevSuppliedBootstrap', 0, async () => {
+      // The install-time gate in ModuleCrashes.onInit reads
+      // `serverConfig.automaticCrashReportingEnabled` — verify both
+      // directions reach the field that the gate consults.
+      const enabled: string = buildSbsBody({ 'acr': true });
+      const hOn: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(enabled);
+      });
+      expect(hOn.instance.config.serverConfig.automaticCrashReportingEnabled).assertTrue();
+
+      const disabled: string = buildSbsBody({ 'acr': false });
+      const hOff: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(disabled);
+      });
+      expect(hOff.instance.config.serverConfig.automaticCrashReportingEnabled).assertFalse();
+    });
+
+    it('apply_avt_flagAppliedFromDevSuppliedBootstrap', 0, async () => {
+      // The avt gate lives in CountlyInstance.handleAutoTrackedAbilityForeground,
+      // which is invoked by LifecycleObserver.onAbilityForeground — a platform
+      // callback not reachable from the test surface. Cover the configuration
+      // side here: a dev-supplied bootstrap flipping avt=true reaches the
+      // ServerConfig field that the gate consults.
+      const body: string = buildSbsBody({ 'avt': true });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(body);
+      });
+      expect(h.instance.config.serverConfig.automaticViewTrackingEnabled).assertTrue();
+    });
+
+    // -- Precedence sweep for the automatic-tracking trio (avt/ast/acr).
+    //    Precedence is server > storage > integrator. The ServerConfig field
+    //    is seeded from the integrator's flag in CountlyInstance before any
+    //    SBS layer applies, and SBS overwrites only the keys it actually
+    //    carries — so either side enabling is enough.
+
+    it('precedence_acr_integratorEnabledServerSilent_handlerInstalls', 0, async () => {
+      // Integrator alone is enough: enableCrashReporting seeds acr=true, and
+      // a silent SBS layer leaves it that way. The install gate then fires —
+      // verified directly via the test seam, not just the flag.
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.crashes.enableCrashReporting();
+      });
+      expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertTrue();
+      expect(h.instance.isAutomaticCrashHandlerInstalled()).assertTrue();
+    });
+
+    it('precedence_acr_integratorSilentServerEnabled_handlerInstalls', 0, async () => {
+      // Server alone is enough: integrator default is false, dev-supplied SBS
+      // says true, SBS overwrites the seed. Observer must be installed.
+      const body: string = buildSbsBody({ 'acr': true });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.setSDKBehaviorSettings(body);
+      });
+      expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertTrue();
+      expect(h.instance.isAutomaticCrashHandlerInstalled()).assertTrue();
+    });
+
+    it('precedence_acr_serverOverridesIntegrator_handlerNotInstalled', 0, async () => {
+      // Integrator opted in, server (dev-supplied SBS) explicitly disables —
+      // server wins, observer must NOT be installed.
+      const body: string = buildSbsBody({ 'acr': false });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.crashes.enableCrashReporting();
+        cfg.setSDKBehaviorSettings(body);
+      });
+      expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertFalse();
+      expect(h.instance.isAutomaticCrashHandlerInstalled()).assertFalse();
+    });
+
+    it('precedence_acr_coldStart_serverFetchEnablesAfterIntegratorSilent', 0, async () => {
+      // True cold start: no dev-supplied SBS, no stored SBS, integrator silent.
+      // The server fetch lands DURING init() with acr=true. Without the
+      // post-fetch reconcile this regresses — ModuleCrashes.onInit ran before
+      // the server response arrived. With reconcile, the observer must end up
+      // installed by the time init() resolves.
+      const h: Harness = await buildHarness(
+        undefined,
+        (network: FakeNetwork) => { network.nextBody = buildSbsBody({ 'acr': true }); }
+      );
+      expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertTrue();
+      expect(h.instance.isAutomaticCrashHandlerInstalled()).assertTrue();
+    });
+
+    it('precedence_acr_coldStart_serverFetchDisablesAfterIntegratorEnabled', 0, async () => {
+      // Inverse cold start: integrator enabled (seeds acr=true → ModuleCrashes
+      // onInit installs the observer), but the server fetch returns acr=false
+      // during init. Reconcile must UNINSTALL — server precedence demands it.
+      const h: Harness = await buildHarness(
+        (cfg: TestableCountlyConfig) => { cfg.crashes.enableCrashReporting(); },
+        (network: FakeNetwork) => { network.nextBody = buildSbsBody({ 'acr': false }); }
+      );
+      expect(h.instance.config.serverConfig.automaticCrashReportingEnabled).assertFalse();
+      expect(h.instance.isAutomaticCrashHandlerInstalled()).assertFalse();
+    });
+
+    it('precedence_ast_integratorManualSeedsAstFalse', 0, async () => {
+      // manualSessionControl seeds the inverse onto ast. With SBS silent the
+      // seeded value rules — lifecycle hooks must not begin a session.
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.sessions.enableManualControl();
+      });
+      expect(h.instance.config.serverConfig.automaticSessionTrackingEnabled).assertFalse();
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(0);
+    });
+
+    it('precedence_ast_serverOverridesManualSessionControl', 0, async () => {
+      // Integrator opted into manual control, server flips ast=true. Server
+      // wins; lifecycle hooks begin a session even though manualSessionControl
+      // is still set (the manual API also remains callable — they're independent).
+      const body: string = buildSbsBody({ 'ast': true });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.sessions.enableManualControl();
+        cfg.setSDKBehaviorSettings(body);
+      });
+      expect(h.instance.config.serverConfig.automaticSessionTrackingEnabled).assertTrue();
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
+    });
+
+    it('precedence_avt_integratorEnabledServerSilent_flagStaysTrue', 0, async () => {
+      // enableAutomaticViewTracking seeds avt=true; silent SBS preserves it.
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.views.enableAutomaticViewTracking();
+      });
+      expect(h.instance.config.serverConfig.automaticViewTrackingEnabled).assertTrue();
+    });
+
+    it('precedence_avt_serverOverridesIntegrator', 0, async () => {
+      // Integrator enabled auto-views, server says avt=false. Server wins.
+      const body: string = buildSbsBody({ 'avt': false });
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.views.enableAutomaticViewTracking();
+        cfg.setSDKBehaviorSettings(body);
+      });
+      expect(h.instance.config.serverConfig.automaticViewTrackingEnabled).assertFalse();
     });
 
     it('apply_filterArrayWithNonStrings_skipsNonStrings', 0, async () => {

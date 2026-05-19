@@ -65,7 +65,14 @@ export class ModuleSessions extends ModuleBase {
   }
 
   public override onEnterForeground(): void {
-    if (this.config.manualSessionControl) return;
+    // Single gate: `automaticSessionTrackingEnabled` is seeded from the inverse
+    // of `manualSessionControl` in CountlyInstance, and SBS layers overwrite
+    // it only when they carry `ast`. Reading it here encodes the full
+    // precedence chain server > storage > integrator.
+    if (!this.config.serverConfig.automaticSessionTrackingEnabled) {
+      this.config.logger.d('[ModuleSessions] onEnterForeground, automatic session tracking disabled — skipped');
+      return;
+    }
     this.lifecycleCounter++;
     if (this.lifecycleCounter === 1) {
       // Rejection log + sessionActive rollback so a begin_session enqueue
@@ -80,7 +87,10 @@ export class ModuleSessions extends ModuleBase {
   }
 
   public override onEnterBackground(): void {
-    if (this.config.manualSessionControl) return;
+    // Pair with onEnterForeground: when ast=false the counter wasn't
+    // incremented on the matching foreground, so a decrement here would drive
+    // it negative and trip the clamp branch on every cycle.
+    if (!this.config.serverConfig.automaticSessionTrackingEnabled) return;
     this.lifecycleCounter--;
     if (this.lifecycleCounter < 0) {
       // WARNING level, not ERROR: this is a defensive guard for
