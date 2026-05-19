@@ -68,7 +68,8 @@ export default class MyAbilityStage extends AbilityStage {
     // Start with all consents granted so every demo button works out of the
     // box. In a real app you would gate these behind a consent flow.
     config.consent
-      .enableUnknownConsentMode();
+      .setRequiresConsent(true)
+      .giveAll();
 
     config.crashes.enableCrashReporting();
     config.views.enableAutomaticViewTracking();
