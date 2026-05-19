@@ -2,7 +2,7 @@ import { Logger } from '../internal/Logger';
 import { ModuleRequestQueue } from '../internal/modules/ModuleRequestQueue';
 
 /**
- * User-facing request-queue surface — accessed via
+ * User-facing request-queue surface, accessed via
  * `Countly.sharedInstance().requests`. Forwards to ModuleRequestQueue and
  * emits the same `[Countly] Calling …` log lines the corresponding
  * CountlyInstance methods used to emit, so integrator log listeners see no

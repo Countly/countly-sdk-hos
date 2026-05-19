@@ -12,14 +12,14 @@ import { Logger } from './Logger';
  * HarmonyOS Context or preferences file.
  *
  * Keys used:
- *   cly_device_id        — stored device ID (survives app restart)
- *   cly_device_id_type   — "DEVELOPER_SUPPLIED" | "SDK_GENERATED" | "TEMPORARY_ID"
- *   cly_request_queue    — delimiter-joined serialized query strings
- *   cly_sbs              — SDK Behavior Settings JSON
- *   cly_remote_config    — Remote Config cache JSON
- *   cly_push_token       — most recently sent push token (for resend on
+ *   cly_device_id       , stored device ID (survives app restart)
+ *   cly_device_id_type  , "DEVELOPER_SUPPLIED" | "SDK_GENERATED" | "TEMPORARY_ID"
+ *   cly_request_queue   , delimiter-joined serialized query strings
+ *   cly_sbs             , SDK Behavior Settings JSON
+ *   cly_remote_config   , Remote Config cache JSON
+ *   cly_push_token      , most recently sent push token (for resend on
  *                          device-id change / consent grant)
- *   cly_push_provider    — paired provider name ("HMS" | "FCM" | "APN")
+ *   cly_push_provider   , paired provider name ("HMS" | "FCM" | "APN")
  */
 export class Storage {
   protected static readonly REQUEST_DELIMITER: string = ':::';
@@ -44,7 +44,7 @@ export class Storage {
 
   /**
    * A tiny, non-cryptographic digest of the raw appKey. Used only to
-   * disambiguate two appKeys that sanitize to the same sequence — it does
+   * disambiguate two appKeys that sanitize to the same sequence, it does
    * NOT need to resist collisions at cryptographic strength, and keeping it
    * short keeps filenames readable. 32-bit FNV-1a base36 → <= 7 chars.
    */
@@ -109,6 +109,28 @@ export class Storage {
       return true;
     } catch (err) {
       this.logger.e(`[Storage] remove, ${key}: ${err}`);
+      return false;
+    }
+  }
+
+  /**
+   * Wipe every persisted SDK entry, device ID, request queue, server config,
+   * health-check counters, user-profile cache, remote-config cache, etc.
+   * Invoked by `CountlyInstance.halt()` (the data-wiping variant) and by
+   * `Countly.haltAll()`. The non-wiping `stop()` path does NOT call this.
+   *
+   * Returns true on a successful flush; false if the preferences handle is
+   * unavailable or the underlying clear/flush throws. The SDK keeps running
+   * in-memory if persistence fails, the halt-wipe contract is best-effort.
+   */
+  public async clear(): Promise<boolean> {
+    if (!this.prefs) return false;
+    try {
+      await this.prefs.clear();
+      await this.prefs.flush();
+      return true;
+    } catch (err) {
+      this.logger.e(`[Storage] clear, failed: ${err}`);
       return false;
     }
   }

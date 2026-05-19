@@ -3,7 +3,7 @@ import { ModulePush } from '../internal/modules/ModulePush';
 import { MessagingProvider } from '../types/Types';
 
 /**
- * User-facing push-notifications surface — accessed via `Countly.sharedInstance().push`.
+ * User-facing push-notifications surface, accessed via `Countly.sharedInstance().push`.
  *
  * DISABLED: the push module is intentionally turned off in this build. Method
  * bodies are no-op'd (see logs) and the property on `CountlyInstance` is
@@ -24,15 +24,15 @@ export class PushApi {
   }
 
   public async onTokenRefresh(token: string, provider: MessagingProvider): Promise<void> {
-    this.logger.w('[Push] onTokenRefresh — push module is disabled, no-op');
+    this.logger.w('[Push] onTokenRefresh, push module is disabled, no-op');
   }
 
   public async recordPushNotificationToken(): Promise<void> {
-    this.logger.w('[Push] recordPushNotificationToken — push module is disabled, no-op');
+    this.logger.w('[Push] recordPushNotificationToken, push module is disabled, no-op');
   }
 
   public async clearPushNotificationToken(): Promise<void> {
-    this.logger.w('[Push] clearPushNotificationToken — push module is disabled, no-op');
+    this.logger.w('[Push] clearPushNotificationToken, push module is disabled, no-op');
   }
 
   public async recordPushAction(
@@ -41,11 +41,11 @@ export class PushApi {
     url: string | null = null,
     openUrlFn: ((url: string) => void) | null = null
   ): Promise<void> {
-    this.logger.w('[Push] recordPushAction — push module is disabled, no-op');
+    this.logger.w('[Push] recordPushAction, push module is disabled, no-op');
   }
 
   public async askForNotificationPermission(requester: () => Promise<boolean>): Promise<boolean> {
-    this.logger.w('[Push] askForNotificationPermission — push module is disabled, no-op');
+    this.logger.w('[Push] askForNotificationPermission, push module is disabled, no-op');
     return false;
   }
 }

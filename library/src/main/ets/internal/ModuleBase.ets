@@ -34,16 +34,40 @@ export class ModuleBase {
     return Promise.resolve();
   }
 
-  /** Called on device ID change without merge — module state should be reset. */
+  /** Called on device ID change without merge, module state should be reset. */
   public onDeviceIdChangedNotMerged(oldId: string, newId: string): Promise<void> {
     return Promise.resolve();
   }
 
-  /** Called on device ID change with merge — module state should continue. */
+  /** Called on device ID change with merge, module state should continue. */
   public onDeviceIdChangedMerged(oldId: string, newId: string): Promise<void> {
     return Promise.resolve();
   }
 
   /** Called on halt/destroy of the owning instance. */
   public onHalt(): Promise<void> { return Promise.resolve(); }
+
+  /**
+   * Whether the owning instance has been halted. User-facing module mutators
+   * use this to short-circuit post-halt calls. Internal methods called from
+   * `onHalt` (drain paths) intentionally bypass this check.
+   */
+  public isHalted(): boolean { return this.config.halted; }
+
+  /**
+   * Standard guard used at the top of every user-facing module mutator. If
+   * the instance is halted, logs a single WARNING line ("[ModuleX] methodY
+   * called after halt, ignored") so the integrator sees why their call did
+   * nothing, and returns true so the caller can early-return.
+   *
+   * Pattern:
+   *   if (this.rejectIfHalted('ModuleEvents', 'recordEvent')) return;
+   */
+  protected rejectIfHalted(moduleTag: string, methodName: string): boolean {
+    if (this.config.halted) {
+      this.config.logger.w(`[${moduleTag}] ${methodName} called after halt, ignored`);
+      return true;
+    }
+    return false;
+  }
 }

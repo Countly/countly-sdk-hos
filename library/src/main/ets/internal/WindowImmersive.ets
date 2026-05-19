@@ -8,13 +8,13 @@ import { Logger } from './Logger';
  * In HarmonyOS Stage Model, a component's `expandSafeArea` modifier only
  * enlarges its paint region within whatever layout space the *window*
  * already gave up. A default window reserves top/bottom strips for the
- * system bars, so no child — no matter how eagerly it expands — can be
+ * system bars, so no child, no matter how eagerly it expands, can be
  * drawn into those strips without a window-level toggle.
  *
  * `setWindowLayoutFullScreen(true)` releases those reservations. Combined
  * with `expandSafeArea([SYSTEM, CUTOUT])` on the overlay container, the
  * overlay renders edge-to-edge, while the app's other UI (whose root
- * doesn't opt into `expandSafeArea`) remains framework-padded — exactly
+ * doesn't opt into `expandSafeArea`) remains framework-padded, exactly
  * the IMMERSIVE contract from the dev guide.
  *
  * Reference-counted across the two overlay types. Both flags must be
@@ -47,7 +47,7 @@ export class WindowImmersive {
 
   private static apply(ctx: common.Context | null, logger: Logger): void {
     if (ctx === null) {
-      logger.d('[WindowImmersive] apply: no context — skipping window update');
+      logger.d('[WindowImmersive] apply: no context, skipping window update');
       return;
     }
     const fullscreen: boolean = WindowImmersive.contentFS || WindowImmersive.feedbackFS;
@@ -56,7 +56,7 @@ export class WindowImmersive {
       window.getLastWindow(uiCtx).then((win: window.Window): void => {
         // HOS: setWindowLayoutFullScreen is a no-op on PC/2-in-1 devices in free multi-window mode
         // since 5.0.2(14). Phone/tablet behavior is unchanged. To support immersive overlays on
-        // PC/2-in-1, also call win.maximize(window.MaximizePresentation.ENTER_IMMERSIVE) — but that
+        // PC/2-in-1, also call win.maximize(window.MaximizePresentation.ENTER_IMMERSIVE), but that
         // resizes the user's window, which is too invasive for a momentary overlay. Revisit if the
         // content/feedback overlay modules (currently disabled) ship to PC form factors.
         win.setWindowLayoutFullScreen(fullscreen).catch((err: Object): void => {

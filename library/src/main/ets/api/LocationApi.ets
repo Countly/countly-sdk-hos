@@ -1,7 +1,7 @@
 import { Logger } from '../internal/Logger';
 import { ModuleLocation } from '../internal/modules/ModuleLocation';
 
-/** User-facing location surface — accessed via `Countly.sharedInstance().location`. */
+/** User-facing location surface, accessed via `Countly.sharedInstance().location`. */
 export class LocationApi {
   private readonly logger: Logger;
   private readonly module: ModuleLocation;

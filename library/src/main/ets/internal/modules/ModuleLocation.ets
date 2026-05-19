@@ -46,13 +46,14 @@ export class ModuleLocation extends ModuleBase {
   }
 
   public async setLocation(country: string | null, city: string | null, gps: string | null, ip: string | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleLocation', 'setLocation')) return;
     if (!this.core.consentModule.hasConsent(CountlyFeature.LOCATION)) {
-      this.config.logger.v('[ModuleLocation] setLocation, no location consent — ignored');
+      this.config.logger.v('[ModuleLocation] setLocation, no location consent, ignored');
       return;
     }
-    // SDK Behavior Settings `lt` killswitch — server-side disable.
+    // SDK Behavior Settings `lt` killswitch, server-side disable.
     if (!this.config.serverConfig.locationTrackingEnabled) {
-      this.config.logger.d('[ModuleLocation] setLocation, location tracking disabled by server config — ignored');
+      this.config.logger.d('[ModuleLocation] setLocation, location tracking disabled by server config, ignored');
       return;
     }
     const anyNonNull: boolean = !!(country || city || gps || ip);
@@ -60,7 +61,7 @@ export class ModuleLocation extends ModuleBase {
       this.config.locationDisabled = false;
     }
     if ((country && !city) || (!country && city)) {
-      this.config.logger.w('[ModuleLocation] setLocation, country and city must be set together — the unpaired value will still be sent but may be ignored server-side');
+      this.config.logger.w('[ModuleLocation] setLocation, country and city must be set together, the unpaired value will still be sent but may be ignored server-side');
     }
     this.config.initialLocationCountry = country;
     this.config.initialLocationCity = city;
@@ -75,7 +76,7 @@ export class ModuleLocation extends ModuleBase {
     const sessionTrackingOn: boolean = this.config.serverConfig.sessionTrackingEnabled;
     const willFuseLater: boolean = !this.sessionStartedProvider() && sessionsConsent && sessionTrackingOn;
     if (!willFuseLater) {
-      // Send immediately (without IP — IP only geolocates with begin_session).
+      // Send immediately (without IP, IP only geolocates with begin_session).
       const params: Record<string, string> = this.core.requestBuilder.baseParams();
       if (country) params['country_code'] = country;
       if (city) params['city'] = city;
@@ -86,6 +87,7 @@ export class ModuleLocation extends ModuleBase {
   }
 
   public async disableLocation(): Promise<void> {
+    if (this.rejectIfHalted('ModuleLocation', 'disableLocation')) return;
     this.config.locationDisabled = true;
     this.config.initialLocationCountry = null;
     this.config.initialLocationCity = null;

@@ -52,7 +52,7 @@ export default function requestQueueTest() {
     });
 
     it('nonSuccessStatus_4xx_dropsHead', 0, async () => {
-      // 4xx is permanent (bad app_key, revoked creds, etc) — retry would
+      // 4xx is permanent (bad app_key, revoked creds, etc), retry would
       // spin battery/data forever. classify() drops the head.
       const h: Harness = await buildHarness();
       h.network.nextStatus = 401;
@@ -123,7 +123,7 @@ export default function requestQueueTest() {
     });
 
     // -----------------------------------------------------------------------
-    // Ported from Android RequestQueueTests.java — app-key rewrite / removal
+    // Ported from Android RequestQueueTests.java, app-key rewrite / removal
     // -----------------------------------------------------------------------
 
     it('removeDifferentAppKeys_dropsMismatchedEntries', 0, async () => {
@@ -165,7 +165,7 @@ export default function requestQueueTest() {
     });
 
     // -----------------------------------------------------------------------
-    // Ported from Android ConnectionQueueIntegrationTests — enqueue semantics
+    // Ported from Android ConnectionQueueIntegrationTests, enqueue semantics
     // -----------------------------------------------------------------------
 
     it('enqueue_emptyPayload_isDropped', 0, async () => {
@@ -175,7 +175,7 @@ export default function requestQueueTest() {
       h.network.shouldFail = true;
       await h.instance.requestQueue.enqueue('');
       await flushTick(60);
-      // Empty payload is rejected at enqueue-time — nothing persisted, nothing sent.
+      // Empty payload is rejected at enqueue-time, nothing persisted, nothing sent.
       expect(h.instance.requestQueue.size()).assertEqual(0);
       expect(h.network.calls.length).assertEqual(0);
     });
@@ -202,12 +202,12 @@ export default function requestQueueTest() {
       expect(h.instance.requestQueue.size()).assertEqual(0);
       const dump: Record<string, string> = h.storage.dump();
       const raw: string | undefined = dump['cly_request_queue'];
-      // Either key absent or stored as empty string — both mean "no requests".
+      // Either key absent or stored as empty string, both mean "no requests".
       expect(raw === undefined || raw.length === 0).assertTrue();
     });
 
     // -----------------------------------------------------------------------
-    // Ported from Android ConnectionProcessorTests — request draining
+    // Ported from Android ConnectionProcessorTests, request draining
     // -----------------------------------------------------------------------
 
     it('drain_emptyQueue_doesNotHitNetwork', 0, async () => {
@@ -239,7 +239,7 @@ export default function requestQueueTest() {
     });
 
     it('drain_appendsRrRemainingCount', 0, async () => {
-      // Parity with Android ConnectionProcessorTests.testRun_storeHasTwoConnections —
+      // Parity with Android ConnectionProcessorTests.testRun_storeHasTwoConnections,
       // rr=<remaining>, so first-of-two has rr=1 and the tail has rr=0.
       const h: Harness = await buildHarness();
       h.instance.requests.enableOfflineMode();
@@ -261,13 +261,13 @@ export default function requestQueueTest() {
 
     it('backoff_disabled_keepsRetryingWithoutDelay', 0, async () => {
       // With backoff disabled, an evaluateBackoff-triggered pause doesn't fire
-      // — success path still removes the head, so the test focuses on the
+      //, success path still removes the head, so the test focuses on the
       // config knob being respected. shouldFail leaves the head in place.
       const h: Harness = await buildHarness((cfg) => { cfg.network.disableBackoffMechanism(); });
       h.network.shouldFail = true;
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=retry`);
       await flushTick(120);
-      // Failure means request stays queued — contract enforced regardless of backoff.
+      // Failure means request stays queued, contract enforced regardless of backoff.
       expect(h.instance.requestQueue.size() >= 1).assertTrue();
     });
 
@@ -286,7 +286,7 @@ export default function requestQueueTest() {
       h.network.nextBody = '{"result":"Success"}';
       await h.instance.requestQueue.replaceTempDeviceId('nudge');
       await flushTick(120);
-      // Note: may still be within backoff window, so we don't assert drain here —
+      // Note: may still be within backoff window, so we don't assert drain here,
       // the non-drop-on-5xx contract above is the load-bearing check.
     });
 
@@ -350,7 +350,7 @@ export default function requestQueueTest() {
       // After halt, even if we re-enqueue the queue shouldn't drain.
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=after_halt`);
       await flushTick(100);
-      // No new successful sends should appear — the tick scheduler is halted.
+      // No new successful sends should appear, the tick scheduler is halted.
       const newSuccessfulSends: number = h.network.calls.filter(c => c.data.indexOf('foo=after_halt') !== -1).length;
       expect(newSuccessfulSends).assertEqual(0);
       // We still may have observed failed attempts prior to halt; the
@@ -367,7 +367,7 @@ export default function requestQueueTest() {
       // overrides and ships a `metrics=` /i request. The dev-guide-defined
       // shape is covered by request-builder tests; here we just verify the
       // wire activation path. Health check is disabled so the metrics= probe
-      // isolates the recordMetrics signal — the hc payload also carries
+      // isolates the recordMetrics signal, the hc payload also carries
       // `metrics=` and would otherwise pollute the count.
       const h: Harness = await buildHarness((cfg) => { cfg.network.disableHealthCheck(); });
       const before: number = h.network.findCallsWithParam('metrics=').length;
@@ -398,7 +398,7 @@ export default function requestQueueTest() {
       const h: Harness = await buildHarness();
       h.instance.requests.enableOfflineMode();
       h.instance.requests.enableOfflineMode();
-      // Subsequent enqueues should remain paused — exercises the
+      // Subsequent enqueues should remain paused, exercises the
       // already-paused early-return branch.
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=offlineidem`);
       await flushTick(80);
@@ -406,11 +406,11 @@ export default function requestQueueTest() {
     });
 
     // -----------------------------------------------------------------------
-    // BOM (backoff mechanism) — server-config tuned (dev guide §SBS bom_*)
+    // BOM (backoff mechanism), server-config tuned (dev guide §SBS bom_*)
     // -----------------------------------------------------------------------
 
     it('bom_slowSuccess_pausesForBomDuration', 0, async () => {
-      // Server returns 200 with elapsedMs ≥ bom_at — slow-success path
+      // Server returns 200 with elapsedMs ≥ bom_at, slow-success path
       // triggers backoff. Subsequent enqueue should NOT ship until the
       // pause window elapses.
       const sbs: string = JSON.stringify({
@@ -433,7 +433,7 @@ export default function requestQueueTest() {
     });
 
     it('bom_fastResponse_doesNotTriggerBackoff', 0, async () => {
-      // elapsedMs (20ms default) < bom_at*1000 — no backoff arms even on
+      // elapsedMs (20ms default) < bom_at*1000, no backoff arms even on
       // a half-empty queue.
       const sbs: string = JSON.stringify({
         'v': 1, 't': Date.now(),
@@ -445,14 +445,14 @@ export default function requestQueueTest() {
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=fast1`);
       await flushTick(80);
       expect(h.network.calls.some(c => c.data.indexOf('foo=fast1') !== -1)).assertTrue();
-      // Second request ships immediately — no backoff window.
+      // Second request ships immediately, no backoff window.
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=fast2`);
       await flushTick(80);
       expect(h.network.calls.some(c => c.data.indexOf('foo=fast2') !== -1)).assertTrue();
     });
 
     it('bom_staleHead_skipsBackoff', 0, async () => {
-      // Slow response BUT head request is older than bom_ra — backoff
+      // Slow response BUT head request is older than bom_ra, backoff
       // skips so the pile-up doesn't get re-paused on every drained stale
       // request. Next enqueue ships without delay.
       const sbs: string = JSON.stringify({
@@ -475,7 +475,7 @@ export default function requestQueueTest() {
 
     it('bom_queueAboveRqpThreshold_skipsBackoff', 0, async () => {
       // Slow responses on a queue that's above the bom_rqp threshold must
-      // NOT arm backoff — the SDK can't afford to pause when the queue
+      // NOT arm backoff, the SDK can't afford to pause when the queue
       // is filling up. With max=10 and bom_rqp=0.05, every post-shift
       // ratio (0.3, 0.2, 0.1) is above threshold until the queue empties,
       // so all four items drain inside the test window even though every
@@ -498,7 +498,7 @@ export default function requestQueueTest() {
       h.network.calls = [];
       await h.instance.requests.disableOfflineMode();
       await flushTick(200);
-      // All four drain — backoff would have pinned the queue at the
+      // All four drain, backoff would have pinned the queue at the
       // first slow drain if `bom_rqp` weren't being consulted.
       expect(h.instance.requestQueue.size()).assertEqual(0);
     });
@@ -515,7 +515,7 @@ export default function requestQueueTest() {
       h.network.nextElapsedMs = 1500;
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=disabled1`);
       await flushTick(120);
-      // Next enqueue ships immediately — backoff disabled.
+      // Next enqueue ships immediately, backoff disabled.
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=disabled2`);
       await flushTick(80);
       expect(h.network.calls.some(c => c.data.indexOf('foo=disabled2') !== -1)).assertTrue();

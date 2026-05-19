@@ -54,8 +54,9 @@ export class ModuleUserProfile extends ModuleBase {
   public hasPendingChanges(): boolean { return this.pending; }
 
   public setProperty(key: string, value: SegmentationValue): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'setProperty')) return;
     if (Utils.isNullOrEmpty(key)) {
-      this.config.logger.w('[ModuleUserProfile] setProperty, empty key — ignored');
+      this.config.logger.w('[ModuleUserProfile] setProperty, empty key, ignored');
       return;
     }
     const one: SegmentationMap = {};
@@ -64,20 +65,21 @@ export class ModuleUserProfile extends ModuleBase {
   }
 
   public setProperties(data: SegmentationMap): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'setProperties')) return;
     const keys: string[] = Object.keys(data);
     for (let i = 0; i < keys.length; i++) {
       const key: string = keys[i];
       const value: SegmentationValue = data[key];
       if (value === null || value === undefined) {
-        this.config.logger.w(`[ModuleUserProfile] setProperties, null value for '${key}' — ignored`);
+        this.config.logger.w(`[ModuleUserProfile] setProperties, null value for '${key}', ignored`);
         continue;
       }
       // SDK Behavior Settings user-property filter (upb/upw). Predefined
-      // keys ride through unfiltered — they're SDK-owned and dashboards
+      // keys ride through unfiltered, they're SDK-owned and dashboards
       // depend on `name` / `email` / etc. always being present.
       if (PREDEFINED_KEYS.indexOf(key) === -1
           && !ListingFilters.applyUserPropertyFilter(key, this.config.serverConfig)) {
-        this.config.logger.d(`[ModuleUserProfile] setProperties, '${key}' filtered out by user-property filter — ignored`);
+        this.config.logger.d(`[ModuleUserProfile] setProperties, '${key}' filtered out by user-property filter, ignored`);
         continue;
       }
       if (PREDEFINED_KEYS.indexOf(key) !== -1) {
@@ -101,35 +103,56 @@ export class ModuleUserProfile extends ModuleBase {
     this.scheduleAutoSave();
   }
 
-  public increment(key: string): void { this.addModifier('$inc', key, 1); }
-  public incrementBy(key: string, value: number): void { this.addModifier('$inc', key, value); }
-  public multiply(key: string, value: number): void { this.addModifier('$mul', key, value); }
-  public saveMax(key: string, value: number): void { this.addModifier('$max', key, value); }
-  public saveMin(key: string, value: number): void { this.addModifier('$min', key, value); }
+  public increment(key: string): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'increment')) return;
+    this.addModifier('$inc', key, 1);
+  }
+  public incrementBy(key: string, value: number): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'incrementBy')) return;
+    this.addModifier('$inc', key, value);
+  }
+  public multiply(key: string, value: number): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'multiply')) return;
+    this.addModifier('$mul', key, value);
+  }
+  public saveMax(key: string, value: number): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'saveMax')) return;
+    this.addModifier('$max', key, value);
+  }
+  public saveMin(key: string, value: number): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'saveMin')) return;
+    this.addModifier('$min', key, value);
+  }
   public setOnce(key: string, value: string): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'setOnce')) return;
     this.addModifier('$setOnce', key, Utils.truncate(value, this.config.limits.maxValueSize));
   }
   public push(key: string, value: string): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'push')) return;
     this.appendModifierArray('$push', key, Utils.truncate(value, this.config.limits.maxValueSize));
   }
   public pushUnique(key: string, value: string): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'pushUnique')) return;
     this.appendModifierArray('$addToSet', key, Utils.truncate(value, this.config.limits.maxValueSize));
   }
   public pull(key: string, value: string): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'pull')) return;
     this.appendModifierArray('$pull', key, Utils.truncate(value, this.config.limits.maxValueSize));
   }
 
   /**
-   * Public save entry — UNCONDITIONAL. Queues an unconditional task on the
+   * Public save entry, UNCONDITIONAL. Queues an unconditional task on the
    * chain so the explicit caller's "save now" intent isn't gated on the
    * events queue. Still goes through the chain for ordering (so a mutation
    * that fired auto-save just before doesn't double-enqueue with us).
    */
   public async save(): Promise<void> {
+    if (this.rejectIfHalted('ModuleUserProfile', 'save')) return;
     await this.scheduleUnconditionalSave();
   }
 
   public clear(): void {
+    if (this.rejectIfHalted('ModuleUserProfile', 'clear')) return;
     this.predefined = {};
     this.customSet = {};
     this.modifiers = {};
@@ -139,7 +162,7 @@ export class ModuleUserProfile extends ModuleBase {
   /**
    * Mutation auto-trigger: when properties change while events are pending,
    * flush the events queue so the wire ordering puts events before any
-   * later user_details. Does NOT enqueue a `user_details` request — that
+   * later user_details. Does NOT enqueue a `user_details` request, that
    * only ships on explicit `save()` or a save-triggering callsite
    * (recordEvent prelude, begin/end session, heartbeat, device-id change).
    * With no events the task no-ops.
@@ -153,7 +176,7 @@ export class ModuleUserProfile extends ModuleBase {
   }
 
   /**
-   * Explicit-save chain entry — flushes events first (so the wire orders
+   * Explicit-save chain entry, flushes events first (so the wire orders
    * events= before user_details=) and then ships the bundled user_details.
    * Used by the public `save()` method so integrators (and
    * `saveUserProfileIfPending` callers) can land a user_details request
@@ -229,7 +252,7 @@ export class ModuleUserProfile extends ModuleBase {
     // mutation arrives it would re-mark pending and the *next* chain
     // entry would re-enqueue the SAME data. Clearing here ensures the
     // next entry's saveInternal sees a clean slate and the new mutation
-    // owns its own enqueue. Tradeoff: enqueue rejection drops the body —
+    // owns its own enqueue. Tradeoff: enqueue rejection drops the body,
     // same drop-on-failure model as ModuleEvents.flushEventQueue.
     this.predefined = {};
     this.customSet = {};
@@ -242,7 +265,7 @@ export class ModuleUserProfile extends ModuleBase {
   private addModifier(modName: string, key: string, value: number | string): void {
     if (Utils.isNullOrEmpty(key)) return;
     if (!ListingFilters.applyUserPropertyFilter(key, this.config.serverConfig)) {
-      this.config.logger.d(`[ModuleUserProfile] addModifier, '${key}' filtered out by user-property filter — ignored`);
+      this.config.logger.d(`[ModuleUserProfile] addModifier, '${key}' filtered out by user-property filter, ignored`);
       return;
     }
     const truncatedKey: string = Utils.truncate(key, this.config.limits.maxKeyLength);
@@ -256,7 +279,7 @@ export class ModuleUserProfile extends ModuleBase {
   private appendModifierArray(modName: string, key: string, value: string): void {
     if (Utils.isNullOrEmpty(key)) return;
     if (!ListingFilters.applyUserPropertyFilter(key, this.config.serverConfig)) {
-      this.config.logger.d(`[ModuleUserProfile] appendModifierArray, '${key}' filtered out by user-property filter — ignored`);
+      this.config.logger.d(`[ModuleUserProfile] appendModifierArray, '${key}' filtered out by user-property filter, ignored`);
       return;
     }
     const truncatedKey: string = Utils.truncate(key, this.config.limits.maxKeyLength);

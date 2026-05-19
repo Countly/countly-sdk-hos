@@ -37,7 +37,7 @@ export default function locationTest() {
     it('setLocation_respectsConsent', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
       // Let the deferred init-time healthcheck land before snapshotting the
-      // call count — otherwise it'd arrive between `before` and the assertion
+      // call count, otherwise it'd arrive between `before` and the assertion
       // and inflate the diff that should be zero.
       await flushTick(5);
       const before: number = h.network.calls.length;
@@ -83,7 +83,7 @@ export default function locationTest() {
       expect(erasure).assertTrue();
     });
 
-    /** Null-field permutation — only country supplied. Other fields must not
+    /** Null-field permutation, only country supplied. Other fields must not
      *  appear in the request. */
     it('setLocation_onlyCountry', 0, async () => {
       const h: Harness = await buildHarness();
@@ -99,7 +99,7 @@ export default function locationTest() {
       expect(latest.data.indexOf('location=') === -1 || latest.data.indexOf('location=&') !== -1).assertTrue();
     });
 
-    /** Null-field permutation — only gps. */
+    /** Null-field permutation, only gps. */
     it('setLocation_onlyGps', 0, async () => {
       const h: Harness = await buildHarness();
       h.instance.lifecycleForeground();
@@ -110,7 +110,7 @@ export default function locationTest() {
       expect(hasGps).assertTrue();
     });
 
-    /** Null-field permutation — all null is effectively a no-op update
+    /** Null-field permutation, all null is effectively a no-op update
      *  (locationDisabled stays false; no crash). */
     it('setLocation_allNulls_noCrash', 0, async () => {
       const h: Harness = await buildHarness();
@@ -127,7 +127,6 @@ export default function locationTest() {
     it('initConsentMissing_emitsLocationErasureAtInit', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['sessions']);
       });
       await flushTick(60);
       // Erasure has empty value `location=` (note: trailing & or end of string,
@@ -167,11 +166,11 @@ export default function locationTest() {
      *  (per dev guide). */
     it('consentRevoke_location_sendsErasure', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['location', 'sessions']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       const before: number = h.network.calls.length;
       // Revoke location consent → ModuleLocation.onConsentChanged enqueues erasure.
-      h.instance.consent.removeConsent(['location']);
+      h.instance.consentModule.removeConsent(['location']);
       await flushTick(120);
       const after: number = h.network.calls.length;
       expect(after > before).assertTrue();
@@ -179,7 +178,7 @@ export default function locationTest() {
 
     it('locationWireOrder_consentBeforeBeginSessionBeforeLocation', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'location']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       h.instance.lifecycleForeground();
       await flushTick(60);

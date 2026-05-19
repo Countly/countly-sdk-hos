@@ -1,7 +1,24 @@
 import { Logger } from '../internal/Logger';
 import { ModuleConsent } from '../internal/modules/ModuleConsent';
 
-/** User-facing consent surface — accessed via `Countly.sharedInstance().consent`. */
+/**
+ * User-facing consent surface, accessed via `Countly.sharedInstance().consent`.
+ *
+ * The integrator-callable surface is intentionally narrow:
+ *   - `giveConsentAll()` / `removeConsentAll()`, the only mutators. With
+ *     unknown consent mode in particular these are the *resolution* signals
+ *     that exit unknown mode; the instance keeps running on either path
+ *     (give resumes the queue, remove ships a revocation snapshot and locks
+ *     runtime consent, see ConsentConfig.enableUnknownConsentMode).
+ *   - `checkAllConsent()`, read-only diagnostic.
+ *
+ * The per-feature mutators (`giveConsent`, `removeConsent`, `setConsent`,
+ * `getConsent`) and the feature-group helpers (`createFeatureGroup`,
+ * `setConsentFeatureGroup`) are deliberately NOT exposed. Module-level code
+ * that needs them reads/writes via `instance.consentModule.*` (which is
+ * `public readonly @internal` on `CountlyInstance`, same pattern as
+ * `viewsModule` / `deviceIdModule`). Tests use the same path.
+ */
 export class ConsentApi {
   private readonly logger: Logger;
   private readonly module: ModuleConsent;
@@ -9,16 +26,6 @@ export class ConsentApi {
   constructor(logger: Logger, module: ModuleConsent) {
     this.logger = logger;
     this.module = module;
-  }
-
-  public giveConsent(featureNames: string[]): void {
-    this.logger.i(`[Consent] Calling giveConsent, features=[${featureNames ? featureNames.join(',') : ''}]`);
-    this.module.giveConsent(featureNames);
-  }
-
-  public removeConsent(featureNames: string[]): void {
-    this.logger.i(`[Consent] Calling removeConsent, features=[${featureNames ? featureNames.join(',') : ''}]`);
-    this.module.removeConsent(featureNames);
   }
 
   public giveConsentAll(): void {
@@ -29,26 +36,6 @@ export class ConsentApi {
   public removeConsentAll(): void {
     this.logger.i('[Consent] Calling removeConsentAll');
     this.module.removeConsentAll();
-  }
-
-  public getConsent(featureName: string): boolean {
-    this.logger.i(`[Consent] Calling getConsent, feature=[${featureName}]`);
-    return this.module.hasConsent(featureName);
-  }
-
-  public setConsent(featureNames: string[], given: boolean): void {
-    this.logger.i(`[Consent] Calling setConsent, given=[${given}] features=[${featureNames ? featureNames.join(',') : ''}]`);
-    this.module.setConsent(featureNames, given);
-  }
-
-  public createFeatureGroup(groupName: string, features: string[]): void {
-    this.logger.i(`[Consent] Calling createFeatureGroup, group=[${groupName}]`);
-    this.module.createFeatureGroup(groupName, features);
-  }
-
-  public setConsentFeatureGroup(groupName: string, given: boolean): void {
-    this.logger.i(`[Consent] Calling setConsentFeatureGroup, group=[${groupName}] given=[${given}]`);
-    this.module.setConsentFeatureGroup(groupName, given);
   }
 
   public checkAllConsent(): boolean {

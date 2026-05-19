@@ -25,6 +25,16 @@ export class FakeNetwork extends Network {
   }
 
   public override async execute(baseUrl: string, endpoint: string, data: string, usePost: boolean): Promise<HttpResult> {
+    // Honor the base-class silencer BEFORE recording so tests can assert
+    // `calls.length === 0` after a silenced run (Unknown Consent Mode).
+    // Mirrors Network.execute: throws (caught by every caller's existing
+    // try/catch for transport errors). Tests that exercise post-UCM-exit
+    // HC + SBS dispatch should observe these calls AFTER
+    // `resolveUnknownConsent` flips the silencer off, see brain note
+    // `ucm-hc-sbs-gate` for the protocol.
+    if (this.silenced) {
+      throw new Error('[FakeNetwork] silenced, request blocked');
+    }
     this.calls.push({ endpoint, data, usePost, baseUrl });
     if (this.shouldFail) {
       throw new Error('FakeNetwork: simulated failure');

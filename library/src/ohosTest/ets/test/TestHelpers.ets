@@ -28,7 +28,7 @@ export class Harness {
  * Test-only widening of `CountlyConfig`. The disabled-module sub-configs
  * (`content`, `feedback`, `push`) are `protected` on the production class so
  * integrators can't accidentally use them while their backing modules are
- * disabled — but tests still need to populate them to exercise the wiring.
+ * disabled, but tests still need to populate them to exercise the wiring.
  * Promote via getters under `*ForTest` names so the test code flags itself
  * as test code, not production setup.
  */
@@ -38,7 +38,7 @@ export class TestableCountlyConfig extends CountlyConfig {
   public get pushForTest(): PushConfig { return this.push; }
 }
 
-/** A non-null fake context placeholder — the in-memory storage ignores it. */
+/** A non-null fake context placeholder, the in-memory storage ignores it. */
 function fakeContext(): common.Context {
   return {} as common.Context;
 }
@@ -61,13 +61,13 @@ export async function buildHarness(
   prepareNetwork?: (network: FakeNetwork) => void
 ): Promise<Harness> {
   // Bootstrap logger for storage/network initialization. This logger does NOT
-  // get wired to the SDK — once the CountlyInstance is constructed, the SDK
+  // get wired to the SDK, once the CountlyInstance is constructed, the SDK
   // uses its own internal logger (instance.config.logger). Tests should call
   // h.logger.* to interact with that one (HealthCheck listens on it).
   const bootstrapLogger: Logger = new Logger();
   const storage: InMemoryStorage = new InMemoryStorage(bootstrapLogger, 'test_app_key');
   const network: FakeNetwork = new FakeNetwork(bootstrapLogger);
-  // Optional pre-init network seed — for tests that need a specific canned
+  // Optional pre-init network seed, for tests that need a specific canned
   // response on the init-time SC fetch (`/o/sdk?method=sc`) or the init-time
   // healthcheck. Without this hook the fake network's defaults are used.
   if (prepareNetwork) prepareNetwork(network);
@@ -88,7 +88,7 @@ export async function buildHarness(
 /**
  * Validate every recorded call across all harnesses built during the current
  * test. Skips entries that don't look like real `RequestBuilder.baseParams()`
- * output — RequestQueue tests deliberately enqueue raw strings (e.g.
+ * output, RequestQueue tests deliberately enqueue raw strings (e.g.
  * `'app_key=foo&timestamp=...&drop=1'`) that omit most base params. Both
  * `app_key=` and `sdk_name=` must be present for a call to count as a real
  * SDK request worth validating; `sdk_name` is added exclusively by
@@ -137,7 +137,7 @@ export function parseQueryParams(body: string): Record<string, string> {
  * Assert every base parameter that `RequestBuilder.baseParams()` builds is
  * present and well-formed on a single recorded request. Catches regressions
  * where a module bypasses baseParams or accidentally drops a required field.
- * Does NOT validate feature-specific params — those are tested per-feature.
+ * Does NOT validate feature-specific params, those are tested per-feature.
  *
  * Validations:
  *   - `app_key`, `device_id`, `sdk_name`, `sdk_version`, `av` non-empty.
@@ -187,7 +187,7 @@ export function assertWireOrder(calls: RecordedCall[], keys: string[]): void {
         break;
       }
     }
-    // Either the key is missing entirely or it appears at/before the cursor —
+    // Either the key is missing entirely or it appears at/before the cursor,
     // both are order violations.
     expect(found > cursor).assertTrue();
     cursor = found;

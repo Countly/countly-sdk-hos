@@ -14,7 +14,7 @@ import {
 /**
  * Debounce window: the server doesn't need the same token resent more than
  * once a minute. Prevents chatty callers (or a hostile one) from spamming the
- * `/i?token_session=1` endpoint — which is otherwise cheap to abuse since it
+ * `/i?token_session=1` endpoint, which is otherwise cheap to abuse since it
  * bypasses the normal event/session batching.
  */
 const TOKEN_DEBOUNCE_MS: number = 60 * 1000;
@@ -32,7 +32,7 @@ const STORAGE_KEY_PROVIDER: string = 'cly_push_provider';
  *   - Action-handler dispatch + allowlist enforcement
  *
  * The actual HMS Push Kit call (`@kit.PushKit.pushService.getToken()`) is NOT
- * wired here — it belongs in the host's ability. The host calls
+ * wired here, it belongs in the host's ability. The host calls
  * `onTokenRefresh(token, provider)` from its HMS token-refresh callback. This
  * keeps the SDK free of a hard dependency on HMS and testable without a device.
  */
@@ -79,17 +79,17 @@ export class ModulePush extends ModuleBase {
    */
   public async onTokenRefresh(token: string, provider: MessagingProvider): Promise<void> {
     if (Utils.isNullOrEmpty(token)) {
-      this.config.logger.w('[ModulePush] onTokenRefresh, token is null/empty — use clearPushNotificationToken() to unregister');
+      this.config.logger.w('[ModulePush] onTokenRefresh, token is null/empty, use clearPushNotificationToken() to unregister');
       return;
     }
     if (!this.core.consentModule.hasConsent(CountlyFeature.PUSH) && !this.sendTokenAlways) {
-      this.config.logger.v('[ModulePush] onTokenRefresh, no push consent — token stashed, will send when granted');
+      this.config.logger.v('[ModulePush] onTokenRefresh, no push consent, token stashed, will send when granted');
       await this.persistToken(token, provider);
       return;
     }
     const now: number = Date.now();
     if (token === this.lastToken && provider === this.lastProvider && (now - this.lastSentAtMs) < TOKEN_DEBOUNCE_MS) {
-      this.config.logger.d('[ModulePush] onTokenRefresh, duplicate token within debounce window — skipped');
+      this.config.logger.d('[ModulePush] onTokenRefresh, duplicate token within debounce window, skipped');
       return;
     }
     await this.persistToken(token, provider);
@@ -103,11 +103,11 @@ export class ModulePush extends ModuleBase {
    */
   public async recordPushNotificationToken(): Promise<void> {
     if (Utils.isNullOrEmpty(this.lastToken)) {
-      this.config.logger.w('[ModulePush] recordPushNotificationToken, no token yet — call onTokenRefresh first');
+      this.config.logger.w('[ModulePush] recordPushNotificationToken, no token yet, call onTokenRefresh first');
       return;
     }
     if (!this.core.consentModule.hasConsent(CountlyFeature.PUSH) && !this.sendTokenAlways) {
-      this.config.logger.v('[ModulePush] recordPushNotificationToken, no push consent — skipped');
+      this.config.logger.v('[ModulePush] recordPushNotificationToken, no push consent, skipped');
       return;
     }
     await this.sendTokenSession(this.lastToken, this.lastProvider);
@@ -120,7 +120,7 @@ export class ModulePush extends ModuleBase {
    */
   public async clearPushNotificationToken(): Promise<void> {
     if (!this.core.consentModule.hasConsent(CountlyFeature.PUSH) && !this.sendTokenAlways) {
-      this.config.logger.v('[ModulePush] clearPushNotificationToken, no push consent — skipped');
+      this.config.logger.v('[ModulePush] clearPushNotificationToken, no push consent, skipped');
       return;
     }
     // Send empty token_session to unregister.
@@ -161,7 +161,7 @@ export class ModulePush extends ModuleBase {
     openUrlFn: ((url: string) => void) | null
   ): Promise<void> {
     if (Utils.isNullOrEmpty(notificationId)) {
-      this.config.logger.w('[ModulePush] recordPushActionEvent, notificationId is null/empty — dropped');
+      this.config.logger.w('[ModulePush] recordPushActionEvent, notificationId is null/empty, dropped');
       return;
     }
     const seg: SegmentationMap = {};
@@ -173,7 +173,7 @@ export class ModulePush extends ModuleBase {
     if (this.pushActionRecorder !== null) {
       await this.pushActionRecorder(seg);
     } else {
-      this.config.logger.w('[ModulePush] recordPushActionEvent, no recorder wired — event dropped');
+      this.config.logger.w('[ModulePush] recordPushActionEvent, no recorder wired, event dropped');
     }
     if (url === null || url.length === 0) return;
     if (this.actionHandler !== null) {
@@ -211,7 +211,7 @@ export class ModulePush extends ModuleBase {
   }
 
   public override async onDeviceIdChangedNotMerged(_oldId: string, _newId: string): Promise<void> {
-    // New user — old token should not be associated with them. Clear on
+    // New user, old token should not be associated with them. Clear on
     // server by sending empty token under the new id, then drop locally.
     // Consent has already been reset by the caller, so this is best-effort.
     if (this.lastToken.length > 0) {

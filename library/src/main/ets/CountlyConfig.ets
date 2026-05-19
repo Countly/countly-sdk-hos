@@ -15,7 +15,7 @@ import {
 
 /**
  * Logging sub-config. Exposed under `CountlyConfig.logging`. The listener fires
- * for every log at or above `minLevel` — routing VERBOSE to a cloud logger is
+ * for every log at or above `minLevel`, routing VERBOSE to a cloud logger is
  * a data-exfiltration hazard, so defaults to DEBUG.
  */
 export class LoggingConfig {
@@ -49,15 +49,29 @@ export class DeviceIdConfig {
  */
 export class ConsentConfig {
   public requires: boolean = false;
-  public initial: string[] = [];
   public initialAll: boolean = false;
+  public unknownMode: boolean = false;
 
   public setRequiresConsent(requires: boolean): ConsentConfig { this.requires = requires; return this; }
-  public setEnabled(featureNames: string[]): ConsentConfig {
-    this.initial = featureNames.slice();
+  public giveAll(): ConsentConfig { this.initialAll = true; return this; }
+
+  /**
+   * Unknown consent mode: SDK collects everything into the request queue but
+   * holds it locally, nothing reaches the wire until the integrator calls
+   * `giveConsentAll()` (resumes the queue; buffered data ships and the
+   * instance continues with full consent) or `removeConsentAll()` (clears
+   * the buffered queue, ships a single revocation snapshot, locks runtime
+   * consent so subsequent give/remove calls log "consent is set per init"
+   * and no-op; the integrator can re-init via `Countly.initShared(newCfg)`
+   * to unlock). The instance keeps running on either path. Implies
+   * `setRequiresConsent(true)`, the feature-gating machinery needs to be
+   * active for collection to be audited at all.
+   */
+  public enableUnknownConsentMode(): ConsentConfig {
+    this.unknownMode = true;
+    this.requires = true;
     return this;
   }
-  public giveAll(): ConsentConfig { this.initialAll = true; return this; }
 }
 
 /**
@@ -66,7 +80,7 @@ export class ConsentConfig {
  */
 export class NetworkConfig {
   public maxRequestQueueSize: number = 1000;
-  // 7 days — prevents the queue from holding ancient requests on permanent
+  // 7 days, prevents the queue from holding ancient requests on permanent
   // outages. Integrators can set 0 to disable drop-by-age entirely.
   public requestDropAgeHours: number = 168;
   public requestTimeoutSec: number = 30;
@@ -152,7 +166,7 @@ export class SessionsConfig {
 }
 
 /**
- * Events sub-config. Only the batching threshold lives here — per-event limits
+ * Events sub-config. Only the batching threshold lives here, per-event limits
  * (max key length etc.) come from the SDK-level `Limits` class and aren't
  * intended to be user-tuned.
  */
@@ -256,7 +270,7 @@ export class ContentConfig {
     } else {
       // Dev guide minimum is 15s. Warn rather than silently ignore so the
       // integrator sees why their 5s interval didn't take effect.
-      console.warn(`[Countly] ContentConfig setZoneTimerInterval, ${sec}s is below the 15s minimum — ignored`);
+      console.warn(`[Countly] ContentConfig setZoneTimerInterval, ${sec}s is below the 15s minimum, ignored`);
     }
     return this;
   }
@@ -280,8 +294,8 @@ export class ContentConfig {
   }
 
   /**
-   * IMMERSIVE (default) — overlay covers the full screen including notch
-   * and gesture-bar areas. SAFE_AREA — overlay respects cutout + status bar
+   * IMMERSIVE (default), overlay covers the full screen including notch
+   * and gesture-bar areas. SAFE_AREA, overlay respects cutout + status bar
    * + navigation-bar insets so content doesn't render behind system UI.
    */
   public setDisplayMode(option: WebViewDisplayOption): ContentConfig {
@@ -308,8 +322,8 @@ export class FeedbackConfig {
   public displayMode: WebViewDisplayOption = WebViewDisplayOption.IMMERSIVE;
 
   /**
-   * IMMERSIVE (default) — feedback widget covers full screen for versioned
-   * widgets. SAFE_AREA — respect cutout / status-bar insets.
+   * IMMERSIVE (default), feedback widget covers full screen for versioned
+   * widgets. SAFE_AREA, respect cutout / status-bar insets.
    */
   public setDisplayMode(option: WebViewDisplayOption): FeedbackConfig {
     this.displayMode = option;
@@ -319,7 +333,7 @@ export class FeedbackConfig {
 
 /**
  * Push notification sub-config. Exposed under CountlyConfig.push to match the
- * dev guide API shape. All fields are read during init — changing them after
+ * dev guide API shape. All fields are read during init, changing them after
  * init has no effect.
  */
 export class PushConfig {
@@ -393,7 +407,7 @@ export class RCConfig {
   }
 
   /**
-   * On a device-ID change, keep the existing RC cache instead of wiping it —
+   * On a device-ID change, keep the existing RC cache instead of wiping it,
    * each preserved value is marked stale (isCurrentUsersData=false) so callers
    * can distinguish carryover-from-previous-user from freshly-downloaded.
    */
@@ -414,7 +428,7 @@ export class RCConfig {
 }
 
 /**
- * Location sub-config. `disabled=true` wins over any coordinate fields — the
+ * Location sub-config. `disabled=true` wins over any coordinate fields, the
  * SDK sends an empty `location=` param which tells the server to erase any
  * previously stored location.
  */
@@ -522,7 +536,7 @@ export class CountlyConfig {
   protected readonly feedback: FeedbackConfig = new FeedbackConfig();
   protected readonly push: PushConfig = new PushConfig();
 
-  // Underscore prefix marks these as SDK-internal — integrators shouldn't
+  // Underscore prefix marks these as SDK-internal, integrators shouldn't
   // touch them (the corresponding modules are disabled). The fields stay
   // `protected` so they don't surface in autocomplete on a CountlyConfig
   // instance; CountlyInstance uses these getters to pull values during
@@ -538,7 +552,7 @@ export class CountlyConfig {
 
   constructor(context: common.Context, serverUrl: string, appKey: string) {
     // Validate here so misconfiguration surfaces at config-construction time,
-    // not hidden inside the async init. Console.error too — the logger isn't
+    // not hidden inside the async init. Console.error too, the logger isn't
     // attached to this CountlyConfig until init copies it over.
     if (!appKey || appKey.trim().length === 0) {
       console.error('[Countly] CountlyConfig constructor, appKey must be non-empty');
@@ -580,7 +594,7 @@ export class CountlyConfig {
     if (sdkBehaviorSettings && sdkBehaviorSettings.trim().length > 0) {
       this.sdkBehaviorSettings = sdkBehaviorSettings;
     } else {
-      console.warn('[Countly] CountlyConfig setSDKBehaviorSettings, empty value — ignored');
+      console.warn('[Countly] CountlyConfig setSDKBehaviorSettings, empty value, ignored');
     }
     return this;
   }

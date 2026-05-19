@@ -33,6 +33,11 @@ export class InMemoryStorage extends Storage {
     return true;
   }
 
+  public override async clear(): Promise<boolean> {
+    this.values.clear();
+    return true;
+  }
+
   public size(): number { return this.values.size; }
 
   public dump(): Record<string, string> {
