@@ -46,11 +46,37 @@ export class InternalConfig {
    * trapped in unknown mode.
    */
   public unknownConsentMode: boolean = false;
+  /**
+   * Set after `removeConsentAll` resolves unknown consent mode. Locks the
+   * runtime consent surface, `ModuleConsent.giveConsentAll` /
+   * `removeConsentAll` log "consent is set per init" and no-op while this is
+   * true. The lock is process-only; re-init with a fresh `CountlyConfig`
+   * starts a new instance with `consentLockedPostUnknown=false`.
+   *
+   * Rationale: post-UCM-revoke the integrator's stance is "the user said
+   * no", letting a later `giveConsentAll` flip that runtime would defeat
+   * the revocation. The only way to re-enable consent is a new init.
+   */
+  public consentLockedPostUnknown: boolean = false;
+  /**
+   * Set to true by `CountlyInstance.stop()` / `halt()` BEFORE any module
+   * drain runs. Every user-facing module mutator checks
+   * `ModuleBase.rejectIfHalted(...)` which reads this flag; calls after
+   * stop/halt are rejected with a warning log so post-shutdown state doesn't
+   * silently leak (the original leak was reported as `recordEvent` calls
+   * continuing to grow the in-memory event queue after the integrator
+   * thought the instance had been shut down). Internal halt drains call
+   * module *internal* methods (e.g. `flushEventQueue`) which do NOT check
+   * this flag, so the drain itself still works. UCM resolution does NOT
+   * flip this flag, `resolveUnknownConsent` keeps the instance running on
+   * both the give and revoke paths.
+   */
+  public halted: boolean = false;
 
   public eventQueueThreshold: number = 100;
   public maxRequestQueueSize: number = 1000;
   public sessionUpdateIntervalSec: number = 60;
-  // 7 days by default — prevents the queue from holding ancient requests on
+  // 7 days by default, prevents the queue from holding ancient requests on
   // permanent server outages (battery/data drain). Integrators can set 0 to
   // disable drop-by-age entirely.
   public requestDropAgeHours: number = 168;
@@ -119,7 +145,7 @@ export class InternalConfig {
   /** Disable the periodic + init-time SBS fetch (see CountlyConfig.disableSDKBehaviorSettingsUpdates). */
   public sdkBehaviorSettingsRequestsDisabled: boolean = false;
 
-  /** Experimental sub-config — mirrors dev guide §Experimental. */
+  /** Experimental sub-config, mirrors dev guide §Experimental. */
   public experimentalVisibilityTracking: boolean = false;
   public experimentalPreviousNameRecording: boolean = false;
 

@@ -110,7 +110,7 @@ export default function crashesTest() {
     });
 
     it('recordAllThreads_withProvider_appendsWorkerStacks', 0, async () => {
-      // recordAllThreadsWithCrash=true AND a provider is wired — the
+      // recordAllThreadsWithCrash=true AND a provider is wired, the
       // Worker stacks must show up in the crash payload in Android's wire
       // format (`Thread <name>` marker URL-encoded as `Thread%20<name>`).
       const h: Harness = await buildHarness((cfg) => {
@@ -143,7 +143,7 @@ export default function crashesTest() {
 
     it('recordAllThreads_providerThrows_doesNotMaskCrash', 0, async () => {
       // A throwing provider at crash time is never allowed to swallow the
-      // crash — we lose the extra thread info but the main stack still
+      // crash, we lose the extra thread info but the main stack still
       // reaches the queue. This was a real bug shape in earlier ports.
       const h: Harness = await buildHarness((cfg) => {
         cfg.crashes.enableRecordAllThreadsWithCrash();
@@ -157,8 +157,8 @@ export default function crashesTest() {
     // --- Ported from ModuleCrashTests.java ---
 
     it('addCrashBreadcrumb_multipleConcatenated', 0, async () => {
-      // Android: addCrashBreadcrumb — multiple breadcrumbs concatenated into
-      // _logs separated by newline. HOS joins with '\n' too — the URL-encoded
+      // Android: addCrashBreadcrumb, multiple breadcrumbs concatenated into
+      // _logs separated by newline. HOS joins with '\n' too, the URL-encoded
       // payload renders newline as %0A.
       const h: Harness = await buildHarness();
       h.instance.crashes.addCrashBreadcrumb('Breadcrumb_1');
@@ -174,10 +174,10 @@ export default function crashesTest() {
     });
 
     it('addCrashBreadcrumb_emptyIgnored', 0, async () => {
-      // Android: addCrashBreadcrumbNullEmpty — empty breadcrumbs are silently
+      // Android: addCrashBreadcrumbNullEmpty, empty breadcrumbs are silently
       // ignored, valid ones still ship. (HOS's public signature is
       // `record: string` so the null arm of the Java test isn't applicable
-      // through the public API — covered only indirectly by ModuleCrashes
+      // through the public API, covered only indirectly by ModuleCrashes
       // calling `Utils.isNullOrEmpty`.)
       const h: Harness = await buildHarness();
       h.instance.crashes.addCrashBreadcrumb('Breadcrumb_4');
@@ -193,14 +193,14 @@ export default function crashesTest() {
     });
 
     it('recordHandled_errorMessageAndNameInStack', 0, async () => {
-      // Android: recordHandledExceptionException/Throwable — assert the stack
+      // Android: recordHandledExceptionException/Throwable, assert the stack
       // trace starts with the error class + message. JS Error.stack usually
       // begins with "Error: Some message" which becomes %20 in the payload.
       const h: Harness = await buildHarness();
       await h.instance.crashes.recordHandledException(new Error('Some message'), null);
       await flushTick(60);
       const call = h.network.findCallsWithParam('crash=')[0];
-      // URL-encoded payload — "Error: Some message" → "Error%3A%20Some%20message"
+      // URL-encoded payload, "Error: Some message" → "Error%3A%20Some%20message"
       // Assert message survives round-trip.
       const decoded = decodeURIComponent(call.data);
       expect(decoded.indexOf('Some message') !== -1).assertTrue();
@@ -216,7 +216,7 @@ export default function crashesTest() {
     });
 
     it('provideCustomCrashSegment_DuringInit', 0, async () => {
-      // Android: provideCustomCrashSegment_DuringInit — global segmentation set
+      // Android: provideCustomCrashSegment_DuringInit, global segmentation set
       // via config is applied to every crash.
       const h: Harness = await buildHarness((cfg) => {
         const ccs: SegmentationMap = { 'aa': 'dd', 'aa1': 'dda', '1': 1234, '3': true };
@@ -233,7 +233,7 @@ export default function crashesTest() {
     });
 
     it('provideCustomCrashSegment_DuringInitAndCall', 0, async () => {
-      // Android: provideCustomCrashSegment_DuringInitAndCall — per-call
+      // Android: provideCustomCrashSegment_DuringInitAndCall, per-call
       // segmentation wins over global with same key. Merged set lands in _custom.
       const h: Harness = await buildHarness((cfg) => {
         const ccs: SegmentationMap = { 'aa': 'dd', 'aa1': 'dda', '1': 1234 };
@@ -252,7 +252,7 @@ export default function crashesTest() {
     });
 
     it('globalCrashFilter_mutatesSegmentationFatalAndMetrics', 0, async () => {
-      // Android: recordHandledException_globalCrashFilter — filter removes a
+      // Android: recordHandledException_globalCrashFilter, filter removes a
       // segmentation key, flips fatal, injects a metric. _ob reflects which
       // fields changed. Validate the mutations landed and _ob is non-zero.
       const h: Harness = await buildHarness((cfg) => {
@@ -272,12 +272,12 @@ export default function crashesTest() {
           return false;
         });
       });
-      // First call — dropped by stack-trace filter
+      // First call, dropped by stack-trace filter
       await h.instance.crashes.recordHandledException(new Error('Secret message'), null);
       await flushTick(60);
       expect(h.network.findCallsWithParam('crash=').length).assertEqual(0);
 
-      // Second call — passes through, filter still mutates
+      // Second call, passes through, filter still mutates
       h.instance.crashes.addCrashBreadcrumb('Breadcrumb_1');
       h.instance.crashes.addCrashBreadcrumb('Breadcrumb_2');
       await h.instance.crashes.recordHandledException(new Error('Some message'), null);
@@ -297,7 +297,7 @@ export default function crashesTest() {
     });
 
     it('globalCrashFilter_returningFalse_noObChange', 0, async () => {
-      // Android: recordHandledException_basic — filter returns false and does
+      // Android: recordHandledException_basic, filter returns false and does
       // not mutate. _ob must be 0 because nothing changed.
       const h: Harness = await buildHarness((cfg) => {
         const ccs: SegmentationMap = { 'int': 99, 'bool': true };
@@ -315,7 +315,7 @@ export default function crashesTest() {
     });
 
     it('globalCrashFilter_emptyAllFields_obBitsSet', 0, async () => {
-      // Android: recordHandledException_globalCrashFilter_allFieldsEmpty —
+      // Android: recordHandledException_globalCrashFilter_allFieldsEmpty,
       // filter sets every mutable field to empty, toggles fatal. The payload
       // gets an _ob value with all relevant bits set.
       const h: Harness = await buildHarness((cfg) => {
@@ -334,7 +334,7 @@ export default function crashesTest() {
       await flushTick(60);
       const call = h.network.findCallsWithParam('crash=')[0];
       const decoded = decodeURIComponent(call.data);
-      // Every tracked field changed — _ob must be non-zero and > 1
+      // Every tracked field changed, _ob must be non-zero and > 1
       const obMatch: RegExpMatchArray | null = decoded.match(/"_ob":(\d+)/);
       // at minimum stack(16) + segmentation(8) + breadcrumbs(4) + fatal(1) changed
       // plus metrics(2) because we emptied the map too.
@@ -342,7 +342,7 @@ export default function crashesTest() {
     });
 
     it('globalCrashFilter_dropFatal_handledPasses', 0, async () => {
-      // Android: recordException_globalCrashFilter_dropFatal — filter returns
+      // Android: recordException_globalCrashFilter_dropFatal, filter returns
       // crash.fatal, so unhandled calls drop and handled calls pass through.
       const h: Harness = await buildHarness((cfg) => {
         cfg.crashes.setGlobalCrashFilterCallback((crash: CrashData): boolean => crash.fatal);
@@ -357,7 +357,7 @@ export default function crashesTest() {
     });
 
     it('globalCrashFilter_appendsBreadcrumbs_capHonored', 0, async () => {
-      // Android: recordException_globalCrashFilter_exceedMaxBreadcrumb — the
+      // Android: recordException_globalCrashFilter_exceedMaxBreadcrumb, the
       // filter may grow the breadcrumb list; the post-filter cap re-applies so
       // only the last N breadcrumbs ship.
       const h: Harness = await buildHarness((cfg) => {
@@ -384,13 +384,13 @@ export default function crashesTest() {
 
     it('globalCrashFilter_invalidSegmentationValuesStripped', 0, async () => {
       // Android: recordException_globalCrashFilter_invalidCustomSegmentations
-      // — unsupported data types added during filtering must be scrubbed
+      //, unsupported data types added during filtering must be scrubbed
       // before shipping.
       const h: Harness = await buildHarness((cfg) => {
         cfg.crashes.setGlobalCrashFilterCallback((crash: CrashData): boolean => {
-          // Supported — should survive
+          // Supported, should survive
           crash.crashSegmentation['legit'] = 'yes';
-          // Unsupported — an object — must be dropped by sanitizeSegmentation.
+          // Unsupported, an object, must be dropped by sanitizeSegmentation.
           const raw: Record<string, Object> = crash.crashSegmentation as Record<string, Object>;
           raw['nope'] = new DroppedBag(1) as Object;
           return false;
@@ -405,7 +405,7 @@ export default function crashesTest() {
     });
 
     it('internalLimits_maxSegmentationValues_truncatesMerged', 0, async () => {
-      // Android: internalLimits_recordException_maxSegmentationValues — merged
+      // Android: internalLimits_recordException_maxSegmentationValues, merged
       // global + per-call segmentation is clipped to the cap. Just assert the
       // merged count on the payload matches the cap.
       const h: Harness = await buildHarness((cfg) => {
@@ -418,18 +418,18 @@ export default function crashesTest() {
       const call = h.network.findCallsWithParam('crash=')[0];
       const decoded = decodeURIComponent(call.data);
       // Count the number of keys inside "_custom":{...}. Use a cheap regex
-      // against the decoded JSON — avoids a real parse while being robust to
+      // against the decoded JSON, avoids a real parse while being robust to
       // key ordering.
       const customMatch: RegExpMatchArray | null = decoded.match(/"_custom":\{([^}]*)\}/);
       expect(customMatch !== null).assertTrue();
       const inner: string = customMatch === null ? '' : customMatch[1];
-      // Each entry is "key":value — count commas + 1 as entry count.
+      // Each entry is "key":value, count commas + 1 as entry count.
       const entryCount: number = inner.length === 0 ? 0 : inner.split(',').length;
       expect(entryCount).assertEqual(2);
     });
 
     it('internalLimits_maxValueSize_truncatesBreadcrumbsAndSegmentation', 0, async () => {
-      // Android: internalLimits_recordException_maxValueSize — string values
+      // Android: internalLimits_recordException_maxValueSize, string values
       // in segmentation and breadcrumb entries are clipped to the cap.
       const h: Harness = await buildHarness((cfg) => {
         const ccs: SegmentationMap = { 'test': '123456' };
@@ -455,7 +455,7 @@ export default function crashesTest() {
 
     it('internalLimits_maxKeyLength_truncatesSegmentationKeys', 0, async () => {
       // Android: internalLimits_provideCustomCrashSegment_recordUnhandledException
-      // — keys over the limit are truncated.
+      //, keys over the limit are truncated.
       const h: Harness = await buildHarness((cfg) => {
         const ccs: SegmentationMap = { 'below_zero': true };
         cfg.crashes.setCustomCrashSegmentation(ccs);
@@ -474,7 +474,7 @@ export default function crashesTest() {
     });
 
     it('internalLimits_stackTraceLineLength_truncates', 0, async () => {
-      // Android: internalLimits_recordException_stackTraceLimits_lineLength —
+      // Android: internalLimits_recordException_stackTraceLimits_lineLength,
       // every line of the stack trace is clipped to maxStackTraceLineLength.
       const h: Harness = await buildHarness();
       h.instance.config.limits.maxStackTraceLineLength = 2;
@@ -495,7 +495,7 @@ export default function crashesTest() {
     });
 
     it('recordHandled_supportedArraySegmentations', 0, async () => {
-      // Android: recordHandledException_validateSupportedArrays — primitive
+      // Android: recordHandledException_validateSupportedArrays, primitive
       // arrays are serialized as JSON arrays on the wire. HOS SegmentationValue
       // accepts string[] / number[] / boolean[].
       const h: Harness = await buildHarness();
@@ -513,7 +513,7 @@ export default function crashesTest() {
     });
 
     it('recordHandled_unsupportedSegmentationDroppedViaFilter', 0, async () => {
-      // Android: recordHandledException_unsupportedDataTypesSegmentation —
+      // Android: recordHandledException_unsupportedDataTypesSegmentation,
       // unsupported value types are silently dropped. HOS SegmentationValue
       // is compile-time-restricted so the only way to reach the sanitiser
       // with a non-primitive is via the filter callback (which gives the
@@ -521,7 +521,7 @@ export default function crashesTest() {
       const h: Harness = await buildHarness((cfg) => {
         cfg.crashes.setGlobalCrashFilterCallback((crash: CrashData): boolean => {
           crash.crashSegmentation['keep'] = 'kept';
-          // Force-push an unsupported record — sanitizeSegmentation must drop
+          // Force-push an unsupported record, sanitizeSegmentation must drop
           // it before the payload is built.
           const raw: Record<string, Object> = crash.crashSegmentation as Record<string, Object>;
           raw['drop'] = new NestedBag(1) as Object;
@@ -539,7 +539,7 @@ export default function crashesTest() {
     // --- Ported from CrashDetailsTests.java ---
 
     it('crashPayload_containsDeviceMetrics', 0, async () => {
-      // Android: simpleCrashDetails_* / testCustomSegments — the crash payload
+      // Android: simpleCrashDetails_* / testCustomSegments, the crash payload
       // must carry _os, _device, _os_version, _app_version alongside _error
       // and _nonfatal. HOS DeviceInfo populates _os ("HarmonyOS"), _device
       // (productModel), _os_version (displayVersion), _app_version (config).
@@ -559,7 +559,7 @@ export default function crashesTest() {
     });
 
     it('crashPayload_metricOverride_replacesAutoDetected', 0, async () => {
-      // Android: crashMetrics_override — metricOverride entries replace the
+      // Android: crashMetrics_override, metricOverride entries replace the
       // auto-collected values for _device/_os/_os_version/_app_version.
       const h: Harness = await buildHarness((cfg) => {
         cfg.setMetricOverride({
@@ -595,7 +595,7 @@ export default function crashesTest() {
     // --- Ported from BreadcrumbHelperTests.java ---
 
     it('breadcrumbs_truncatedToMaxValueSize', 0, async () => {
-      // Android: addBreadcrumb_exceedsCharacterLimit — oversized breadcrumb is
+      // Android: addBreadcrumb_exceedsCharacterLimit, oversized breadcrumb is
       // kept but clipped to the per-value char cap.
       const h: Harness = await buildHarness();
       h.instance.config.limits.maxValueSize = 2;
@@ -609,7 +609,7 @@ export default function crashesTest() {
     });
 
     it('breadcrumbs_rotateOldestWhenOverCap', 0, async () => {
-      // Android: addBreadcrumb_exceedsLimit — adding past the cap drops the
+      // Android: addBreadcrumb_exceedsLimit, adding past the cap drops the
       // oldest entry so only the most recent N ship.
       const h: Harness = await buildHarness();
       h.instance.config.limits.maxBreadcrumbCount = 2;
@@ -629,12 +629,12 @@ export default function crashesTest() {
     });
 
     // --- Ported from CrashDataTests.java (applicable only) ---
-    // HOS `CrashData` is a plain value-holder with direct public fields — no
+    // HOS `CrashData` is a plain value-holder with direct public fields, no
     // `calculateChangedFields` / `getChangedFieldsAsInt` / `getBreadcrumbsAsString`
     // methods exist, so only the constructor test maps across.
 
     it('crashData_constructorStoresAllFields', 0, () => {
-      // Android: testConstructor — ensure CrashData's five-arg ctor stores
+      // Android: testConstructor, ensure CrashData's five-arg ctor stores
       // every field verbatim.
       const breadcrumbs: string[] = ['key', 'value'];
       const cd: CrashData = new CrashData('ST', breadcrumbs, { 'key': 'value' }, { 'key': 'value' }, true);

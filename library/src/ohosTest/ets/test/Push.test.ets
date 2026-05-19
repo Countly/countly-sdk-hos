@@ -9,7 +9,7 @@ export default function pushTest() {
     it('onTokenRefresh_noConsent_stashesButDoesNotSend', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true);
-        // No push consent given — token should stash, not send.
+        // No push consent given, token should stash, not send.
       });
       await h.instance.onTokenRefresh('tok_abc', MessagingProvider.HMS);
       await flushTick(50);
@@ -64,7 +64,7 @@ export default function pushTest() {
     it('sendTokenAlways_bypassesConsentCheck', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true);
-        // No consent, but sendTokenAlways is set — token should still send.
+        // No consent, but sendTokenAlways is set, token should still send.
         cfg.pushForTest.setSendPushTokenAlways(true);
       });
       await h.instance.onTokenRefresh('tok_silent', MessagingProvider.HMS);
@@ -114,7 +114,7 @@ export default function pushTest() {
       const h: Harness = await buildHarness((cfg) => {
         cfg.pushForTest.setNotificationActionHandler((_id: string, _idx: number, _url: string) => {
           handlerCalled = true;
-          return true; // we handled it — SDK should not open
+          return true; // we handled it, SDK should not open
         });
       });
       await h.instance.recordPushAction('nid', 0, 'https://example.com/deep', (url: string) => { opened = url; });

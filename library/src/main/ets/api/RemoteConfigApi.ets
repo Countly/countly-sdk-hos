@@ -3,7 +3,7 @@ import { ModuleRemoteConfig } from '../internal/modules/ModuleRemoteConfig';
 import { RCData, RCDownloadCallback } from '../types/Types';
 
 /**
- * User-facing remote-config surface — accessed via
+ * User-facing remote-config surface, accessed via
  * `Countly.sharedInstance().remoteConfig`. Modern `method=rc` API per dev guide
  * §4606. The legacy `method=fetch_remote_config` API is not exposed.
  */

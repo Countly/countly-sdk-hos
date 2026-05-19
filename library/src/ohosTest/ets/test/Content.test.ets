@@ -4,13 +4,13 @@ import { OverlayKeys } from '../../../main/ets/internal/OverlayStore';
 import { ContentStatus } from '../../../main/ets/types/Types';
 
 /**
- * Content Zone tests — post-refactor the overlay is rendered by the SDK via
+ * Content Zone tests, post-refactor the overlay is rendered by the SDK via
  * AppStorage state, not an injected presenter. Tests assert on AppStorage
  * content + SDK callback behaviour (URL intercept dispatch, close handling).
  */
 
 // Content URL uses the harness server host so it passes origin validation
-// (the server URL is always in the allowlist — dev guide §Origin Validation).
+// (the server URL is always in the allowlist, dev guide §Origin Validation).
 // Tests that need to verify off-host rejection add their own body with a
 // foreign origin and an explicit assertion.
 const VALID_BODY: string = JSON.stringify({
@@ -227,7 +227,7 @@ export default function contentTest() {
 
     // ======== validateResponse equivalents (from ModuleContentTests.java) ========
     // The HOS parser drops any response missing either `html` or `geo` (or with
-    // only empty geo placements) — assert the overlay stays inactive in each case.
+    // only empty geo placements), assert the overlay stays inactive in each case.
 
     it('validateResponse_missingGeo_dropsResponse', 0, async () => {
       resetStore();
@@ -329,7 +329,7 @@ export default function contentTest() {
     // ======== URL-intercept protocol tests (from ContentOverlayViewTests.java) ========
 
     it('handleContentOverlayUrl_eventAction_segmentationField_recordsEvent', 0, async () => {
-      // Alternative "segmentation" field name (long form) — should be accepted.
+      // Alternative "segmentation" field name (long form), should be accepted.
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
       h.network.nextBody = VALID_BODY;
@@ -428,7 +428,7 @@ export default function contentTest() {
     });
 
     it('handleContentOverlayUrl_bareClose_hidesOverlay', 0, async () => {
-      // URL with `close=1` but no cly_x_action_event — still honored when the
+      // URL with `close=1` but no cly_x_action_event, still honored when the
       // command base matches (protocol allows a plain-close form).
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });

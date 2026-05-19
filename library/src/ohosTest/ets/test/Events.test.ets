@@ -43,7 +43,7 @@ export default function eventsTest() {
     });
 
     it('recordEvent_internalEventRequiresFeatureConsent', 0, async () => {
-      // Events consent alone is NOT enough for [CLY]_nps — the feedback
+      // Events consent alone is NOT enough for [CLY]_nps, the feedback
       // feature consent is what gates internal feedback events.
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
       h.instance.consentModule.giveConsent(['events']);
@@ -57,7 +57,7 @@ export default function eventsTest() {
     });
 
     it('recordEvent_starRating_acceptsEitherStarRatingOrFeedbackConsent', 0, async () => {
-      // Mirror Android sdk/ModuleEvents.java:185-186 — `[CLY]_star_rating`
+      // Mirror Android sdk/ModuleEvents.java:185-186, `[CLY]_star_rating`
       // accepts the dual gate `starRating` OR `feedback`. Either one alone
       // unlocks the event; neither granted drops it.
       const h: Harness = await buildHarness((cfg) => {
@@ -85,7 +85,7 @@ export default function eventsTest() {
     });
 
     it('recordEvent_action_acceptsEitherClicksOrScrollsConsent', 0, async () => {
-      // Mirror Android sdk/ModuleEvents.java:219 — `[CLY]_action` accepts
+      // Mirror Android sdk/ModuleEvents.java:219, `[CLY]_action` accepts
       // the dual gate `clicks` OR `scrolls`.
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true);
@@ -148,22 +148,22 @@ export default function eventsTest() {
     it('recordPastEvent_preservesGivenTimestamp', 0, async () => {
       // Any past-event call must serialize with the caller-supplied timestamp
       // on the queued payload, not the current Utils.uniqueTimestampMs(). That
-      // timestamp is the whole point of the API — if it doesn't flow through
+      // timestamp is the whole point of the API, if it doesn't flow through
       // to the wire the feature is silently useless.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
-      const pastTs: number = 1609459200000; // 2021-01-01T00:00:00Z — older than any test clock
+      const pastTs: number = 1609459200000; // 2021-01-01T00:00:00Z, older than any test clock
       await h.instance.events.recordPastEvent('old_event', null, 1, 0, 0, pastTs);
       await flushTick(60);
       const calls = h.network.findCallsWithParam('events=');
       expect(calls.length >= 1).assertTrue();
-      // events= value is URL-encoded JSON — decode before searching for the
+      // events= value is URL-encoded JSON, decode before searching for the
       // literal field, otherwise we'd be matching against `%22timestamp%22%3A...`.
       const decoded: string = decodeURIComponent(calls[0].data);
       expect(decoded.indexOf(`"timestamp":${pastTs}`) !== -1).assertTrue();
     });
 
     it('recordPastEvent_nonPositiveTimestamp_fallsBackToNow', 0, async () => {
-      // 0 / negative / NaN must not break the queue — fall back to the
+      // 0 / negative / NaN must not break the queue, fall back to the
       // current unique timestamp so the event still lands (with a warning).
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       await h.instance.events.recordPastEvent('zero_ts', null, 1, 0, 0, 0);
@@ -201,7 +201,7 @@ export default function eventsTest() {
 
     it('serverConfig_internalEvents_bypassFilter', 0, async () => {
       // [CLY]_* events are SDK-owned and must never be filtered by the
-      // generic event/segmentation pipeline — filtering them out would
+      // generic event/segmentation pipeline, filtering them out would
       // break sessions, views, feedback, etc. Even a "match everything"
       // blacklist must let them through.
       const h: Harness = await buildHarness((cfg) => {
@@ -332,7 +332,7 @@ export default function eventsTest() {
     // -- Ported from Android ModuleEventsTests.java --
 
     it('recordEvent_defaultCountIsOne', 0, async () => {
-      // Android recordEvent_1 — key-only overload must default count=1.
+      // Android recordEvent_1, key-only overload must default count=1.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       await h.instance.events.recordEvent('asdf');
       await flushTick(60);
@@ -342,7 +342,7 @@ export default function eventsTest() {
     });
 
     it('recordEvent_countAndSum_serialized', 0, async () => {
-      // Android recordEvent_3 — count and sum flow through to the payload.
+      // Android recordEvent_3, count and sum flow through to the payload.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       await h.instance.events.recordEvent('asdf', null, 657, 884.213, 0);
       await flushTick(60);
@@ -353,7 +353,7 @@ export default function eventsTest() {
     });
 
     it('recordEvent_segmentation_primitiveTypes_serialized', 0, async () => {
-      // Android recordEvent_7 / eventWithSegmentation — string, int, double,
+      // Android recordEvent_7 / eventWithSegmentation, string, int, double,
       // boolean must all survive the recordEvent → wire-format roundtrip.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       await h.instance.events.recordEvent('asdf', {
@@ -371,7 +371,7 @@ export default function eventsTest() {
     });
 
     it('timedEvent_endEmptySegmentation_recordsDuration', 0, async () => {
-      // Android startEndEvent_noSegments — start/end with no segmentation
+      // Android startEndEvent_noSegments, start/end with no segmentation
       // records an event that still carries a dur field.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       h.instance.events.startEvent('asdf');
@@ -385,7 +385,7 @@ export default function eventsTest() {
     });
 
     it('timedEvent_endWithSegments_recordsSegmentationAndCountSum', 0, async () => {
-      // Android startEndEvent_withSegments — end-time segmentation + count +
+      // Android startEndEvent_withSegments, end-time segmentation + count +
       // sum land on the wire alongside the computed duration.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       h.instance.events.startEvent('asdf');
@@ -402,7 +402,7 @@ export default function eventsTest() {
     });
 
     it('timedEvent_startCancelStartEnd_secondStartTakesEffect', 0, async () => {
-      // Android startCancelStartEndEvent — cancel wipes the first timer, so
+      // Android startCancelStartEndEvent, cancel wipes the first timer, so
       // a subsequent start/end does record exactly one event.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       h.instance.events.startEvent('asdf');
@@ -415,7 +415,7 @@ export default function eventsTest() {
     });
 
     it('immediateFlush_onlyNpsSurveyPushAction_flushImmediately', 0, async () => {
-      // Android eventsForceClearingEQIntoRQ — check the exact allowed set of
+      // Android eventsForceClearingEQIntoRQ, check the exact allowed set of
       // immediate-flush keys against the rest. Record a custom event first so
       // there's something to *not* flush, then each candidate in order.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(100); });
@@ -439,7 +439,7 @@ export default function eventsTest() {
     });
 
     it('internalLimits_keyLength_internalKeysNotTruncated_customKeyTruncated', 0, async () => {
-      // Android internalLimits_recordEvent_internalKeys — internal [CLY]_*
+      // Android internalLimits_recordEvent_internalKeys, internal [CLY]_*
       // keys bypass the maxKeyLength clamp so dashboard bucketing stays
       // correct. Custom keys still get truncated.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
@@ -456,7 +456,7 @@ export default function eventsTest() {
     });
 
     it('internalLimits_segmentation_truncatesKeys', 0, async () => {
-      // Android internalLimits_recordEvent_segmentation — maxKeyLength clamps
+      // Android internalLimits_recordEvent_segmentation, maxKeyLength clamps
       // segmentation keys too. Two originally-distinct keys that collapse to
       // the same truncated key should coalesce (last write wins in HOS).
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
@@ -472,7 +472,7 @@ export default function eventsTest() {
     });
 
     it('internalLimits_maxSegmentationValues_clipsExtraEntries', 0, async () => {
-      // Android internalLimits_recordEventInternal_maxSegmentationValues —
+      // Android internalLimits_recordEventInternal_maxSegmentationValues,
       // when the map exceeds the cap, HOS (like Android) keeps the last N.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       h.instance.config.limits.maxSegmentationValues = 2;
@@ -506,7 +506,7 @@ export default function eventsTest() {
     });
 
     it('internalLimits_maxValueSizeAndKeyLength_collidingKeysLastWriteWins', 0, async () => {
-      // Android internalLimits_recordEventInternal_maxValueSizeKeyLength —
+      // Android internalLimits_recordEventInternal_maxValueSizeKeyLength,
       // truncated keys that collide collapse; value of the last entry wins.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       h.instance.config.limits.maxKeyLength = 2;
@@ -520,13 +520,13 @@ export default function eventsTest() {
       const body: string = call.data;
       expect(body.indexOf('%22key%22%3A%22rn%22') !== -1).assertTrue();
       expect(body.indexOf('%22a%22%3A1') !== -1).assertTrue();
-      // The four 'bb*' keys collapse to a single 'bb' — last value 'ee' wins
+      // The four 'bb*' keys collapse to a single 'bb', last value 'ee' wins
       // once clipped from 'eee'.
       expect(body.indexOf('%22bb%22%3A%22ee%22') !== -1).assertTrue();
     });
 
     it('recordEvent_validateFromRQ_arraySegmentation_serialized', 0, async () => {
-      // Android recordEvent_validateSupportedArrays — primitive arrays
+      // Android recordEvent_validateSupportedArrays, primitive arrays
       // survive the roundtrip as JSON arrays on the wire.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       const intArr: number[] = [1, 2, 3];
@@ -545,7 +545,7 @@ export default function eventsTest() {
     });
 
     it('recordEvent_visibilityTracking_tagsCustomEventsWithClyV', 0, async () => {
-      // Android recordEvent_visibilityTracking_onlyAddingItToViewsAndEvents —
+      // Android recordEvent_visibilityTracking_onlyAddingItToViewsAndEvents,
       // when visibility tracking is enabled, custom events pick up `cly_v`.
       const h: Harness = await buildHarness((cfg) => {
         cfg.events.setQueueSizeToSend(1);
@@ -560,7 +560,7 @@ export default function eventsTest() {
     });
 
     it('recordEvent_visibilityTracking_bgFgSwitch_togglesClyV', 0, async () => {
-      // Android recordEvent_visibilityTracking_bgFgSwitch — toggling
+      // Android recordEvent_visibilityTracking_bgFgSwitch, toggling
       // foreground/background flips the cly_v value.
       const h: Harness = await buildHarness((cfg) => {
         cfg.events.setQueueSizeToSend(1);
@@ -582,7 +582,7 @@ export default function eventsTest() {
     });
 
     it('recordEvent_visibilityTracking_disabled_noClyV', 0, async () => {
-      // Android recordEvent_visibilityTracking_notEnabled — default config
+      // Android recordEvent_visibilityTracking_notEnabled, default config
       // must not tag events with cly_v.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       h.instance.lifecycleForeground();
@@ -605,7 +605,7 @@ export default function eventsTest() {
     });
 
     it('recordEvent_previousNameRecording_enabled_tagsPenCvn', 0, async () => {
-      // Android recordEventScenario_previous_current_ViewName — each custom
+      // Android recordEventScenario_previous_current_ViewName, each custom
       // event gets cly_pen (previous event name) and cly_cvn (current view).
       const h: Harness = await buildHarness((cfg) => {
         cfg.events.setQueueSizeToSend(1);
@@ -625,7 +625,7 @@ export default function eventsTest() {
     });
 
     it('eventIdLinking_customEventPeidLinksToPreviousEvent', 0, async () => {
-      // Ported subset of ScenarioEventIDTests.eventIDScenario_manualViews —
+      // Ported subset of ScenarioEventIDTests.eventIDScenario_manualViews,
       // HOS stores lastEventId and stamps it onto the next custom event as
       // peid. Internal + immediate-flush keys break the chain by design.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(2); });

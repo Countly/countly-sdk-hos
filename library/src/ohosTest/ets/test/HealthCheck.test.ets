@@ -3,7 +3,7 @@ import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTes
 import { RecordedCall } from './doubles/FakeNetwork';
 
 /**
- * HealthCheck coverage. The module is wired at init via two listeners —
+ * HealthCheck coverage. The module is wired at init via two listeners,
  * Logger (`setHealthListener`) for warn/error counts and RequestQueue
  * (`setHealthListener`) for failed-send + backoff counts. The send itself
  * fires once per lifecycle on onInit; a 2xx with a `result` field clears
@@ -11,8 +11,8 @@ import { RecordedCall } from './doubles/FakeNetwork';
  *
  * Storage-sharing across two harness lifecycles isn't trivial with the
  * default `buildHarness` (each call gets fresh in-memory storage). The
- * persistence tests therefore verify the save/clear paths indirectly —
- * via the clear-on-ack path — rather than across a full restart.
+ * persistence tests therefore verify the save/clear paths indirectly,
+ * via the clear-on-ack path, rather than across a full restart.
  */
 
 export default function healthCheckTest() {
@@ -71,10 +71,10 @@ export default function healthCheckTest() {
     });
 
     it('serverAcknowledged_clearsState_onNextLifecycle', 0, async () => {
-      // First lifecycle: init sends a health check — the default FakeNetwork
+      // First lifecycle: init sends a health check, the default FakeNetwork
       // body is {"result":"Success"}, which matches the dev guide ack pattern.
       // After onInit, state should be cleared on disk. A second harness with
-      // shared storage would see empty counters on next send — but buildHarness
+      // shared storage would see empty counters on next send, but buildHarness
       // gives each test its own storage, so we can only verify the clear
       // happened by inspecting the first send's initial state (zero).
       const h: Harness = await buildHarness();
@@ -82,14 +82,14 @@ export default function healthCheckTest() {
       const hc = h.network.calls.find((c) => c.endpoint === '/i' && c.data.indexOf('hc=') !== -1);
       const body: string = decodeURIComponent(hc!.data);
       // Fresh instance should have zero backoff/error counts in the first
-      // payload — a baseline check that the fresh-init path works.
+      // payload, a baseline check that the fresh-init path works.
       expect(body.indexOf('"bom":0') !== -1).assertTrue();
       expect(body.indexOf('"cbom":0') !== -1).assertTrue();
     });
 
     it('secondOnInit_sameInstance_doesNotResend', 0, async () => {
       // `sent` flag guards against double-send per lifecycle. Not exposed
-      // publicly — we observe it by counting hc requests after a single init.
+      // publicly, we observe it by counting hc requests after a single init.
       const h: Harness = await buildHarness();
       await flushTick(60);
       const before: number = h.network.calls.filter((c) => c.endpoint === '/i' && c.data.indexOf('hc=') !== -1).length;
@@ -112,14 +112,14 @@ export default function healthCheckTest() {
     it('networkFailure_duringSend_suppressesAckClear', 0, async () => {
       // If the send itself throws, the module must NOT clear state (it relies
       // on retaining for the next launch). We observe the log-warning path
-      // — hard to assert directly, so we just verify the request was attempted
+      //, hard to assert directly, so we just verify the request was attempted
       // and the module didn't crash.
       const h: Harness = await buildHarness();
       h.network.shouldFail = true;
       await flushTick(80);
       const attempted = h.network.calls.filter((c) => c.endpoint === '/i' && c.data.indexOf('hc=') !== -1);
       expect(attempted.length).assertEqual(1);
-      // Module stays alive — subsequent instance operations should work.
+      // Module stays alive, subsequent instance operations should work.
       expect(h.instance !== undefined).assertTrue();
     });
   });

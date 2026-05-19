@@ -2,7 +2,7 @@ import { Logger } from '../internal/Logger';
 import { ModuleCrashes } from '../internal/modules/ModuleCrashes';
 import { SegmentationMap, ThreadStackProvider } from '../types/Types';
 
-/** User-facing crashes surface — accessed via `Countly.sharedInstance().crashes`. */
+/** User-facing crashes surface, accessed via `Countly.sharedInstance().crashes`. */
 export class CrashesApi {
   private readonly logger: Logger;
   private readonly module: ModuleCrashes;
@@ -33,7 +33,7 @@ export class CrashesApi {
    * on `ConfigCrashes`. Pass `null` to clear a previous registration.
    *
    * ArkTS isolates cannot enumerate each other's stacks from the main
-   * thread, so the SDK can't populate these automatically — typical wiring:
+   * thread, so the SDK can't populate these automatically, typical wiring:
    *
    *   const workerStacks = new Map<string, string>();
    *   // each Worker reports its last-known stack back to the host via

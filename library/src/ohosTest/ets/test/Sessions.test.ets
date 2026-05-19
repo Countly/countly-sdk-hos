@@ -13,7 +13,7 @@ export default function sessionsTest() {
       h.instance.lifecycleBackground();
       await flushTick(60);
       expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(1);
-      // Wire order — begin precedes end, both shipped, base params valid.
+      // Wire order, begin precedes end, both shipped, base params valid.
       assertWireOrder(h.network.calls, ['begin_session=1', 'end_session=1']);
       for (let i = 0; i < h.network.calls.length; i++) {
         assertValidBaseParams(h.network.calls[i]);
@@ -102,7 +102,7 @@ export default function sessionsTest() {
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
 
       // Record an event mid-session. No UP mutation, so the autosave gate
-      // does not trigger an early flush — the event sits in the buffer
+      // does not trigger an early flush, the event sits in the buffer
       // until the heartbeat cascade ships it.
       await h.instance.events.recordEvent('mid_session_event');
       expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
@@ -142,7 +142,7 @@ export default function sessionsTest() {
     it('manual_endSessionWithoutActiveSession_isIgnored', 0, async () => {
       // Same contract as updateSession: endSession before any begin must
       // not emit an end_session=1 request. Android tests this explicitly
-      // (ModuleSessionsTests.java:138) — HarmonyOS previously had no coverage.
+      // (ModuleSessionsTests.java:138), HarmonyOS previously had no coverage.
       const h: Harness = await buildHarness((cfg) => { cfg.sessions.enableManualControl(); });
       await h.instance.sessions.endSession();
       await flushTick(60);
@@ -152,7 +152,7 @@ export default function sessionsTest() {
     // -- Ported from Android ModuleSessionsTests.java --
 
     it('manual_beginSession_sendsBeginRequest', 0, async () => {
-      // Port of ModuleSessionsTests#manualSessionBegin — a single manual
+      // Port of ModuleSessionsTests#manualSessionBegin, a single manual
       // beginSession() call must produce exactly one begin_session=1 request.
       const h: Harness = await buildHarness((cfg) => { cfg.sessions.enableManualControl(); });
       await h.instance.sessions.beginSession();
@@ -161,7 +161,7 @@ export default function sessionsTest() {
     });
 
     it('manual_beginUpdateEnd_sendsAllThreeRequests', 0, async () => {
-      // Port of ModuleSessionsTests#manualSessionBeginUpdateEnd — the begin/
+      // Port of ModuleSessionsTests#manualSessionBeginUpdateEnd, the begin/
       // update/end trio must each ship in manual mode with session_duration
       // reflecting the wall-clock gap between calls.
       const h: Harness = await buildHarness((cfg) => { cfg.sessions.enableManualControl(); });
@@ -181,7 +181,7 @@ export default function sessionsTest() {
     });
 
     it('manualCallsWithoutManualEnabled_areIgnored', 0, async () => {
-      // Port of ModuleSessionsTests#manualSessionBeginUpdateEndManualDisabled —
+      // Port of ModuleSessionsTests#manualSessionBeginUpdateEndManualDisabled,
       // in automatic mode, explicit begin/update/end calls must be rejected
       // (they belong to the manual API surface only).
       const h: Harness = await buildHarness();
@@ -199,7 +199,7 @@ export default function sessionsTest() {
     });
 
     it('lifecycleCallsInManualMode_areNoOp', 0, async () => {
-      // Port of ModuleSessionsTests#automaticSessionBeginEndWithManualEnabled —
+      // Port of ModuleSessionsTests#automaticSessionBeginEndWithManualEnabled,
       // when manual mode is on, foreground/background from the host lifecycle
       // must NOT trigger sessions; only explicit calls do.
       const h: Harness = await buildHarness((cfg) => { cfg.sessions.enableManualControl(); });
@@ -213,7 +213,7 @@ export default function sessionsTest() {
     });
 
     it('automatic_foregroundBackground_emitsBeginAndEndWithDuration', 0, async () => {
-      // Port of ModuleSessionsTests#automaticSessionBeginEndWithManualDisabled —
+      // Port of ModuleSessionsTests#automaticSessionBeginEndWithManualDisabled,
       // a foreground→wait→background cycle emits begin_session + end_session
       // and the end carries a non-empty session_duration.
       const h: Harness = await buildHarness();
@@ -230,7 +230,7 @@ export default function sessionsTest() {
     });
 
     it('consentNotGiven_noSessionRequests', 0, async () => {
-      // Port of ModuleSessionsTests#consentNotGivenNothingHappens — when
+      // Port of ModuleSessionsTests#consentNotGivenNothingHappens, when
       // consent is required and `sessions` is NOT granted, neither lifecycle
       // nor explicit manual calls must produce session traffic.
       const h: Harness = await buildHarness((cfg) => { cfg.consent.setRequiresConsent(true); });
@@ -252,7 +252,7 @@ export default function sessionsTest() {
 
     it('manual_doubleBegin_onlyFirstBeginEmits', 0, async () => {
       // Port of ModuleSessionsTests#manualSessionsNoReactionStartingSessionAgain
-      // — calling beginSession twice without an intervening end must produce
+      //, calling beginSession twice without an intervening end must produce
       // only one begin_session request (the second is a guarded no-op).
       const h: Harness = await buildHarness((cfg) => { cfg.sessions.enableManualControl(); });
       await h.instance.sessions.beginSession();
@@ -292,7 +292,7 @@ export default function sessionsTest() {
     // -- Ported from Android scSE_SessionsTests.java --
 
     it('SE_200_manual_consentRequired_consentGiven_fullFlow', 0, async () => {
-      // Port of scSE_SessionsTests#SE_200_CR_CG_M — the manual scenario flow:
+      // Port of scSE_SessionsTests#SE_200_CR_CG_M, the manual scenario flow:
       // stray end/update before any begin are ignored, begin→begin (2nd is a
       // no-op)→update→update→end→end(2nd is a no-op) produces exactly one
       // begin, two updates with non-zero duration, one end.
@@ -315,14 +315,14 @@ export default function sessionsTest() {
       await flushTick(1100);
       await h.instance.sessions.beginSession();
       await flushTick(1100);
-      await h.instance.sessions.beginSession(); // guarded — no second begin
+      await h.instance.sessions.beginSession(); // guarded, no second begin
       await h.instance.sessions.updateSession();
       await flushTick(1100);
       await h.instance.sessions.updateSession();
       await flushTick(1100);
       await h.instance.sessions.endSession();
       await flushTick(1100);
-      await h.instance.sessions.endSession(); // guarded — no second end
+      await h.instance.sessions.endSession(); // guarded, no second end
       await h.instance.sessions.updateSession();
       await h.instance.sessions.updateSession();
       await flushTick(60);
@@ -333,7 +333,7 @@ export default function sessionsTest() {
     });
 
     it('SE_201_manual_consentNotRequired_fullFlow', 0, async () => {
-      // Port of scSE_SessionsTests#SE_201_CNR_M — same flow without consent
+      // Port of scSE_SessionsTests#SE_201_CNR_M, same flow without consent
       // gating. Same session-traffic shape as the CR_CG variant above.
       const h: Harness = await buildHarness((cfg) => {
         cfg.sessions.enableManualControl();
@@ -366,7 +366,7 @@ export default function sessionsTest() {
     });
 
     it('SE_202_manual_consentRequired_consentNotGiven_noSessionTraffic', 0, async () => {
-      // Port of scSE_SessionsTests#SE_202_CR_CNG_M — identical manual scenario
+      // Port of scSE_SessionsTests#SE_202_CR_CNG_M, identical manual scenario
       // but with sessions consent withheld. No session request must ship.
       const h: Harness = await buildHarness((cfg) => {
         cfg.sessions.enableManualControl();
@@ -395,7 +395,7 @@ export default function sessionsTest() {
     });
 
     it('SE_203_manual_consentGiven_idChangeScenario', 0, async () => {
-      // Port of scSE_SessionsTests#SE_203_CR_CG_M_id_change — manual flow
+      // Port of scSE_SessionsTests#SE_203_CR_CG_M_id_change, manual flow
       // interleaved with deviceId changes. Key expectations:
       //  - stray end/update before begin do nothing
       //  - changeWithMerge preserves nothing session-wise here (no active
@@ -463,7 +463,7 @@ export default function sessionsTest() {
     });
 
     it('automatic_deviceIdChangeWithMerge_preservesSession', 0, async () => {
-      // Intent port of scSE_SessionsTests device-id-change-with-merge arm —
+      // Intent port of scSE_SessionsTests device-id-change-with-merge arm,
       // a merge keeps consent and session state; the active session continues
       // under the new id and eventually ends with the new id on background.
       const h: Harness = await buildHarness();
@@ -533,14 +533,14 @@ export default function sessionsTest() {
     //
     // Production wiring DOES emit a forceSend=true orientation baseline at
     // every `beginSessionInternal` (mirrors Android sdk/ModuleSessions.java:67-68
-    // — see `ModuleSessions.setOrientationBaselineEmitter` and its wiring
+    //, see `ModuleSessions.setOrientationBaselineEmitter` and its wiring
     // in CountlyInstance). In the test harness it's a no-op because the
     // wired emitter gates on `lifecycleObserver.isRegistered()`, which
     // returns false when the harness's fake `{}` context fails registration.
     // So in tests: orientation is only emitted when
     // `setTrackOrientationChanges(true)` (the default) AND
     // `views.updateOrientation(mode)` is called explicitly via the public
-    // facade — which is what these scenarios assume.
+    // facade, which is what these scenarios assume.
 
     /**
      * Shared automatic-mode id-change flow. Mirrors
@@ -571,7 +571,7 @@ export default function sessionsTest() {
     };
 
     it('SE_204_CNR_A_id_change', 0, async () => {
-      // Port of scSE_SessionsTests#SE_204_CNR_A_id_change — automatic mode,
+      // Port of scSE_SessionsTests#SE_204_CNR_A_id_change, automatic mode,
       // consent NOT required. The flow interleaves merge/without-merge id
       // changes with foreground/background transitions. Android asserts 16
       // requests including orientation entries; HOS does not emit orientation
@@ -586,8 +586,8 @@ export default function sessionsTest() {
       // Android scenario expectations translated:
       //   (0) begin_session under initial id (auto-generated on HOS)
       //   (1) merge req -> newID with old_device_id=<initialId>
-      //       [Android: orientation at index 1 or 2 — HOS skips it]
-      //   (3) end_session under newID (duration ~2s) — caused by
+      //       [Android: orientation at index 1 or 2, HOS skips it]
+      //   (3) end_session under newID (duration ~2s), caused by
       //       changeWithoutMerge('newID_2') terminating the active session
       //       silently; in Android this emits end under the previous id.
       //   (4) begin_session under newID_2 on next foreground
@@ -596,7 +596,7 @@ export default function sessionsTest() {
       //
       // On HOS, changeWithoutMerge during an active session runs
       // ModuleSessions.onDeviceIdChangedNotMerged which calls
-      // endSessionInternal({emit:false}) — so no end_session=1 is emitted
+      // endSessionInternal({emit:false}), so no end_session=1 is emitted
       // for the without-merge steps. We therefore assert what HOS actually
       // produces, which is the IDENTICAL-LOGIC translation of the Android
       // flow under HOS session semantics.
@@ -624,7 +624,7 @@ export default function sessionsTest() {
     });
 
     it('SE_205_CR_CG_A_id_change', 0, async () => {
-      // Port of scSE_SessionsTests#SE_205_CR_CG_A_id_change — automatic mode,
+      // Port of scSE_SessionsTests#SE_205_CR_CG_A_id_change, automatic mode,
       // consent required, sessions consent granted at init.
       // Android expects 7 requests:
       //   0. consent status (sessions=true)
@@ -634,7 +634,7 @@ export default function sessionsTest() {
       //   4. end_session under newID, duration 2
       //   5. merge newID (old_device_id=newID_2)
       //   6. merge newID (old_device_id=newID_2)
-      // HOS: no automatic orientation emission on rotate — already matches
+      // HOS: no automatic orientation emission on rotate, already matches
       // Android's expected count (7) which excluded orientation.
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true).giveAll();
@@ -650,7 +650,7 @@ export default function sessionsTest() {
       const beginCalls = h.network.findCallsWithParam('begin_session=1');
       expect(beginCalls.length).assertEqual(1);
 
-      // Merge requests — exactly 3 (3 changeWithMerge calls), each carrying
+      // Merge requests, exactly 3 (3 changeWithMerge calls), each carrying
       // old_device_id. The first merge keeps the active session alive under
       // the new id.
       const mergeCalls = h.network.findCallsWithParam('old_device_id=');
@@ -658,7 +658,7 @@ export default function sessionsTest() {
 
       // changeWithoutMerge on HOS ends the session silently (emit=false),
       // so the only end_session=1 we see is from explicit lifecycleBackground
-      // transitions while sessions consent is still active — that's the
+      // transitions while sessions consent is still active, that's the
       // first bg after the initial merge kept the session going. After the
       // first without-merge, sessions consent is cleared on HOS so no end
       // is shipped even on subsequent backgrounds.
@@ -669,7 +669,7 @@ export default function sessionsTest() {
     });
 
     it('SE_206_CR_CNG_A_id_change', 0, async () => {
-      // Port of scSE_SessionsTests#SE_206_CR_CNG_A_id_change — automatic mode,
+      // Port of scSE_SessionsTests#SE_206_CR_CNG_A_id_change, automatic mode,
       // consent required, sessions consent NOT given.
       // Android expects 5 requests:
       //   0. consent status (sessions=false)

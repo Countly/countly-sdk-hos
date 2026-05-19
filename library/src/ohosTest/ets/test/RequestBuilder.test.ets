@@ -65,7 +65,7 @@ export default function requestBuilderTest() {
 
     it('baseParams_metricOverrideAppVersionWins', 0, async () => {
       // Dev guide parity: if _app_version is in metricOverride, av on every
-      // request must match that override — not the bare config.appVersion.
+      // request must match that override, not the bare config.appVersion.
       const override: Record<string, string> = { '_app_version': '2.5.0-override' };
       const h: Harness = await buildHarness((cfg) => {
         cfg.setAppVersion('1.0');
@@ -77,7 +77,7 @@ export default function requestBuilderTest() {
 
     it('baseParams_timestampMonotonic', 0, async () => {
       // uniqueTimestampMs guarantees strict monotonicity across successive
-      // calls — events enqueued in the same ms tick must not collide on
+      // calls, events enqueued in the same ms tick must not collide on
       // server-side dedup.
       const h: Harness = await buildHarness();
       const a: string = h.instance.requestBuilder.baseParams()['timestamp'];
@@ -95,7 +95,7 @@ export default function requestBuilderTest() {
     // -----------------------------------------------------------------------
 
     it('smallPayload_usesGet_urlEncoded', 0, async () => {
-      // force-post is the default — disable so the GET path is exercised.
+      // force-post is the default, disable so the GET path is exercised.
       const h: Harness = await buildHarness((cfg) => { cfg.network.setHttpPostForced(false); });
       await flushTick(5);
       h.network.reset();
@@ -133,7 +133,7 @@ export default function requestBuilderTest() {
     });
 
     // -----------------------------------------------------------------------
-    // Checksum correctness — parity with ConnectionProcessorTests
+    // Checksum correctness, parity with ConnectionProcessorTests
     // urlConnectionForEventData*WithSalt, which asserts the exact digest.
     // -----------------------------------------------------------------------
 
@@ -145,7 +145,7 @@ export default function requestBuilderTest() {
       await flushTick(80);
       const call = h.network.calls[0];
       expect(call !== undefined).assertTrue();
-      // Checksum is appended last — split it off and verify it matches
+      // Checksum is appended last, split it off and verify it matches
       // sha256(body-before-checksum + salt).
       const marker: string = '&checksum256=';
       const idx: number = call.data.indexOf(marker);
@@ -182,7 +182,7 @@ export default function requestBuilderTest() {
 //    callback-oriented cases apply. Skipped per porting policy point 5.
 //  - ConnectionQueueIntegrationTests global-callback / executor-management /
 //    concurrent-thread cases: HOS schedules ticks via setTimeout on a
-//    single JS loop — there is no ExecutorService and no GLOBAL_RC_CALLBACK
+//    single JS loop, there is no ExecutorService and no GLOBAL_RC_CALLBACK
 //    surface to test against. Skipped as inapplicable.
 //  - ConnectionProcessorTests SSL/HttpURLConnection plumbing (testRun_*,
 //    testUrlConnectionForEventData* wiring): HOS has no equivalent

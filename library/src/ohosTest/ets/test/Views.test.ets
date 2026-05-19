@@ -100,7 +100,7 @@ export default function viewsTest() {
     });
 
     it('updateOrientation_dedupesUnchangedMode', 0, async () => {
-      // Calling twice with the same mode must only enqueue one event — this
+      // Calling twice with the same mode must only enqueue one event, this
       // matters because integrators wiring into onConfigurationUpdate get
       // redundant calls every time *anything* in the configuration changes.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
@@ -139,12 +139,12 @@ export default function viewsTest() {
       // begin_session (mirrors sdk/ModuleSessions.java:67-68). forceSend=true
       // must bypass the dedupe so every begin_session emits a fresh
       // orientation event even when the orientation hasn't changed since
-      // the previous session — without this, dashboards would see "first
+      // the previous session, without this, dashboards would see "first
       // session per process has orientation, subsequent same-process
       // sessions don't" which diverges from Android.
       //
       // The public `views` facade only exposes the no-arg form (matching
-      // Android — forceSend is internal-only). To exercise the overload
+      // Android, forceSend is internal-only). To exercise the overload
       // without leaking it through the integrator-facing surface we
       // construct a parallel `ModuleViews` here, sharing `h.instance` as
       // the `SdkCore` so emitted events still flow through `h.network` via
@@ -167,7 +167,7 @@ export default function viewsTest() {
 
     it('updateOrientation_forceSend_stillRespectsDisabled', 0, async () => {
       // Even with forceSend=true, the trackOrientationChanges killswitch
-      // must win — otherwise integrators who explicitly opt out via
+      // must win, otherwise integrators who explicitly opt out via
       // setTrackOrientationChanges(false) would still receive orientation
       // events at every begin_session. Same parallel-ModuleViews approach
       // as the bypass-dedupe test above.
@@ -385,10 +385,10 @@ export default function viewsTest() {
       await h.instance.views.startView('a');          // 1
       await h.instance.views.startAutoStoppedView('b'); // +1 start = 2
       await h.instance.views.startAutoStoppedView('c'); // stop b + start c = +2 = 4
-      await h.instance.views.startView('d');            // start d (does NOT stop c — manual start doesn't close autoStopped)
+      await h.instance.views.startView('d');            // start d (does NOT stop c, manual start doesn't close autoStopped)
       await flushTick(60);
       // Android expects 6 interactions (auto-stopped view IS closed by a
-      // non-auto startView). Assert at minimum 4 — the current behavior may
+      // non-auto startView). Assert at minimum 4, the current behavior may
       // skip the auto-close on manual start (see ModuleViews.startView).
       expect(h.network.findCallsWithParam('%5BCLY%5D_view').length >= 4).assertTrue();
     });
@@ -447,7 +447,7 @@ export default function viewsTest() {
     it('setGlobalViewSegmentation_clonesInput_mutationDoesNotLeak', 0, async () => {
       // The SDK must clone the caller's map, otherwise a subsequent mutation
       // of the user-held reference would retroactively change the next view
-      // event — a subtle aliasing bug.
+      // event, a subtle aliasing bug.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       const userMap: Record<string, string> = { 'env': 'staging' };
       h.instance.views.setGlobalViewSegmentation(userMap);
@@ -457,7 +457,7 @@ export default function viewsTest() {
       await flushTick(60);
       const call = h.network.findCallsWithParam('%5BCLY%5D_view')[0];
       const body: string = decodeURIComponent(call.data);
-      // The mutation must not leak through — the test asserts both that the
+      // The mutation must not leak through, the test asserts both that the
       // later-added key isn't in the payload and that staging (the value at
       // set time) is still what lands on the wire.
       expect(body.indexOf('"new_key":"leaked"') === -1).assertTrue();
@@ -529,7 +529,7 @@ export default function viewsTest() {
     });
 
     it('viewId_firstViewStart_hasStartMarker', 0, async () => {
-      // First view after construction carries start=1 — the session-start
+      // First view after construction carries start=1, the session-start
       // marker the dashboard uses to derive landing-page metrics.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       await h.instance.views.startView('Landing');
@@ -605,7 +605,7 @@ export default function viewsTest() {
 
     it('consentRevoked_views_dropsActiveViewsWithoutEvent', 0, async () => {
       // Port of startView_consentRemoval. Revoking views consent drops active
-      // state silently — no final view event is synthesized.
+      // state silently, no final view event is synthesized.
       const h: Harness = await buildHarness((cfg) => {
         cfg.events.setQueueSizeToSend(1);
         cfg.consent.setRequiresConsent(true).giveAll();
@@ -759,7 +759,7 @@ export default function viewsTest() {
 
     it('resumeView_afterPause_doesNotEmitVisitAgain', 0, async () => {
       // A resumed view keeps its original id; the server sees no duplicate
-      // "visit":"1" from the resume — only from the initial start.
+      // "visit":"1" from the resume, only from the initial start.
       const h: Harness = await buildHarness((cfg) => { cfg.events.setQueueSizeToSend(1); });
       const id: string | null = await h.instance.views.startView('P');
       await flushTick(60);
@@ -767,7 +767,7 @@ export default function viewsTest() {
       h.instance.views.resumeViewWithID(id!);
       await h.instance.views.stopViewWithID(id!, null);
       await flushTick(60);
-      // Exactly two view events (start, stop) — resume does not emit.
+      // Exactly two view events (start, stop), resume does not emit.
       const calls = h.network.findCallsWithParam('%5BCLY%5D_view');
       // Count visit=1 occurrences: should be exactly 1 (from start only).
       const body: string = calls.map((c) => c.data).join('&');
@@ -836,7 +836,7 @@ export default function viewsTest() {
       // No events initially.
       expect(h.network.findCallsWithParam('events=').length).assertEqual(0);
 
-      // View A — first start of the session: expect id=<idvA>, no pvid (empty
+      // View A, first start of the session: expect id=<idvA>, no pvid (empty
       // string), start=1 marker, and cvid empty (view events zero cvid).
       await h.instance.views.startView('A');
       await flushTick(60);
@@ -849,7 +849,7 @@ export default function viewsTest() {
       expect(ev['pvid'] === undefined).assertTrue();
       expect(ev['cvid'] === undefined).assertTrue();
 
-      // View B — previous view id must be carried as pvid.
+      // View B, previous view id must be carried as pvid.
       await h.instance.views.startView('B');
       await flushTick(60);
       calls = h.network.findCallsWithParam('%5BCLY%5D_view');
@@ -860,8 +860,8 @@ export default function viewsTest() {
       expect(idvB !== idvA).assertTrue();
       expect(ev['pvid']).assertEqual(idvA);
 
-      // Custom event 1 — cvid points to currently active view B; peid empty
-      // (no prior custom event's lastEventId yet — internal views don't update it).
+      // Custom event 1, cvid points to currently active view B; peid empty
+      // (no prior custom event's lastEventId yet, internal views don't update it).
       await h.instance.events.recordEvent('eventKey1');
       await flushTick(60);
       let customCalls = h.network.calls.filter((c) => c.data.indexOf('eventKey1') !== -1);
@@ -871,7 +871,7 @@ export default function viewsTest() {
       expect(ev['cvid']).assertEqual(idvB);
       expect(ev['peid'] === undefined).assertTrue(); // lastEventId was ''
 
-      // View C — pvid should be the previous view id (idvB).
+      // View C, pvid should be the previous view id (idvB).
       await h.instance.views.startView('C');
       await flushTick(60);
       calls = h.network.findCallsWithParam('%5BCLY%5D_view');
@@ -880,7 +880,7 @@ export default function viewsTest() {
       const idvC: string = ev['id'] as string;
       expect(ev['pvid']).assertEqual(idvB);
 
-      // Internal action event — cvid points at active view C; peid is empty
+      // Internal action event, cvid points at active view C; peid is empty
       // because internal events skip the lastEventId chain on the emit side.
       await h.instance.events.recordEvent('[CLY]_action');
       await flushTick(60);
@@ -890,7 +890,7 @@ export default function viewsTest() {
       expect(ev['cvid']).assertEqual(idvC);
       expect(ev['peid'] === undefined).assertTrue();
 
-      // Custom event 2 — Android asserts peid=ide[1] (i.e. previous custom
+      // Custom event 2, Android asserts peid=ide[1] (i.e. previous custom
       // event's id); internal [CLY]_action in between does NOT touch the chain.
       await h.instance.events.recordEvent('eventKey2');
       await flushTick(60);
@@ -903,7 +903,7 @@ export default function viewsTest() {
 
     it('scEID_automaticViews_pvidCvidChain', 0, async () => {
       // Port of ScenarioEventIDTests.eventIDScenario_automaticViews.
-      // HOS: manual simulation of auto-view flow — no Activity auto-subscription.
+      // HOS: manual simulation of auto-view flow, no Activity auto-subscription.
       // Android drives this by calling onStart(activity)/onStart(activity2) with
       // enableAutomaticViewTracking(); on HOS the equivalent is a sequence of
       // startAutoStoppedView(name) calls, which mirror the "only one
@@ -943,7 +943,7 @@ export default function viewsTest() {
       expect(idvAct2 !== idvAct1).assertTrue();
       expect(startAct2['pvid']).assertEqual(idvAct1);
 
-      // Custom event 1 — cvid must be the active auto-stopped view (act2).
+      // Custom event 1, cvid must be the active auto-stopped view (act2).
       await h.instance.events.recordEvent('eventKey1');
       await flushTick(60);
       let customCalls = h.network.calls.filter((c) => c.data.indexOf('eventKey1') !== -1);
@@ -962,7 +962,7 @@ export default function viewsTest() {
       const viewCallsAfterBg = h.network.findCallsWithParam('%5BCLY%5D_view');
       expect(viewCallsAfterBg.length >= 3).assertTrue();
 
-      // Internal rating event — cvid still act2 (currentViewId is not cleared
+      // Internal rating event, cvid still act2 (currentViewId is not cleared
       // on background), peid empty (internal event).
       await h.instance.events.recordEvent('[CLY]_star_rating');
       await flushTick(60);
@@ -972,7 +972,7 @@ export default function viewsTest() {
       expect(ev['cvid']).assertEqual(idvAct2);
       expect(ev['peid'] === undefined).assertTrue();
 
-      // Custom event 2 — peid must chain to the previous *custom* event's id,
+      // Custom event 2, peid must chain to the previous *custom* event's id,
       // NOT the internal rating event (internal events skip lastEventId update).
       await h.instance.events.recordEvent('eventKey2');
       await flushTick(60);

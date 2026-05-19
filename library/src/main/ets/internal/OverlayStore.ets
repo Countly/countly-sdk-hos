@@ -18,12 +18,12 @@ export class OverlayKeys {
   public static readonly CONTENT_ACTIVE: string = 'cly_content_overlay_active';
   /** Content URL to load in the Web component. */
   public static readonly CONTENT_URL: string = 'cly_content_overlay_url';
-  /** Portrait placement — pixel values. "" = fullscreen / immersive. */
+  /** Portrait placement, pixel values. "" = fullscreen / immersive. */
   public static readonly CONTENT_P_X: string = 'cly_content_overlay_p_x';
   public static readonly CONTENT_P_Y: string = 'cly_content_overlay_p_y';
   public static readonly CONTENT_P_W: string = 'cly_content_overlay_p_w';
   public static readonly CONTENT_P_H: string = 'cly_content_overlay_p_h';
-  /** Landscape placement — pixel values. */
+  /** Landscape placement, pixel values. */
   public static readonly CONTENT_L_X: string = 'cly_content_overlay_l_x';
   public static readonly CONTENT_L_Y: string = 'cly_content_overlay_l_y';
   public static readonly CONTENT_L_W: string = 'cly_content_overlay_l_w';
@@ -34,9 +34,9 @@ export class OverlayKeys {
   public static readonly FEEDBACK_REV: string = 'cly_feedback_overlay_rev';
   public static readonly FEEDBACK_ACTIVE: string = 'cly_feedback_overlay_active';
   public static readonly FEEDBACK_URL: string = 'cly_feedback_overlay_url';
-  /** "nps" | "survey" | "rating" — matches server wire format. */
+  /** "nps" | "survey" | "rating", matches server wire format. */
   public static readonly FEEDBACK_TYPE: string = 'cly_feedback_overlay_type';
-  /** Widget id — read by SDK on close to record the cancel event. */
+  /** Widget id, read by SDK on close to record the cancel event. */
   public static readonly FEEDBACK_WIDGET_ID: string = 'cly_feedback_overlay_widget_id';
   /**
    * 1 if the widget has a `wv` value (versioned). Versioned widgets render
@@ -52,7 +52,7 @@ export class OverlayKeys {
  *
  * Why AppStorage and not a singleton class: ArkUI components require
  * observable state to trigger re-render. @StorageLink on an AppStorage key
- * is the natural cross-module reactivity primitive — a plain shared class
+ * is the natural cross-module reactivity primitive, a plain shared class
  * would need a manual notification mechanism the component subscribes to,
  * which duplicates what AppStorage already does.
  *
@@ -61,7 +61,7 @@ export class OverlayKeys {
  * mutable objects. Decomposing the state into primitive fields keyed by
  * `OverlayKeys.*` is verbose but predictable.
  *
- * Only the shared Countly instance drives these — multi-instance mode does
+ * Only the shared Countly instance drives these, multi-instance mode does
  * not multiplex onto a single process-wide overlay.
  */
 export class OverlayStore {
@@ -107,7 +107,7 @@ export class OverlayStore {
 
   /**
    * Update just the placement (content triggered a `resize_me` message). Does
-   * not bump ACTIVE — the overlay is already showing.
+   * not bump ACTIVE, the overlay is already showing.
    */
   public static resizeContent(px: number, py: number, pw: number, ph: number, lx: number, ly: number, lw: number, lh: number): void {
     AppStorage.SetOrCreate<number>(OverlayKeys.CONTENT_P_X, px);
@@ -156,7 +156,7 @@ export class OverlayStore {
   }
 
   /**
-   * Reset every overlay key — used on halt so a re-init doesn't see stale
+   * Reset every overlay key, used on halt so a re-init doesn't see stale
    * state from the previous instance.
    */
   public static clearAll(): void {
@@ -171,7 +171,7 @@ export class OverlayStore {
 
 /**
  * Immersive vs safe-area translation helper. Called at publish time so the
- * component never has to know about the enum — it just reads a boolean.
+ * component never has to know about the enum, it just reads a boolean.
  */
 export function displayOptionToImmersive(opt: WebViewDisplayOption): boolean {
   return opt === WebViewDisplayOption.IMMERSIVE;

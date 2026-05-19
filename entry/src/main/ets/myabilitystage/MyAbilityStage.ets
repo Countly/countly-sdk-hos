@@ -12,8 +12,8 @@ const DOMAIN: number = 0xC047;
 
 // Fill these in before running. COUNTLY_SERVER_URL must be an https:// URL of a
 // Countly server you control (or a trial server from trial.count.ly).
-const COUNTLY_SERVER_URL: string = 'YOUR_SERVER_URL';
-const COUNTLY_APP_KEY: string = 'YOUR_APP_KEY';
+const COUNTLY_SERVER_URL: string = 'https://master.count.ly';
+const COUNTLY_APP_KEY: string = 'sdk_qa_test';
 
 /**
  * AbilityStage runs ONCE per HAP module process, BEFORE any UIAbility is
@@ -68,8 +68,7 @@ export default class MyAbilityStage extends AbilityStage {
     // Start with all consents granted so every demo button works out of the
     // box. In a real app you would gate these behind a consent flow.
     config.consent
-      .setRequiresConsent(true)
-      .giveAll();
+      .enableUnknownConsentMode();
 
     config.crashes.enableCrashReporting();
     config.views.enableAutomaticViewTracking();

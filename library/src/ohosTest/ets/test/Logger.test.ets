@@ -33,7 +33,7 @@ export default function loggerTest() {
     });
 
     it('listener_respectsDefaultMinDebug', 0, () => {
-      // Default minLevel is DEBUG — VERBOSE is filtered out.
+      // Default minLevel is DEBUG, VERBOSE is filtered out.
       const logger: Logger = new Logger();
       const events: CapturedLog[] = [];
       logger.setListener((msg: string, level: LogLevel) => {
@@ -46,12 +46,21 @@ export default function loggerTest() {
     });
 
     it('listener_prefixesFormat', 0, () => {
+      // The message text only carries the `[Countly]` brand prefix, the
+      // severity tag (`[Info]` etc.) was removed because `console.*` already
+      // routes to the right hilog severity and adding it produced double-
+      // tagged lines. Listeners get the level via the second arg instead.
       const logger: Logger = new Logger();
-      let captured: string = '';
-      logger.setListener((msg: string) => { captured = msg; });
+      let capturedMsg: string = '';
+      let capturedLevel: LogLevel = LogLevel.VERBOSE;
+      logger.setListener((msg: string, level: LogLevel) => {
+        capturedMsg = msg;
+        capturedLevel = level;
+      });
       logger.i('something');
-      expect(captured.indexOf('[Info]') !== -1).assertTrue();
-      expect(captured.indexOf('[Countly]') !== -1).assertTrue();
+      expect(capturedMsg.indexOf('[Countly]') !== -1).assertTrue();
+      expect(capturedMsg.indexOf('something') !== -1).assertTrue();
+      expect(capturedLevel).assertEqual(LogLevel.INFO);
     });
 
     it('console_andListener_bothRespectMinLevel', 0, () => {
@@ -60,7 +69,7 @@ export default function loggerTest() {
       logger.setMinLevel(LogLevel.WARNING);
       let listened: number = 0;
       logger.setListener((_m: string, _l: LogLevel) => { listened++; });
-      logger.d('dbg');   // below threshold — neither console nor listener fires
+      logger.d('dbg');   // below threshold, neither console nor listener fires
       logger.w('warn');
       expect(listened).assertEqual(1);
     });

@@ -3,7 +3,7 @@ import { ModuleUserProfile } from '../internal/modules/ModuleUserProfile';
 import { SegmentationMap, SegmentationValue } from '../types/Types';
 
 /**
- * User-facing user-profile surface — accessed via
+ * User-facing user-profile surface, accessed via
  * `Countly.sharedInstance().userProfile`.
  */
 export class UserProfileApi {
