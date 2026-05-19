@@ -150,6 +150,11 @@ export class ModuleHealthCheck extends ModuleBase {
     await this.saveState();
   }
 
+  /** Test seam — true while the deferred initial-send setTimeout is armed. */
+  public hasActiveTimers(): boolean {
+    return this.initialSendTimer !== null;
+  }
+
   // -- Counter mutators (called from Logger + RequestQueue listeners) --
 
   public logFailedNetworkRequest(statusCode: number, errorResponse: string): void {

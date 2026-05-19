@@ -307,6 +307,11 @@ export class ModuleConsent extends ModuleBase {
     }
   }
 
+  /** Test seam — true while the consent-snapshot 1s coalesce timer is armed. */
+  public hasActiveTimers(): boolean {
+    return this.pendingCoalesceTimer !== null;
+  }
+
   /**
    * Ship the init-time consent snapshot if the constructor flagged one as
    * pending. Called by `CountlyInstance.init()` AFTER

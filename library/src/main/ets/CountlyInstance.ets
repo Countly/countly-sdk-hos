@@ -627,6 +627,20 @@ export class CountlyInstance implements SdkCore {
     return this.crashesModule.isErrorHandlerInstalled();
   }
 
+  /**
+   * Test seam — true while ANY of this instance's internally-owned timers
+   * is still armed. Aggregates RequestQueue (processor + backoff),
+   * ModuleConsent (snapshot coalesce), ModuleHealthCheck (deferred initial
+   * send), and ModuleConfiguration (periodic SBS refresh). Used by leak
+   * tests to assert that `halt()` cancels every pending callback.
+   */
+  public hasAnyActiveTimers(): boolean {
+    return this.requestQueue.hasActiveTimers()
+      || this.consentModule.hasActiveTimers()
+      || this.healthCheckModule.hasActiveTimers()
+      || this.configurationModule.hasActiveTimers();
+  }
+
   public async notifyConsentWillChange(added: string[], removed: string[], source: ConsentChangeSource): Promise<void> {
     // Each hook is pre-wrapped in captureRejection so Promise.all behaves like
     // allSettled here, one module's failure is logged and swallowed, never
