@@ -395,6 +395,70 @@ await instanceA.events.recordEvent('login');
 await instanceB.crashes.recordHandledException(new Error('demo'));
 ```
 
+### Logging
+
+Enable verbose internal logs while integrating, then raise the level once you are confident in the wiring:
+
+```typescript
+import { LogLevel } from 'countly-sdk-hos';
+
+config.logging
+  .enableLogging()             // route logs to hilog (off by default in release builds)
+  .setMinLevel(LogLevel.DEBUG); // VERBOSE | DEBUG | INFO | WARNING | ERROR | OFF
+```
+
+#### Log line shape
+
+Every SDK log line is composed of two prefixes followed by the message:
+
+```text
+<brand> <module-tag> <message>
+```
+
+* **Brand prefix** identifies which SDK instance produced the line:
+  * `[Countly]` for the shared instance created via `Countly.initShared(config)`.
+  * `[Countly:<name>]` for a named instance created via `Countly.createInstance('<name>', config)`. The name is what you passed to `createInstance`; it lets you tell concurrent instances apart in a single hilog stream.
+* **Module tag** identifies which internal subsystem emitted the line, e.g. `[Network]`, `[RequestQueue]`, `[ModuleEvents]`, `[ModuleSessions]`, `[ModuleViews]`, `[ModuleCrashes]`, `[ModuleConsent]`, `[ModuleConfiguration]`, `[ModuleHealthCheck]`, `[ModuleRemoteConfig]`, `[Storage]`, `[Events]`/`[Views]`/`[Crashes]` (public-facade call traces).
+
+Example excerpt:
+
+```text
+I  [Countly] [ModuleEvents] recordEvent, queued key='login' count=1 sum=0 dur=0 segmentation={...} queueSize=1
+I  [Countly:analytics] [Network] REQUEST SENDING endpoint=/i usePost=true bytes=330 data=...
+W  [Countly:analytics] [ModuleSessions] onEnterBackground, unbalanced lifecycle (counter went negative), clamping to 0
+```
+
+#### Log levels and routing
+
+The SDK uses six logical levels. Each maps to a `console.*` call, which HarmonyOS routes through hilog with the corresponding severity column (so the `[Info]`, `[Debug]` etc. text is not embedded into the message — hilog already shows it).
+
+| `LogLevel` | `console` method  | hilog severity |
+| ---------- | ----------------- | -------------- |
+| `VERBOSE`  | `console.debug`   | D              |
+| `DEBUG`    | `console.debug`   | D              |
+| `INFO`     | `console.info`    | I              |
+| `WARNING`  | `console.warn`    | W              |
+| `ERROR`    | `console.error`   | E              |
+| `OFF`      | (no console call) | —              |
+
+The default `minLevel` is `DEBUG`. `VERBOSE` is intended for SDK-internal triage; it intentionally floods the queue+request lifecycle.
+
+#### Log listener (side-channel)
+
+If you need to forward SDK logs to your own sink (in-app log panel, remote logger, etc.) without depending on hilog filtering, set a listener. The listener receives the same `minLevel`-filtered stream the console gets:
+
+```typescript
+import { LogLevel } from 'countly-sdk-hos';
+
+config.logging.setListener((msg: string, level: LogLevel) => {
+  // `msg` is the fully formatted line, e.g. "[Countly] [Network] REQUEST SENDING ..."
+  // `level` is the numeric LogLevel value, useful for severity-based fan-out.
+  myAppLogger.append(level, msg);
+});
+```
+
+Listener errors are caught and surfaced once via `console.error`, then subsequent listener failures are suppressed to avoid recursive crashes.
+
 ## Security
 
 Security is very important to us. If you discover any issue regarding security, please disclose the information responsibly by sending an email to <security@countly.com> and **not by creating a GitHub issue**.

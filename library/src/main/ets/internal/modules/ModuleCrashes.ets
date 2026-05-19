@@ -256,6 +256,28 @@ export class ModuleCrashes extends ModuleBase {
     const deviceMetrics: Record<string, string> = DeviceInfo.collect(this.config.appVersion, this.config.metricOverride);
     const keys: string[] = Object.keys(deviceMetrics);
     for (let i = 0; i < keys.length; i++) metrics[keys[i]] = deviceMetrics[keys[i]];
+    // RAM + disk are crash-only metrics (Android puts them in
+    // `getCrashMetricsJSON` only, not the session-metrics builder).
+    // RAM is sync (hidebug), disk is async (statvfs Promise). Read both
+    // at crash time so the values reflect state at the moment of failure
+    // rather than a stale init-time snapshot. Missing keys (hidebug
+    // unavailable, no context, I/O failure) just stay absent — same
+    // contract as Android's `putIfNotNullAndNotEmpty`. Integrator
+    // metricOverride wins for either set.
+    const ramMetrics: Record<string, string> = DeviceInfo.collectRamMetrics();
+    const ramKeys: string[] = Object.keys(ramMetrics);
+    for (let i = 0; i < ramKeys.length; i++) {
+      if (this.config.metricOverride[ramKeys[i]] === undefined) {
+        metrics[ramKeys[i]] = ramMetrics[ramKeys[i]];
+      }
+    }
+    const diskMetrics: Record<string, string> = await DeviceInfo.collectDiskMetrics(this.config.context);
+    const diskKeys: string[] = Object.keys(diskMetrics);
+    for (let i = 0; i < diskKeys.length; i++) {
+      if (this.config.metricOverride[diskKeys[i]] === undefined) {
+        metrics[diskKeys[i]] = diskMetrics[diskKeys[i]];
+      }
+    }
     metrics['_run'] = Math.round((Date.now() - this.appStartMs) / 1000);
     metrics['_background'] = false;
 

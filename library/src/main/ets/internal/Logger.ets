@@ -18,9 +18,22 @@ export class Logger {
   private minLevel: LogLevel = LogLevel.DEBUG;
   private listenerErrorReported: boolean = false;
   private healthListener: HealthLogListener | null = null;
+  /**
+   * Optional named-instance suffix appended to the brand prefix:
+   * `[Countly]` for the shared instance, `[Countly:foo]` for an
+   * instance created via `Countly.createInstance('foo', ...)`. Set
+   * once by `createInstance` after the per-instance Logger is built
+   * so all subsequent log lines (including listener-side) can be
+   * disambiguated when multiple instances run in the same process.
+   */
+  private instanceName: string = '';
 
   public setHealthListener(listener: HealthLogListener | null): void {
     this.healthListener = listener;
+  }
+
+  public setInstanceName(name: string): void {
+    this.instanceName = name;
   }
 
   public setEnabled(enabled: boolean): void {
@@ -62,7 +75,14 @@ export class Logger {
     // severity. Adding `[Debug]`/`[Info]`/etc. produced "I [Debug] ..."
     // double-tagged lines in hilog. Listeners that want the level get it
     // via the second arg.
-    const formatted: string = `[Countly] ${message}`;
+    // Named instances get a `:name` suffix on the brand so concurrent
+    // instances are distinguishable in a shared hilog tail. Shared
+    // instance keeps the unadorned `[Countly]` for backwards-compat
+    // with existing hilog grep filters.
+    const brand: string = this.instanceName.length > 0
+      ? `[Countly:${this.instanceName}]`
+      : '[Countly]';
+    const formatted: string = `${brand} ${message}`;
 
     if (this.enabled) {
       // HarmonyOS console routes through hilog under the hood with severity
@@ -96,7 +116,7 @@ export class Logger {
         // recurse through log(), that'd be infinite if listener wraps us.
         if (!this.listenerErrorReported) {
           this.listenerErrorReported = true;
-          console.error(`[Countly] log listener threw: ${err}, subsequent listener errors will be suppressed`);
+          console.error(`${brand} log listener threw: ${err}, subsequent listener errors will be suppressed`);
         }
       }
     }

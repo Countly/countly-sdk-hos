@@ -75,6 +75,11 @@ export class Countly {
     const existing: CountlyInstance | undefined = Countly.namedInstances.get(name);
     if (existing) return existing;
     const instance: CountlyInstance = new CountlyInstance(config, storageOverride, networkOverride);
+    // Tag every log line from this instance with `[Countly:<name>]` so a
+    // concurrent shared + named instance pair is distinguishable in the
+    // hilog stream. Must happen BEFORE init() so init-time module logs
+    // also pick up the suffix.
+    instance.config.logger.setInstanceName(name);
     await instance.init();
     Countly.namedInstances.set(name, instance);
     return instance;
