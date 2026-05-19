@@ -4,7 +4,7 @@ import i18n from '@ohos.i18n';
 
 /**
  * Collects HarmonyOS device/OS metrics. Values are read lazily and cached per
- * call — values like screen resolution may change over time, so callers pass
+ * call, values like screen resolution may change over time, so callers pass
  * fresh metric overrides each session.
  */
 export class DeviceInfo {
@@ -13,7 +13,27 @@ export class DeviceInfo {
     out['_os'] = 'HarmonyOS';
 
     try {
-      out['_os_version'] = deviceInfo.displayVersion ?? deviceInfo.osFullName ?? 'unknown';
+      // Compose the specific OS version from
+      // `majorVersion.seniorVersion.featureVersion` (e.g. "6.0.2"). That's
+      // the actual user-installed OS version. Other candidates were
+      // rejected:
+      //   - `displayVersion` is marketing text with device-class prefix
+      //     and internal build code (e.g. "emulator
+      //     6.0.0.130(SP7DEVC00E130R4P11)") — not a real OS version.
+      //   - `distributionOSVersion` returns the broader distribution line
+      //     (e.g. "6.0.0") not the specific build the user has installed
+      //     (e.g. "6.0.2").
+      //   - `osFullName` varies (OpenHarmony vs HarmonyOS) and is verbose.
+      // Fallback to `osFullName` then "unknown" if the numeric fields are
+      // unavailable.
+      const major: number | undefined = deviceInfo.majorVersion;
+      const senior: number | undefined = deviceInfo.seniorVersion;
+      const feature: number | undefined = deviceInfo.featureVersion;
+      if (typeof major === 'number' && typeof senior === 'number' && typeof feature === 'number') {
+        out['_os_version'] = `${major}.${senior}.${feature}`;
+      } else {
+        out['_os_version'] = deviceInfo.osFullName ?? 'unknown';
+      }
     } catch (err) {
       out['_os_version'] = 'unknown';
     }
@@ -41,7 +61,7 @@ export class DeviceInfo {
     try {
       out['_locale'] = i18n.System.getSystemLocale();
     } catch (err) {
-      // locale unavailable — omit
+      // locale unavailable, omit
     }
 
     try {

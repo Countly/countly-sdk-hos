@@ -201,7 +201,7 @@ export default function userProfileTest() {
      * Pending user-profile changes land on the wire BEFORE an event push.
      * Port of `SavingWritesEQIntoRQ`. HOS: the user_details flush is
      * driven by the `setProperty` auto-save chain (microtask-deferred),
-     * not by `recordEvent` itself — but the synchronous post-`setProperty`
+     * not by `recordEvent` itself, but the synchronous post-`setProperty`
      * snapshot still shows zero requests because no microtask has run.
      * The end-state contract (a user_details lands by the time the event
      * has been processed) holds either way.
@@ -453,7 +453,7 @@ export default function userProfileTest() {
       expect(ud['username'] as string).assertEqual('username');
       expect(ud['picture'] as string).assertEqual('picture');
       // Custom keys truncated to 2 chars. 'custom1' and 'custom2' both collapse
-      // to 'cu' — last-written wins (custom2=23 or custom1='value1' depending
+      // to 'cu', last-written wins (custom2=23 or custom1='value1' depending
       // on iteration order, but at minimum 'cu' and 'ha' must be present).
       const custom: Record<string, Object> = ud['custom'] as Record<string, Object>;
       expect(custom['cu'] !== undefined).assertTrue();
@@ -533,7 +533,7 @@ export default function userProfileTest() {
 
     /**
      * Array (string / number / boolean) values are recorded inside `custom`.
-     * Port of `setProperties_validateSupportedArrays` / `...Lists` —
+     * Port of `setProperties_validateSupportedArrays` / `...Lists`,
      * SegmentationValue only admits primitive-typed arrays so the "invalid
      * Object[] is dropped" cases are structurally unreachable and omitted.
      */
@@ -587,11 +587,11 @@ export default function userProfileTest() {
     /**
      * Scenario: event save. Order: setProperty dark, 3 events, setProperty
      * light, save. Expectation: two user_details requests (dark then light)
-     * interleaved with the event batch — the dark one is flushed before any
+     * interleaved with the event batch, the dark one is flushed before any
      * event is enqueued (ModuleEvents calls saveUserProfileIfPending), the
      * light one requires explicit save(). Port of
      * `eventSaveScenario_changeDeviceIDWithoutMerge` (without the device-ID
-     * change tail — HOS test harness keeps the original device id for the
+     * change tail, HOS test harness keeps the original device id for the
      * assertions we care about).
      */
     it('scenario_eventSaveTriggersUserProfileFlush', 0, async () => {
@@ -628,7 +628,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * Scenario: same-key overwrite — only the last value is shipped. Port of
+     * Scenario: same-key overwrite, only the last value is shipped. Port of
      * `UP_203_CNR_A_events` (sendSameData portion).
      */
     it('scenario_setPropertyRepeatedly_onlyLastValueShipped', 0, async () => {
@@ -648,7 +648,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * Scenario: full modifier surface in one save — every modifier lands in
+     * Scenario: full modifier surface in one save, every modifier lands in
      * its expected JSON bucket. Port of `validateUserDataRequest` / the
      * `sendUserData` helper in scUP.
      */
@@ -743,7 +743,7 @@ export default function userProfileTest() {
     };
 
     /**
-     * Port of `eventSaveScenario_manualSessions` — related user properties are
+     * Port of `eventSaveScenario_manualSessions`, related user properties are
      * saved before event recordings, interleaved with manual session calls.
      * HOS: events are batched in the event queue (threshold 100) rather than
      * one-request-per-event as on Android; the assertions focus on user_details
@@ -774,7 +774,7 @@ export default function userProfileTest() {
       await flushTick(40);
 
       h.instance.userProfile.setProperty('theme', 'light_mode');
-      // No new user_details yet — light_mode sits in memory.
+      // No new user_details yet, light_mode sits in memory.
       upCalls = h.network.findCallsWithParam('user_details=');
       expect(upCalls.length).assertEqual(1);
 
@@ -794,7 +794,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * Port of `eventSaveScenario_onTimer` — no consent for sessions, so only
+     * Port of `eventSaveScenario_onTimer`, no consent for sessions, so only
      * user_details requests are emitted. Uses a short update interval to
      * trigger the session-update timer that (in Android) flushes the pending
      * user profile. HOS: without sessions consent `sendUpdate` short-circuits
@@ -824,7 +824,7 @@ export default function userProfileTest() {
 
       // HOS: sendUpdate is gated by sessions consent (off here), so the
       // timer itself cannot flush the user profile. Drive an explicit save
-      // to land the light_mode record — matches the Android expectation that
+      // to land the light_mode record, matches the Android expectation that
       // two user_details requests eventually exist (dark then light).
       await h.instance.userProfile.save();
       await flushTick(60);
@@ -836,7 +836,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * Port of `eventSaveScenario_changeDeviceIDWithoutMerge` — user properties
+     * Port of `eventSaveScenario_changeDeviceIDWithoutMerge`, user properties
      * set around events land as two user_details requests in the correct
      * order; a device ID change without merge flushes the tail.
      */
@@ -870,7 +870,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * Port of `eventSaveScenario_sessionCallsTriggersSave_M` — manual session
+     * Port of `eventSaveScenario_sessionCallsTriggersSave_M`, manual session
      * call sites trigger user profile save (ModuleSessions calls
      * saveUserProfileIfPending at begin + update + end). Sequence:
      * set(before_session) → beginSession → set(after_begin_session) →
@@ -888,7 +888,7 @@ export default function userProfileTest() {
 
       await h.instance.sessions.beginSession();
       await flushTick(40);
-      // begin_session triggered saveUserProfileIfPending — before_session flushed.
+      // begin_session triggered saveUserProfileIfPending, before_session flushed.
       let upCalls = h.network.findCallsWithParam('user_details=');
       expect(upCalls.length).assertEqual(1);
       expect((parseUserDetails(upCalls[0].data)['custom'] as Record<string, Object>)['before_session'] as boolean).assertEqual(true);
@@ -914,7 +914,7 @@ export default function userProfileTest() {
       await flushTick(1100);
       await h.instance.sessions.endSession();
       await flushTick(40);
-      // endSession does NOT directly call saveUserProfileIfPending in HOS —
+      // endSession does NOT directly call saveUserProfileIfPending in HOS,
       // only begin/update do (see ModuleSessions.ets:130,156). To pin the
       // final record we explicitly save; this matches the contract the
       // Android test is asserting (that the property eventually lands).
@@ -927,7 +927,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * Port of `eventSaveScenario_sessionCallsTriggersSave_A` — automatic mode
+     * Port of `eventSaveScenario_sessionCallsTriggersSave_A`, automatic mode
      * with foreground/background driving begin/end. HOS: no orientation events
      * on auto-session boundaries (ModuleViews.updateOrientation is integrator-
      * driven), so there are no extra events at begin. Uses a short update
@@ -969,7 +969,7 @@ export default function userProfileTest() {
 
       h.instance.lifecycleBackground();
       await flushTick(60);
-      // endSession does NOT call saveUserProfileIfPending in HOS — flush
+      // endSession does NOT call saveUserProfileIfPending in HOS, flush
       // the tail explicitly. HOS: no end-side auto-save hook equivalent.
       await h.instance.userProfile.save();
       await flushTick(60);
@@ -980,7 +980,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * 1. 200_CNR_A — consent not required, automatic sessions.
+     * 1. 200_CNR_A, consent not required, automatic sessions.
      * Init → sendUserProperties → sendUserData. HOS: the auto-save trigger
      * on each mutation is GATED on the events queue having buffered events;
      * with no recordEvent in this test the queue is empty, so each trigger
@@ -998,8 +998,8 @@ export default function userProfileTest() {
     });
 
     /**
-     * 2. 201_CR_CG_A — consent required, all consents given at init. The
-     * coalesced consent snapshot is the only request — auto-save trigger is
+     * 2. 201_CR_CG_A, consent required, all consents given at init. The
+     * coalesced consent snapshot is the only request, auto-save trigger is
      * gated on the events queue (empty here) so no user_details ships either.
      */
     it('scUP_UP_201_CR_CG_A', 0, async () => {
@@ -1016,7 +1016,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * 3. 202_CR_CNG_A — consent required, none given. No consent snapshot
+     * 3. 202_CR_CNG_A, consent required, none given. No consent snapshot
      * (no diff vs. the default denied state), no user_details.
      * HOS: no init-time location erasure request (ModuleLocation has no
      * onInit path), so unlike Android we expect 0 requests total here.
@@ -1035,7 +1035,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * 4. 203_CNR_A_events — interleave events and repeated setProperty on the
+     * 4. 203_CNR_A_events, interleave events and repeated setProperty on the
      * same key. recordEvent triggers saveUserProfileIfPending which ships the
      * buffered "a12345=4" after each batch of events. HOS: events stay in the
      * in-memory event queue until flushed; this test pins user_details count.
@@ -1068,7 +1068,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * 5. 205_CR_CG_A — consent required + all given. Same body as 203 plus
+     * 5. 205_CR_CG_A, consent required + all given. Same body as 203 plus
      * the initial consent= snapshot.
      */
     it('scUP_UP_205_CR_CG_A', 0, async () => {
@@ -1100,7 +1100,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * 6. 206_CR_CNG_A — consent required, none given. Events / setProperty
+     * 6. 206_CR_CNG_A, consent required, none given. Events / setProperty
      * produce no wire traffic.
      */
     it('scUP_UP_206_CR_CNG_A', 0, async () => {
@@ -1123,7 +1123,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * 7. 207_CNR_M — manual sessions, consent not required. Long sequence
+     * 7. 207_CNR_M, manual sessions, consent not required. Long sequence
      * with beginSession, events, sendSameData, endSession, sendUserData,
      * changeWithMerge, sendSameData, changeWithoutMerge, sendSameData, event.
      * HOS: events are batched and ship on endSession background/flush or
@@ -1144,7 +1144,7 @@ export default function userProfileTest() {
       await flushTick(20);
       await h.instance.events.recordEvent('C');
       await sendUserData(h);
-      await h.instance.sessions.endSession(); // no active session — ignored
+      await h.instance.sessions.endSession(); // no active session, ignored
       await h.instance.deviceId.changeWithMerge('merge_id');
       await flushTick(40);
       await sendSameData(h);
@@ -1187,7 +1187,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * 8. 208_CR_CG_M — same as 207 plus consent=required+giveAll → one
+     * 8. 208_CR_CG_M, same as 207 plus consent=required+giveAll → one
      * consent snapshot lands before any other traffic.
      */
     it('scUP_UP_208_CR_CG_M', 0, async () => {
@@ -1213,7 +1213,7 @@ export default function userProfileTest() {
       await sendSameData(h);
       await h.instance.deviceId.changeWithoutMerge('non_merge_id');
       await flushTick(1200); // let any consent coalesce fire
-      // After changeWithoutMerge, consent is reset — further sends are gated
+      // After changeWithoutMerge, consent is reset, further sends are gated
       // on the new user's consent, which is unset. sendSameData / recordEvent
       // will produce no user_details past the device-id change.
       await sendSameData(h);
@@ -1239,7 +1239,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * 9. 209_CR_CNG_M — manual sessions, consent required + none given.
+     * 9. 209_CR_CNG_M, manual sessions, consent required + none given.
      * Only the device-id merge request should appear (merge doesn't require
      * per-feature consent). No session, no user_details, no events.
      */
@@ -1275,11 +1275,11 @@ export default function userProfileTest() {
     });
 
     /**
-     * 10. 210_CNR_M_duration — init with short update interval, sendUserData,
+     * 10. 210_CNR_M_duration, init with short update interval, sendUserData,
      * wait past the interval. HOS: sendUpdate calls saveUserProfileIfPending
      * only if a session is active; without an explicit beginSession in this
      * scenario, the timer path can't flush. Drive a save() explicitly to
-     * pin the user_details shape — this is the behavior contract the Android
+     * pin the user_details shape, this is the behavior contract the Android
      * test is locking in.
      */
     it('scUP_UP_210_CNR_M_duration', 0, async () => {
@@ -1309,7 +1309,7 @@ export default function userProfileTest() {
     // "flush events queue → save user_details" pair, BUT ONLY when the
     // events queue currently has buffered events. Without events to flush
     // the trigger no-ops (no user_details either). Explicit `save()` is
-    // NOT gated — it always saves (matches Android's saveInternal contract).
+    // NOT gated, it always saves (matches Android's saveInternal contract).
 
     /**
      * setProperty without any queued events does NOT auto-save. The trigger
@@ -1326,7 +1326,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * setProperty WITH a queued event auto-saves — the events flush rides
+     * setProperty WITH a queued event auto-saves, the events flush rides
      * with the user_details enqueue, both land on the wire.
      */
     it('autoSave_setPropertyWithQueuedEvents_flushesEventsOnly_noUserDetails', 0, async () => {
@@ -1359,10 +1359,10 @@ export default function userProfileTest() {
      * Each modifier method (increment / incrementBy / multiply / saveMax /
      * saveMin / setOnce / push / pushUnique / pull) auto-flushes events
      * when an event is queued ahead of it (cascade #3 of the spec). They
-     * do NOT auto-emit user_details — that requires an explicit save() or
+     * do NOT auto-emit user_details, that requires an explicit save() or
      * a save-triggering callsite. Note: each subsequent `recordEvent` call
      * runs `saveUserProfileIfPending` as its prelude (Android cascade #2),
-     * so it will SHIP the previous iteration's pending user_details — that's
+     * so it will SHIP the previous iteration's pending user_details, that's
      * `recordEvent`'s contract, not the modifier's auto-trigger.
      */
     it('autoSave_eachModifierMethodWithQueuedEvent_flushesEventsOnly', 0, async () => {
@@ -1425,7 +1425,7 @@ export default function userProfileTest() {
 
     /**
      * Auto-trigger drains events queue immediately on mutation when events
-     * are pending. user_details does NOT ride along — that requires
+     * are pending. user_details does NOT ride along, that requires
      * an explicit save(). When save() runs after the flush, the wire order
      * is events= → user_details=.
      */
@@ -1442,7 +1442,7 @@ export default function userProfileTest() {
       expect(h.network.findCallsWithParam('events=').length).assertEqual(1);
       expect(h.network.findCallsWithParam('user_details=').length).assertEqual(0);
 
-      // Explicit save() lands user_details — strictly AFTER the events= flush.
+      // Explicit save() lands user_details, strictly AFTER the events= flush.
       await h.instance.userProfile.save();
       await flushTick(60);
       const eventCalls = h.network.findCallsWithParam('events=');
@@ -1454,7 +1454,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * `clear()` is a mutation method — its trigger gates on the events queue
+     * `clear()` is a mutation method, its trigger gates on the events queue
      * too. With a queued event, clear() flushes events; the buffer is empty
      * after clear so no user_details ships.
      */
@@ -1468,13 +1468,13 @@ export default function userProfileTest() {
       await flushTick(60);
 
       // The first chain entry (from setProperty) sees pending=false (clear
-      // ran sync first) and skips saveInternal — but events still drain.
+      // ran sync first) and skips saveInternal, but events still drain.
       expect(h.network.findCallsWithParam('user_details=').length).assertEqual(0);
       expect(h.network.findCallsWithParam('events=').length).assertEqual(1);
     });
 
     /**
-     * Explicit `save()` is NOT gated on the events queue — it always ships
+     * Explicit `save()` is NOT gated on the events queue, it always ships
      * user_details when there's pending state, even with no events queued.
      * This preserves the "save means save" contract that Android maintains.
      */
@@ -1496,8 +1496,8 @@ export default function userProfileTest() {
     /**
      * Consent gate still wins over the auto-trigger. With consent required
      * and USERS not granted, even an event-queued mutation can't ship a
-     * user_details — saveInternal short-circuits at the consent check.
-     * (Events DO still flush — the events feature consent is independent.)
+     * user_details, saveInternal short-circuits at the consent check.
+     * (Events DO still flush, the events feature consent is independent.)
      */
     it('autoSave_respectsUsersConsentGate', 0, async () => {
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
@@ -1514,7 +1514,7 @@ export default function userProfileTest() {
     });
 
     /**
-     * Concurrent path — `recordEvent` calls `core.saveUserProfileIfPending`
+     * Concurrent path, `recordEvent` calls `core.saveUserProfileIfPending`
      * which goes through the unconditional save chain entry. With the
      * synchronous clear-then-enqueue inside `saveInternal`, even a
      * setProperty followed immediately by a recordEvent produces exactly
@@ -1523,7 +1523,7 @@ export default function userProfileTest() {
     it('autoSave_noDuplicateWhenRecordEventFollowsSetProperty', 0, async () => {
       const h: Harness = await buildHarness();
       h.instance.userProfile.setProperty('name', 'Once');
-      // No await between setProperty and recordEvent — the auto-trigger
+      // No await between setProperty and recordEvent, the auto-trigger
       // chain entry races recordEvent's saveUserProfileIfPending. Auto
       // entry skips (no events yet); saveUserProfileIfPending's
       // unconditional entry saves once.
@@ -1537,7 +1537,7 @@ export default function userProfileTest() {
 
     it('userProfileWireOrder_consentBeforeBeginSessionBeforeUserDetails', 0, async () => {
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['sessions', 'users']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       h.instance.lifecycleForeground();
       await flushTick(60);

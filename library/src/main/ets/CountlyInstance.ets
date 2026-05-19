@@ -52,7 +52,7 @@ import ConfigurationConstant from '@ohos.app.ability.ConfigurationConstant';
  * Pairs a module instance with the short label used in rejection-log tags
  * (e.g. `events.consentWillChange`). The fan-out arrays below are listed
  * explicitly per fan-out so it's grep-able which modules participate in
- * which event — `userProfile` is a deliberate consent recipient but not a
+ * which event, `userProfile` is a deliberate consent recipient but not a
  * device-id recipient, `configuration` is the inverse, etc.
  */
 class LabeledModule {
@@ -83,11 +83,11 @@ export class CountlyInstance implements SdkCore {
   public requestBuilder: RequestBuilder;
   public requestQueue: RequestQueue;
 
-  /** @internal — module-to-module reads only (see SdkCore). User-facing reads
+  /** @internal, module-to-module reads only (see SdkCore). User-facing reads
    * live on `consent` / `deviceId` facades; this field exists solely so
    * other modules can call `core.consentModule.hasConsent(...)`. */
   public readonly consentModule: ModuleConsent;
-  /** @internal — see consentModule note. */
+  /** @internal, see consentModule note. */
   public readonly deviceIdModule: ModuleDeviceId;
   private eventsModule: ModuleEvents;
   private sessionsModule: ModuleSessions;
@@ -102,7 +102,7 @@ export class CountlyInstance implements SdkCore {
   private healthCheckModule: ModuleHealthCheck;
   /**
    * Per-instance HarmonyOS `applicationStateChange` subscription. Each
-   * instance owns its own — multiple instances each get their own
+   * instance owns its own, multiple instances each get their own
    * subscription that fans into THAT instance's lifecycle methods. Halt
    * unsubscribes only this instance's observer.
    */
@@ -134,7 +134,7 @@ export class CountlyInstance implements SdkCore {
   public readonly location: LocationApi;
   public readonly remoteConfig: RemoteConfigApi;
   public readonly requests: RequestQueueApi;
-  // Push, content, and feedback are intentionally `private` — these modules
+  // Push, content, and feedback are intentionally `private`, these modules
   // are disabled in this build. The facades are still constructed (so the
   // module lifecycle, consent fan-out, and device-id fan-out stay symmetric
   // with the rest of the SDK), but they are unreachable from integrator
@@ -169,8 +169,19 @@ export class CountlyInstance implements SdkCore {
     this.config.clearStoredDeviceId = countlyConfig.deviceId.clearStored;
 
     this.config.requiresConsent = countlyConfig.consent.requires;
-    this.config.initialConsent = countlyConfig.consent.initial.slice();
     this.config.initialConsentAll = countlyConfig.consent.initialAll;
+    this.config.unknownConsentMode = countlyConfig.consent.unknownMode;
+    // Unknown consent mode internally grants every feature so module-level
+    // `hasConsent` gates open and telemetry actually reaches the request
+    // queue. The queue itself is paused in `init()` so the buffered data
+    // sits locally until `giveConsentAll` / `removeConsentAll` resolves the
+    // unknown state. `enableUnknownConsentMode()` already flips `requires=true`
+    //, re-asserting here so a future caller setting `unknownConsentMode`
+    // directly on InternalConfig (tests) can't bypass that invariant.
+    if (this.config.unknownConsentMode) {
+      this.config.requiresConsent = true;
+      this.config.initialConsentAll = true;
+    }
 
     this.config.eventQueueThreshold = countlyConfig.events.queueThreshold;
     this.config.maxRequestQueueSize = countlyConfig.network.maxRequestQueueSize;
@@ -306,11 +317,11 @@ export class CountlyInstance implements SdkCore {
     // §5351). For `[CLY]_nps` and `[CLY]_survey`, ModuleEvents'
     // IMMEDIATE_FLUSH_KEYS already force-flushes inside `recordEvent`, so no
     // extra work is needed here. For `[CLY]_star_rating` ModuleEvents
-    // deliberately does NOT auto-flush — dev guide §1482 says legacy star
+    // deliberately does NOT auto-flush, dev guide §1482 says legacy star
     // rating recordings from other paths must not trigger an immediate flush.
     // The explicit flush below covers only the feedback Rating widget path
     // without affecting those legacy recordings. A future change that adds
-    // `[CLY]_star_rating` to IMMEDIATE_FLUSH_KEYS would double-flush here —
+    // `[CLY]_star_rating` to IMMEDIATE_FLUSH_KEYS would double-flush here,
     // harmless but a sign to delete this branch.
     this.feedbackModule.setFeedbackEventRecorder(async (key: string, seg: SegmentationMap): Promise<void> => {
       await this.eventsModule.recordEvent(key, seg, 1, 0, 0);
@@ -321,7 +332,7 @@ export class CountlyInstance implements SdkCore {
 
     // Content-emitted events ride the same pipeline so consent is respected
     // and the events join any in-flight batch. The queue flush afterwards
-    // surfaces content actions quickly — they are short-lived interactions
+    // surfaces content actions quickly, they are short-lived interactions
     // that integrators expect to land promptly.
     this.contentModule.setContentEventRecorder(async (key: string, seg: SegmentationMap): Promise<void> => {
       await this.eventsModule.recordEvent(key, seg, 1, 0, 0);
@@ -389,7 +400,7 @@ export class CountlyInstance implements SdkCore {
     // Device-ID change fan-out: when the device ID changes, every module
     // needs a chance to react. Without-merge is a user switch (clear timed
     // events, breadcrumbs, RC cache, consent, end + begin session). With-merge
-    // keeps state — modules are notified separately so they can do bookkeeping.
+    // keeps state, modules are notified separately so they can do bookkeeping.
     this.consentRecipients = [
       new LabeledModule(this.eventsModule, 'events'),
       new LabeledModule(this.viewsModule, 'views'),
@@ -461,14 +472,14 @@ export class CountlyInstance implements SdkCore {
       // means the integrator expected a different config to take effect and
       // it silently won't. Only `Countly.initShared` short-circuits by
       // design; if you reach *this* path you almost certainly have a bug.
-      this.config.logger.e('[Countly] init, already initialized — ignoring (check for duplicate init() calls)');
+      this.config.logger.e('[Countly] init, already initialized, ignoring (check for duplicate init() calls)');
       return;
     }
     this.initialized = true;
 
     // Register the lifecycle observer SYNCHRONOUSLY before any await below
     // yields control. HMOS lifecycle events fire on transitions only and
-    // never replay current state — if the platform's first
+    // never replay current state, if the platform's first
     // onApplicationForeground / onAbilityForeground transition lands while
     // init is still doing its async work (storage + device-id + module
     // inits + SBS fetch), the observer must already be subscribed or we
@@ -479,18 +490,18 @@ export class CountlyInstance implements SdkCore {
     this.lifecycleObserver.register(this.config.context);
 
     if (!this.config.context) {
-      // No context means no preferences file — the SDK will run in memory
+      // No context means no preferences file, the SDK will run in memory
       // only and everything will reset on process restart. Surface this at
       // ERROR so the integrator can see it in both console and log listeners.
-      this.config.logger.e('[Countly] init, no context provided — persistence is disabled, device id will regenerate on restart');
+      this.config.logger.e('[Countly] init, no context provided, persistence is disabled, device id will regenerate on restart');
     } else if (this.config.storage) {
       const ok: boolean = await this.config.storage.init(this.config.context);
       if (!ok) {
-        this.config.logger.e('[Countly] init, storage init failed — persistence is disabled, device id will regenerate on restart');
+        this.config.logger.e('[Countly] init, storage init failed, persistence is disabled, device id will regenerate on restart');
       }
     }
     // Apply persisted / dev-supplied SDK Behavior Settings BEFORE the request
-    // queue loads — `requestDropAgeHours`, `maxRequestQueueSize`, and the
+    // queue loads, `requestDropAgeHours`, `maxRequestQueueSize`, and the
     // `dort` killswitch are all checked inside `RequestQueue.load`/`tick`.
     // Doing this here (instead of in `onInit`) keeps the apply ordering aligned
     // with the dev guide §SDK Behavior Settings precedence table.
@@ -501,12 +512,35 @@ export class CountlyInstance implements SdkCore {
       // calls `disableOfflineMode(...)`. Load persisted requests first so they
       // survive the pause.
       this.requestQueue.pause();
-      this.config.logger.i('[Countly] init, starting in offline mode — no network traffic until disableOfflineMode()');
+      this.config.logger.i('[Countly] init, starting in offline mode, no network traffic until disableOfflineMode()');
+    }
+    if (this.config.unknownConsentMode) {
+      // Same pause primitive as offline mode, collected telemetry queues
+      // locally until `giveConsentAll` / `removeConsentAll` resolves the
+      // unknown state. The instance keeps running through resolution; the
+      // queue is resumed (and the Network unsilenced) by `resolveUnknownConsent`.
+      // Loaded queue contents from a previous unknown-mode session also stay
+      // paused so a re-launch into unknown mode preserves "nothing leaves the
+      // device".
+      this.requestQueue.pause();
+      // Belt and braces: silence the Network too so any direct-execute
+      // telemetry path that bypasses the queue (RC auto-download, A/B
+      // enrollment) is blocked at the transport. SBS fetch and Health
+      // Check intentionally bypass the silencer via
+      // `Network.executeOperational()` because they carry no
+      // event/session/view/profile data and are critical for SDK
+      // correctness (server-driven config + reliability counters)
+      // regardless of consent state. `resolveUnknownConsent` calls
+      // `setSilenced(false)` on either resolution path so even the
+      // telemetry-bearing paths re-open for buffered drain (give) or
+      // the revocation snapshot (revoke).
+      this.config.network.setSilenced(true);
+      this.config.logger.i('[Countly] init, starting in unknown consent mode, telemetry held locally until giveConsentAll/removeConsentAll');
     }
     await this.deviceIdModule.resolveInitial();
 
-    // Send the init-time consent snapshot NOW — bypassing the 1-second
-    // coalesce timer the ModuleConsent constructor scheduled — so the consent
+    // Send the init-time consent snapshot NOW, bypassing the 1-second
+    // coalesce timer the ModuleConsent constructor scheduled, so the consent
     // change lands in the request queue ahead of any begin_session that fires
     // when the platform delivers the cold-boot onApplicationForeground.
     // Sequencing: persisted requests (loaded by `requestQueue.load`) ship
@@ -515,7 +549,7 @@ export class CountlyInstance implements SdkCore {
     // dialog toggles, so this method only flushes if a snapshot is pending.
     await this.consentModule.flushInitialConsentIfPending();
 
-    // Never log the full device ID — it's a stable identifier that could
+    // Never log the full device ID, it's a stable identifier that could
     // leak via a log listener. Log only the type.
     this.config.logger.i(`[Countly] init complete appKey=${this.config.appKey} deviceIdType=${this.deviceIdModule.getType()}`);
     await this.eventsModule.onInit();
@@ -550,13 +584,13 @@ export class CountlyInstance implements SdkCore {
     // were still loading. The observer was registered at the top of init();
     // any transition that happened during the async pipeline is buffered
     // there. `markReady()` replays it now that storage, device-id, the
-    // request queue, and every module's `onInit` have completed — so a
+    // request queue, and every module's `onInit` have completed, so a
     // begin_session enqueue here goes through the fully-loaded pipeline.
     this.lifecycleObserver.markReady();
   }
 
   // -- SdkCore interface --
-  // Device-id + consent reads are not exposed here — they live on the
+  // Device-id + consent reads are not exposed here, they live on the
   // `deviceId` and `consent` facades. Internal modules read them via
   // `core.consentModule.hasConsent(...)` / `core.deviceIdModule.*` (see
   // SdkCore.ets).
@@ -586,7 +620,7 @@ export class CountlyInstance implements SdkCore {
 
   public async notifyConsentWillChange(added: string[], removed: string[], source: ConsentChangeSource): Promise<void> {
     // Each hook is pre-wrapped in captureRejection so Promise.all behaves like
-    // allSettled here — one module's failure is logged and swallowed, never
+    // allSettled here, one module's failure is logged and swallowed, never
     // aborting peers. Every feature module is notified so they can flush
     // in-flight work before the consent flip.
     const promises: Promise<void>[] = this.consentRecipients.map((lm: LabeledModule): Promise<void> =>
@@ -616,6 +650,17 @@ export class CountlyInstance implements SdkCore {
   // -- Lifecycle --
 
   public lifecycleForeground(): void {
+    // Post-halt fan-out gate. Module-level mutators already check
+    // `rejectIfHalted`, but the lifecycle hooks (`onEnterForeground`,
+    // `onEnterBackground`) call through to internal helpers
+    // (`recordViewEvent` → private `recordEventAt`) that bypass those gates.
+    // The LifecycleObserver is deregistered on halt, so this only matters
+    // for manual `lifecycleForegroundAll` calls, but those WOULD have
+    // re-queued telemetry on a halted instance without this guard.
+    if (this.config.halted) {
+      this.config.logger.w('[Countly] lifecycleForeground called after halt, ignored');
+      return;
+    }
     this.sessionsModule.onEnterForeground();
     this.eventsModule.onEnterForeground();
     this.viewsModule.onEnterForeground();
@@ -623,11 +668,15 @@ export class CountlyInstance implements SdkCore {
     // `ModuleSessions.beginSessionInternal` via the orientation-baseline
     // emitter wired in the constructor. That insertion point fires only
     // when a session actually begins. The display read for rotations
-    // that happened while backgrounded still happens — it just lives
+    // that happened while backgrounded still happens, it just lives
     // inside that emitter path now.
   }
 
   public lifecycleBackground(): void {
+    if (this.config.halted) {
+      this.config.logger.w('[Countly] lifecycleBackground called after halt, ignored');
+      return;
+    }
     this.sessionsModule.onEnterBackground();
     this.eventsModule.onEnterBackground();
     this.viewsModule.onEnterBackground();
@@ -653,7 +702,7 @@ export class CountlyInstance implements SdkCore {
     let mode: string = '';
     if (dir === ConfigurationConstant.Direction.DIRECTION_VERTICAL) mode = 'portrait';
     else if (dir === ConfigurationConstant.Direction.DIRECTION_HORIZONTAL) mode = 'landscape';
-    else return; // DIRECTION_NOT_SET — nothing to report
+    else return; // DIRECTION_NOT_SET, nothing to report
     this.viewsModule.updateOrientation(mode).catch((err: Object): void => {
       this.config.logger.e(`[Countly] auto-orientation updateOrientation rejected: ${err}`);
     });
@@ -663,7 +712,7 @@ export class CountlyInstance implements SdkCore {
    * Read orientation from the display directly. Wired into
    * `ModuleSessions.beginSessionInternal` via `setOrientationBaselineEmitter`
    * so a fresh baseline orientation event is emitted on every session
-   * begin — including session begins that follow a backgrounded rotation
+   * begin, including session begins that follow a backgrounded rotation
    * which `onConfigurationUpdated` never delivered (that callback only
    * fires while the app is foregrounded).
    *
@@ -693,7 +742,7 @@ export class CountlyInstance implements SdkCore {
    *      short form (`Ability`) when `enableAutomaticViewShortNames()` is on.
    *   2. Skip ability names listed via `setAutomaticViewTrackingExclusions`.
    *   3. Hand the chosen name + global segmentation to
-   *      `viewsModule.startAutoStoppedView` — same entrypoint manual code
+   *      `viewsModule.startAutoStoppedView`, same entrypoint manual code
    *      uses, so all the per-view rules (auto-stop the previous one,
    *      apply view-id, dispatch through the events pipeline) come for
    *      free without duplicating ModuleViews logic here.
@@ -711,7 +760,7 @@ export class CountlyInstance implements SdkCore {
     }
     const name: string = this.config.automaticViewShortNames ? shortName : fullName;
     if (name.length === 0) {
-      this.config.logger.d('[Countly] auto-view, empty ability name — skipped');
+      this.config.logger.d('[Countly] auto-view, empty ability name, skipped');
       return;
     }
     if (this.config.autoViewExclusions.indexOf(name) !== -1) {
@@ -724,43 +773,199 @@ export class CountlyInstance implements SdkCore {
       });
   }
 
-  public async halt(): Promise<void> {
+  /**
+   * @internal, invoked by `ModuleConsent` when the integrator calls
+   * `consent.giveConsentAll()` / `removeConsentAll()` while unknown mode is
+   * active. Not intended to be called directly by integrators; the only
+   * supported way to leave unknown mode is via the consent facade. When the
+   * instance isn't in unknown mode the call is a no-op (warning logged).
+   *
+   * Resolution semantics (both paths KEEP the instance running, there is
+   * no halt; the integrator does not need to re-init):
+   *
+   * - `givenAll=true`, "consent given, network calls can start." Unsilences
+   *   the transport and resumes the request queue. The data buffered during
+   *   the unknown phase (events, session begin, the init-time consent
+   *   snapshot reflecting all-granted state) drains naturally to the wire.
+   *   Analogous to exiting temporary device-id mode.
+   *
+   * - `givenAll=false`, "consent revoked, erase collected data, send
+   *   revocation, keep running like consent not given." Wipes the buffered
+   *   queue, flips every consent to false, ships a single all-false
+   *   `consent=` snapshot, and locks the runtime consent surface
+   *   (`consentLockedPostUnknown`) so subsequent `giveConsentAll` /
+   *   `removeConsentAll` runtime calls are no-ops with a "consent is set
+   *   per init" warning log. The integrator must re-init with a fresh
+   *   `CountlyConfig` to escape the lock.
+   */
+  public async resolveUnknownConsent(givenAll: boolean): Promise<void> {
+    if (!this.config.unknownConsentMode) {
+      this.config.logger.w('[Countly] resolveUnknownConsent called outside unknown mode, ignored');
+      return;
+    }
+    // Clear the flag FIRST so re-entry is impossible during the async work
+    // below (a fast second `giveConsentAll`/`removeConsentAll` would find
+    // `unknownConsentMode=false` and run the normal non-UCM path).
+    this.config.unknownConsentMode = false;
+    // Unsilence the transport regardless of resolution, either we're
+    // about to ship the buffered queue (give) or a revocation snapshot
+    // (revoke). The silencer is no longer needed.
+    this.config.network.setSilenced(false);
+
+    // Fire deferred operational requests (HC + SBS) BEFORE the grant/
+    // revoke branch so they reach the wire on both paths. This matches
+    // Dart's `_getOutOfUnknownConsentState`, both modules check their
+    // own preconditions internally (HC sent flag, SBS disabled flag,
+    // temp-id mode), the calls are fire-and-forget so they don't gate
+    // the rest of resolution on network round-trips.
+    this.configurationModule.triggerPostUcmRefresh();
+    this.healthCheckModule.triggerPostUcmSend();
+
+    if (givenAll) {
+      this.config.logger.i('[Countly] resolveUnknownConsent, givenAll=true, network calls enabled, buffered data will ship');
+      // Resume the queue; the init-time consent snapshot + any buffered
+      // events/sessions/views drain in arrival order. Internal consent
+      // map is already all-true (set by `initialConsentAll=true` at
+      // construction), so the SDK simply continues operating with full
+      // consent, no module-level state change needed.
+      this.requestQueue.resume();
+      return;
+    }
+
+    this.config.logger.i(`[Countly] removeConsentAll, unknown consent mode: erasing buffered data and sending revocation at ${Date.now()} (${new Date().toISOString()})`);
+    // Flip every consent to false. notifyConsentDidChange fires; modules
+    // may enqueue cleanup requests (end_session, location erasure, etc.)
+    // into the still-paused queue. Those are about to be dropped.
+    this.config.logger.i('[Countly] removeConsentAll, flipping all consents to false and notifying modules');
+    await this.consentModule.applyRevokeFromUnknownMode_phase1();
+    this.config.logger.i('[Countly] removeConsentAll, consent flip complete');
+    // Drop everything: buffered-during-UCM data PLUS the cleanup requests
+    // modules just emitted. The server never observed the implicit "all
+    // granted" state, so it must not see the cleanup either. The
+    // coalesced revocation snapshot timer scheduled above is NOT touched
+    // by queue.clear(), it stays pending and is flushed explicitly next.
+    this.config.logger.i('[Countly] removeConsentAll, clearing buffered request queue');
+    await this.requestQueue.clear();
+    this.config.logger.i('[Countly] removeConsentAll, buffered queue cleared');
+    // Ship the revocation snapshot. This is the ONLY wire request the
+    // server sees from this resolution.
+    this.config.logger.i('[Countly] removeConsentAll, sending revocation snapshot (all features = false)');
+    await this.consentModule.applyRevokeFromUnknownMode_phase2();
+    this.config.logger.i('[Countly] removeConsentAll, revocation snapshot enqueued');
+    // Lock the runtime consent surface. From this point on,
+    // `giveConsentAll` / `removeConsentAll` log "consent is set per init"
+    // and return without effect.
+    this.config.consentLockedPostUnknown = true;
+    // Resume so the queued revocation snapshot ships. Any subsequent
+    // integrator-initiated wire activity (none should happen with consent
+    // revoked, but addDirectRequest etc. would still be blocked by the
+    // module-level consent gate) flows after.
+    this.requestQueue.resume();
+  }
+
+  /**
+   * Halt the instance WITHOUT wiping persisted storage. Drains module state
+   * to the request queue, halts the queue, deregisters the lifecycle
+   * observer, cancels background timers. The persisted request queue,
+   * device ID, server-config cache, health-check counters, user-profile
+   * cache, and remote-config cache all survive on disk, a subsequent
+   * `Countly.initShared(cfg, sameStorage)` picks them up and resumes.
+   *
+   * Use `stop()` when you want to swap configurations at runtime (server-URL
+   * change, etc.) without losing buffered telemetry. Use `halt()` when you
+   * want a clean wipe (e.g., user-data deletion). `Countly.initShared`'s
+   * smart auto-replace path uses `stop()` under the hood when replacing an
+   * existing shared instance.
+   *
+   * Post-stop/halt gating contract (applies equally to `stop()`, `halt()`,
+   * `Countly.stopAll()`, `Countly.haltAll()`):
+   *   - `config.halted` is flipped to `true` BEFORE any module drain runs,
+   *     so module-level mutators invoked from this point on (incl. during
+   *     the drain itself, if an integrator races a call against shutdown)
+   *     are rejected at the module's `rejectIfHalted` gate. The drains
+   *     themselves call private module methods that bypass that gate.
+   *   - Every user-facing module mutator (recordEvent, startView,
+   *     beginSession, setProperty, setLocation, setID, addDirectRequest,
+   *     give/removeConsentAll, …) becomes a no-op + warning log.
+   *   - Gated instance-level methods (`lifecycleForeground`,
+   *     `lifecycleBackground`, `setServerURL`, `setExternalUrlOpener`)
+   *     are also no-op + warning log post-stop.
+   *   - Read accessors (`getID`, `hasPendingEvents`, `checkAllConsent`,
+   *     etc.) remain available.
+   *   - Unknown Consent Mode resolution does NOT flip `halted`. The
+   *     post-revoke "consent is set per init" lock
+   *     (`config.consentLockedPostUnknown`) is a separate, narrower gate
+   *     that only blocks runtime consent mutations.
+   */
+  public async stop(): Promise<void> {
+    // Flip the global module gate FIRST so any user-facing module mutator
+    // invoked from THIS point onward (including during halt drains, if an
+    // integrator races a recordEvent against haltAll) is rejected at its
+    // module's entry point. Internal halt-drain paths call private module
+    // methods that intentionally bypass `rejectIfHalted`.
+    this.config.halted = true;
     // Drop our applicationStateChange subscription FIRST so a fg/bg event
     // mid-shutdown doesn't try to drive modules whose onHalt is already
     // running. After this call, lifecycle is integrator-driven only.
     try { this.lifecycleObserver.deregister(); }
-    catch (e) { this.config.logger.e(`[Countly] halt, lifecycleObserver deregister rejected: ${e}`); }
+    catch (e) { this.config.logger.e(`[Countly] stop, lifecycleObserver deregister rejected: ${e}`); }
     // Await in order so pending events land first, then session end, then
     // final crash flush. Any rejection is caught so shutdown still proceeds.
-    try { await this.eventsModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] halt, events onHalt rejected: ${e}`); }
-    try { await this.sessionsModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] halt, sessions onHalt rejected: ${e}`); }
-    try { await this.crashesModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] halt, crashes onHalt rejected: ${e}`); }
-    try { await this.contentModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] halt, content onHalt rejected: ${e}`); }
-    try { await this.feedbackModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] halt, feedback onHalt rejected: ${e}`); }
+    try { await this.eventsModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, events onHalt rejected: ${e}`); }
+    try { await this.sessionsModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, sessions onHalt rejected: ${e}`); }
+    try { await this.crashesModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, crashes onHalt rejected: ${e}`); }
+    try { await this.contentModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, content onHalt rejected: ${e}`); }
+    try { await this.feedbackModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, feedback onHalt rejected: ${e}`); }
     // AppStorage is process-wide; modules' onHalt already hides their
     // overlays, but call clearAll as a belt-and-braces measure so
-    // re-initialising the SDK in tests (haltAll + initShared again) starts
+    // re-initialising the SDK (a fresh `initShared` after stop) starts
     // with known-empty overlay state.
     try { OverlayStore.clearAll(); }
-    catch (e) { this.config.logger.e(`[Countly] halt, OverlayStore clear rejected: ${e}`); }
-    // Revert any IMMERSIVE window-layout change so a re-init (or the app
-    // continuing after haltAll in a test) doesn't inherit a fullscreen
-    // window that the next overlay didn't actually ask for.
+    catch (e) { this.config.logger.e(`[Countly] stop, OverlayStore clear rejected: ${e}`); }
+    // Revert any IMMERSIVE window-layout change so a re-init doesn't inherit
+    // a fullscreen window that the next overlay didn't actually ask for.
     try { WindowImmersive.reset(this.config.context, this.config.logger); }
-    catch (e) { this.config.logger.e(`[Countly] halt, WindowImmersive reset rejected: ${e}`); }
+    catch (e) { this.config.logger.e(`[Countly] stop, WindowImmersive reset rejected: ${e}`); }
     // Health check onHalt persists counters so lifecycle-end doesn't lose them.
-    try { await this.healthCheckModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] halt, healthCheck onHalt rejected: ${e}`); }
+    try { await this.healthCheckModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, healthCheck onHalt rejected: ${e}`); }
     // Stop the SBS periodic-fetch timer; otherwise a detached instance keeps
     // firing fetches against a network that may be reset between tests.
-    try { await this.configurationModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] halt, configuration onHalt rejected: ${e}`); }
+    try { await this.configurationModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, configuration onHalt rejected: ${e}`); }
 
     // Cancel any pending background timers so a detached instance's callbacks
     // don't fire on the next test / integration. This matters more than it
-    // sounds: in a test harness `haltAll()` is called between tests, and a
-    // lingering coalesce or backoff timer can cause the next test's fakes to
-    // see cross-contamination.
+    // sounds: in a test harness `stopAll()` / `haltAll()` is called between
+    // tests, and a lingering coalesce or backoff timer can cause the next
+    // test's fakes to see cross-contamination.
     this.consentModule.cancelPendingTimers();
     this.requestQueue.halt();
+  }
+
+  /**
+   * Halt the instance AND wipe every persisted SDK key from storage,
+   * device ID, request queue, server-config cache, health-check counters,
+   * user-profile cache, remote-config cache, etc. This matches Android's
+   * `Countly.halt()` behavior (which clears `countlyStore`).
+   *
+   * After `halt()`, a fresh `Countly.initShared(cfg)` starts from a clean
+   * slate: a new device ID is generated, no buffered traffic, no stale
+   * config. Use this for "user data deletion" flows.
+   *
+   * `stop()` runs first so module drains write their final state to disk
+   * before the wipe, but since the entire backing preferences file is
+   * cleared, the drained state is overwritten. The drain order doesn't
+   * affect what the next init sees; the wipe is exhaustive.
+   */
+  public async halt(): Promise<void> {
+    await this.stop();
+    if (this.config.storage) {
+      const ok: boolean = await this.config.storage.clear();
+      if (!ok) {
+        this.config.logger.w('[Countly] halt, storage.clear() returned false, persisted data may not be fully wiped');
+      } else {
+        this.config.logger.i('[Countly] halt, persisted storage wiped');
+      }
+    }
   }
 
   // -- Instance-level (cross-module / integration-wide) operations --
@@ -770,10 +975,14 @@ export class CountlyInstance implements SdkCore {
    * `action=link` / `cly_x_int=1`) in the system browser. Usually wired
    * from the integrator's ability because opening a URL needs a
    * UIAbilityContext; passing null unbinds so links are blocked and logged.
-   * Applies to BOTH content and feedback overlays — that's why this lives at
+   * Applies to BOTH content and feedback overlays, that's why this lives at
    * the instance level rather than on either sub-namespace.
    */
   public setExternalUrlOpener(opener: ((url: string) => void) | null): void {
+    if (this.config.halted) {
+      this.config.logger.w('[Countly] setExternalUrlOpener called after halt, ignored');
+      return;
+    }
     this.config.logger.i(`[Countly] Calling setExternalUrlOpener, opener=[${opener !== null}]`);
     this.contentModule.setExternalUrlOpener(opener);
     this.feedbackModule.setExternalUrlOpener(opener);
@@ -786,31 +995,31 @@ export class CountlyInstance implements SdkCore {
   // never render because their backing state is never published, but we
   // defend against a stale CountlyOverlayRoot mount by short-circuiting here.
 
-  /** @internal — called by the exported overlay component on WebView load intercept. */
+  /** @internal, called by the exported overlay component on WebView load intercept. */
   public handleContentOverlayUrl(url: string): boolean {
-    this.config.logger.w('[Countly] handleContentOverlayUrl — content module is disabled, no-op');
+    this.config.logger.w('[Countly] handleContentOverlayUrl, content module is disabled, no-op');
     return false;
   }
-  /** @internal — called by the exported overlay component when dismissed. */
+  /** @internal, called by the exported overlay component when dismissed. */
   public onContentOverlayClosed(status: ContentStatus, data: Record<string, Object>): void {
-    this.config.logger.w('[Countly] onContentOverlayClosed — content module is disabled, no-op');
+    this.config.logger.w('[Countly] onContentOverlayClosed, content module is disabled, no-op');
   }
-  /** @internal — called by the exported overlay component on WebView load timeout. */
+  /** @internal, called by the exported overlay component on WebView load timeout. */
   public onContentOverlayLoadTimedOut(): void {
-    this.config.logger.w('[Countly] onContentOverlayLoadTimedOut — content module is disabled, no-op');
+    this.config.logger.w('[Countly] onContentOverlayLoadTimedOut, content module is disabled, no-op');
   }
-  /** @internal — called by the exported feedback overlay on WebView load intercept. */
+  /** @internal, called by the exported feedback overlay on WebView load intercept. */
   public handleFeedbackOverlayUrl(url: string): boolean {
-    this.config.logger.w('[Countly] handleFeedbackOverlayUrl — feedback module is disabled, no-op');
+    this.config.logger.w('[Countly] handleFeedbackOverlayUrl, feedback module is disabled, no-op');
     return false;
   }
-  /** @internal — called by the exported feedback overlay when dismissed. */
+  /** @internal, called by the exported feedback overlay when dismissed. */
   public onFeedbackOverlayClosed(): void {
-    this.config.logger.w('[Countly] onFeedbackOverlayClosed — feedback module is disabled, no-op');
+    this.config.logger.w('[Countly] onFeedbackOverlayClosed, feedback module is disabled, no-op');
   }
-  /** @internal — called by the exported feedback overlay on WebView load timeout. */
+  /** @internal, called by the exported feedback overlay on WebView load timeout. */
   public onFeedbackOverlayLoadTimedOut(): void {
-    this.config.logger.w('[Countly] onFeedbackOverlayLoadTimedOut — feedback module is disabled, no-op');
+    this.config.logger.w('[Countly] onFeedbackOverlayLoadTimedOut, feedback module is disabled, no-op');
   }
 
   // -- Other Features --
@@ -821,21 +1030,25 @@ export class CountlyInstance implements SdkCore {
    * requests stay in place and will be sent to the new URL on the next tick.
    */
   public setServerURL(url: string): void {
+    if (this.config.halted) {
+      this.config.logger.w('[Countly] setServerURL called after halt, ignored');
+      return;
+    }
     const reason: string = Utils.validateServerUrl(url);
     if (reason === 'empty') {
-      this.config.logger.w('[Countly] setServerURL, empty url — ignored');
+      this.config.logger.w('[Countly] setServerURL, empty url, ignored');
       return;
     }
     if (reason === 'scheme') {
-      this.config.logger.w(`[Countly] setServerURL, must start with http:// or https:// — ignored (${url})`);
+      this.config.logger.w(`[Countly] setServerURL, must start with http:// or https://, ignored (${url})`);
       return;
     }
     if (reason === 'authority') {
-      this.config.logger.e('[Countly] setServerURL, authority contains "@" — ignored (userinfo hazard)');
+      this.config.logger.e('[Countly] setServerURL, authority contains "@", ignored (userinfo hazard)');
       return;
     }
     this.config.serverUrl = Utils.stripTrailingSlashes(url);
-    this.config.logger.i('[Countly] setServerURL, server URL updated — queued requests will send to the new host');
+    this.config.logger.i('[Countly] setServerURL, server URL updated, queued requests will send to the new host');
   }
 
 }

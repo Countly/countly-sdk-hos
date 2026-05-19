@@ -2,7 +2,7 @@ import { Logger } from '../internal/Logger';
 import { ModuleContent } from '../internal/modules/ModuleContent';
 
 /**
- * User-facing content-zone surface — accessed via `Countly.sharedInstance().content`.
+ * User-facing content-zone surface, accessed via `Countly.sharedInstance().content`.
  *
  * DISABLED: the content-zone module is intentionally turned off in this
  * build. Method bodies are no-op'd (see logs) and the property on
@@ -22,18 +22,18 @@ export class ContentApi {
   }
 
   public async enterContentZone(): Promise<void> {
-    this.logger.w('[Content] enterContentZone — content module is disabled, no-op');
+    this.logger.w('[Content] enterContentZone, content module is disabled, no-op');
   }
 
   public exitContentZone(): void {
-    this.logger.w('[Content] exitContentZone — content module is disabled, no-op');
+    this.logger.w('[Content] exitContentZone, content module is disabled, no-op');
   }
 
   public async refreshContentZone(): Promise<void> {
-    this.logger.w('[Content] refreshContentZone — content module is disabled, no-op');
+    this.logger.w('[Content] refreshContentZone, content module is disabled, no-op');
   }
 
   public async previewContent(contentId: string): Promise<void> {
-    this.logger.w('[Content] previewContent — content module is disabled, no-op');
+    this.logger.w('[Content] previewContent, content module is disabled, no-op');
   }
 }

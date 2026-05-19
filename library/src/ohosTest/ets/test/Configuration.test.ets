@@ -40,7 +40,7 @@ function parseUserDetails(data: string): Record<string, Object> {
 }
 
 /**
- * Count the custom (non-modifier) keys under user_details.custom — i.e. keys
+ * Count the custom (non-modifier) keys under user_details.custom, i.e. keys
  * that don't start with `$`. Mirrors what `ModuleUserProfile.customSet` would
  * have held just before the flush, which is the only externally observable
  * proxy for the upcl-bounded custom cache size.
@@ -60,7 +60,7 @@ function countCustomPropsOnWire(data: string): number {
 /**
  * Count distinct modifier-target keys across all `$op` buckets under
  * user_details.custom. Matches the "distinct keys across the union of ops"
- * semantics that `ModuleUserProfile.applyCacheLimitToMods` enforces — same
+ * semantics that `ModuleUserProfile.applyCacheLimitToMods` enforces, same
  * key in two ops still counts as 1.
  */
 function countModifierPropsOnWire(data: string): number {
@@ -81,7 +81,7 @@ function countModifierPropsOnWire(data: string): number {
 }
 
 /**
- * SDK Behavior Settings (dev guide §SDK Behavior Settings) — sweep over
+ * SDK Behavior Settings (dev guide §SDK Behavior Settings), sweep over
  * everything the module exposes:
  *   1. `setSDKBehaviorSettings` bootstrap precedence (dev-supplied < stored).
  *   2. `disableSDKBehaviorSettingsUpdates` blocks the fetch + timer.
@@ -93,7 +93,7 @@ function countModifierPropsOnWire(data: string): number {
  *   6. Filter purge: whitelist for a category drops opposing blacklist.
  *
  * Storage round-trip is NOT covered end-to-end here because every harness
- * gets a fresh `InMemoryStorage` — the apply paths are exercised directly,
+ * gets a fresh `InMemoryStorage`, the apply paths are exercised directly,
  * which is what the dev guide schema actually pins down.
  */
 export default function configurationTest() {
@@ -102,7 +102,7 @@ export default function configurationTest() {
 
 
     it('init_noBootstrap_defaultsArePermissive', 0, async () => {
-      // No dev-supplied SBS, no stored SBS — the SDK should run with all
+      // No dev-supplied SBS, no stored SBS, the SDK should run with all
       // defaults from `ServerConfig`. Every feature flag stays true so this
       // matches "SDK behaves like behavior settings was never spec'd".
       const h: Harness = await buildHarness();
@@ -143,7 +143,7 @@ export default function configurationTest() {
 
     it('setSDKBehaviorSettings_invalidJSON_ignored', 0, async () => {
       // Malformed JSON must not throw and must leave defaults intact. The
-      // module logs a warning — assertion is on the user-visible behavior.
+      // module logs a warning, assertion is on the user-visible behavior.
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
         cfg.setSDKBehaviorSettings('not json{}{}{}');
       });
@@ -152,7 +152,7 @@ export default function configurationTest() {
     });
 
     it('setSDKBehaviorSettings_emptyValue_silentlyDropped', 0, async () => {
-      // Empty/whitespace shouldn't even reach the module — the setter
+      // Empty/whitespace shouldn't even reach the module, the setter
       // rejects at the config layer so `sdkBehaviorSettings` stays null.
       const cfg: CountlyConfig = new CountlyConfig(fakeContext(), 'https://try.count.ly', 'test_app_key');
       cfg.setSDKBehaviorSettings('');
@@ -190,7 +190,7 @@ export default function configurationTest() {
     });
 
     it('serverFetch_validResponse_appliesToServerConfig', 0, async () => {
-      // FakeNetwork serves a body — module should parse + apply it to the
+      // FakeNetwork serves a body, module should parse + apply it to the
       // live ServerConfig fields modules read. The body must be primed on the
       // network *before* init() runs (init triggers the SC fetch, and the
       // first execute() consumes whatever `nextBody` is set at that moment).
@@ -206,8 +206,8 @@ export default function configurationTest() {
     });
 
     it('serverFetch_persistsResponse_subsequentInstanceUsesStored', 0, async () => {
-      // Build instance A — server response gets persisted to storage. Build
-      // instance B against the SAME storage — bootstrap from stored kicks in.
+      // Build instance A, server response gets persisted to storage. Build
+      // instance B against the SAME storage, bootstrap from stored kicks in.
       const inner: Record<string, Object> = { 'eqs': 33, 'lkl': 64 };
       const body: string = buildSbsBody(inner);
       const logger: Logger = new Logger();
@@ -222,8 +222,8 @@ export default function configurationTest() {
       expect(storage.dump()['cly_sbs'] !== undefined).assertTrue();
 
       // Halt A so its timer doesn't tick during B's lifecycle.
-      await a.halt();
-      // Build B — same storage, fresh network. SBS must come from storage,
+      await a.stop();
+      // Build B, same storage, fresh network. SBS must come from storage,
       // not from a fresh /o/sdk fetch (we'll verify by setting the network's
       // canned body to defaults so any fetch would over-write).
       const network2: FakeNetwork = new FakeNetwork(logger);
@@ -233,14 +233,14 @@ export default function configurationTest() {
       // Pre-fetch state should already reflect the stored values.
       expect(b.config.serverConfig.eventQueueSize).assertEqual(33);
       expect(b.config.limits.maxKeyLength).assertEqual(64);
-      await b.halt();
+      await b.stop();
     });
 
     it('apply_invalidTypes_dropsOnlyBadKeys', 0, async () => {
-      // String for eqs (must be int>0) — dropped.
-      // Negative for lkl (must be int>0) — dropped.
-      // Non-array for eb (must be JSONArray) — dropped.
-      // Valid keys alongside still apply — partial validation, not all-or-nothing.
+      // String for eqs (must be int>0), dropped.
+      // Negative for lkl (must be int>0), dropped.
+      // Non-array for eb (must be JSONArray), dropped.
+      // Valid keys alongside still apply, partial validation, not all-or-nothing.
       const inner: Record<string, Object> = {
         'eqs': '7' as Object,
         'lkl': -3 as Object,
@@ -269,7 +269,7 @@ export default function configurationTest() {
 
       const onBody: string = buildSbsBody({ 'cr': true });
       const h2: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
-        // Note: integrator did NOT set requiresConsent — server flipping it ON
+        // Note: integrator did NOT set requiresConsent, server flipping it ON
         // should take effect.
         cfg.setSDKBehaviorSettings(onBody);
       });
@@ -277,7 +277,7 @@ export default function configurationTest() {
     });
 
     it('apply_loggingFlag_propagatesToLogger', 0, async () => {
-      // The `log` SBS key drives Logger.setEnabled — server can mute or
+      // The `log` SBS key drives Logger.setEnabled, server can mute or
       // unmute SDK console output without an integrator code change.
       const body: string = buildSbsBody({ 'log': true });
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
@@ -296,7 +296,7 @@ export default function configurationTest() {
         cfg.setSDKBehaviorSettings(body);
       });
       // Pre-init the SBS fetch was bypassed (networking gate fires after
-      // queue accept) — but the bootstrap apply already flipped the flag.
+      // queue accept), but the bootstrap apply already flipped the flag.
       // Add a direct request so we can observe it stays queued.
       // Wait for the deferred init-time healthcheck to land so it's part of
       // the cleared baseline rather than racing the assertion below.
@@ -321,7 +321,7 @@ export default function configurationTest() {
       const dr: Record<string, string> = { 'param': 'value' };
       await h.instance.requests.addDirectRequest(dr);
       await flushTick(80);
-      // tracking=false drops at enqueue — queue size unchanged.
+      // tracking=false drops at enqueue, queue size unchanged.
       expect(h.instance.requestQueue.size()).assertEqual(before);
       expect(h.network.calls.length).assertEqual(0);
     });
@@ -377,7 +377,7 @@ export default function configurationTest() {
       const before: number = h.network.findCallsWithParam('country_code=').length;
       await h.instance.location.setLocation('TR', 'Istanbul', null, null);
       await flushTick(80);
-      // setLocation short-circuits — nothing enqueued.
+      // setLocation short-circuits, nothing enqueued.
       expect(h.network.findCallsWithParam('country_code=').length).assertEqual(before);
     });
 
@@ -411,7 +411,7 @@ export default function configurationTest() {
       expect(h.instance.config.serverConfig.eventFilter.filterList.length).assertEqual(2);
 
       // Drive a second apply via the manual whitelist hook on the live
-      // FilterList — direct mutation is the same path the apply method takes.
+      // FilterList, direct mutation is the same path the apply method takes.
       h.instance.config.serverConfig.eventFilter = new FilterList<string[]>(['kept'], true);
       expect(h.instance.config.serverConfig.eventFilter.isWhitelist).assertTrue();
       expect(h.instance.config.serverConfig.eventFilter.filterList.length).assertEqual(1);
@@ -432,7 +432,7 @@ export default function configurationTest() {
     });
 
     it('apply_eventSegmentationWhitelist_keptAsRecord', 0, async () => {
-      // esw shape is { eventName: [allowedSegKey, ...] } — exercise that
+      // esw shape is { eventName: [allowedSegKey, ...] }, exercise that
       // it lands in eventSegmentationFilter as a Record<string, string[]>.
       const inner: Record<string, Object> = {};
       const esw: Record<string, Object> = {};
@@ -498,7 +498,7 @@ export default function configurationTest() {
     });
 
     it('apply_bomRqPercentage_oneRejected', 0, async () => {
-      // 1.0 is the closed end — must be rejected.
+      // 1.0 is the closed end, must be rejected.
       const one: string = buildSbsBody({ 'bom_rqp': 1 });
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
         cfg.setSDKBehaviorSettings(one);
@@ -541,7 +541,7 @@ export default function configurationTest() {
     });
 
     it('apply_emptyInnerConfig_logged_noFieldsChanged', 0, async () => {
-      // Envelope is valid but `c` is empty — nothing to apply, no crash.
+      // Envelope is valid but `c` is empty, nothing to apply, no crash.
       const body: string = buildSbsBody({});
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
         cfg.setSDKBehaviorSettings(body);
@@ -563,7 +563,7 @@ export default function configurationTest() {
     });
 
     it('apply_eventSegFilter_invalidShape_dropped', 0, async () => {
-      // esw / esb must be a JSON object — array or scalar should be dropped.
+      // esw / esb must be a JSON object, array or scalar should be dropped.
       const inner: Record<string, Object> = { 'esw': ['not', 'an', 'object'] as Object };
       const body: string = buildSbsBody(inner);
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
@@ -575,12 +575,12 @@ export default function configurationTest() {
     });
 
     // ============================================================
-    // Persistence chain — multi-init behavior (Android parity)
+    // Persistence chain, multi-init behavior (Android parity)
     // ============================================================
 
     it('persistence_failedFetchPreservesPreviouslyStored', 0, async () => {
       // First init persists a server response. Second init's fetch fails (5xx)
-      // — applied state should still reflect the previously stored values.
+      //, applied state should still reflect the previously stored values.
       const inner: Record<string, Object> = { 'eqs': 33, 'rqs': 222 };
       const body1: string = buildSbsBody(inner);
       const logger: Logger = new Logger();
@@ -591,9 +591,9 @@ export default function configurationTest() {
       const a: CountlyInstance = new CountlyInstance(cfgA, storage, network1);
       await a.init();
       await flushTick(120);
-      await a.halt();
+      await a.stop();
 
-      // Second init — fetch returns 500. Stored values must remain.
+      // Second init, fetch returns 500. Stored values must remain.
       const network2: FakeNetwork = new FakeNetwork(logger);
       network2.nextStatus = 500;
       network2.nextBody = '{"error":"down"}';
@@ -603,11 +603,11 @@ export default function configurationTest() {
       await flushTick(120);
       expect(b.config.serverConfig.eventQueueSize).assertEqual(33);
       expect(b.config.serverConfig.requestQueueSize).assertEqual(222);
-      await b.halt();
+      await b.stop();
     });
 
     it('persistence_subsequentResponseOverridesStored', 0, async () => {
-      // Init A stores eqs=33. Init B receives eqs=99 — applied state reflects B.
+      // Init A stores eqs=33. Init B receives eqs=99, applied state reflects B.
       const logger: Logger = new Logger();
       const storage: InMemoryStorage = new InMemoryStorage(logger, 'test_app_key');
       const network1: FakeNetwork = new FakeNetwork(logger);
@@ -616,7 +616,7 @@ export default function configurationTest() {
       const a: CountlyInstance = new CountlyInstance(cfgA, storage, network1);
       await a.init();
       await flushTick(120);
-      await a.halt();
+      await a.stop();
 
       const network2: FakeNetwork = new FakeNetwork(logger);
       network2.nextBody = buildSbsBody({ 'eqs': 99 });
@@ -625,7 +625,7 @@ export default function configurationTest() {
       await b.init();
       await flushTick(120);
       expect(b.config.serverConfig.eventQueueSize).assertEqual(99);
-      await b.halt();
+      await b.stop();
     });
 
     it('persistence_partialResponse_mergesIntoStored', 0, async () => {
@@ -639,7 +639,7 @@ export default function configurationTest() {
       const a: CountlyInstance = new CountlyInstance(cfgA, storage, network1);
       await a.init();
       await flushTick(120);
-      await a.halt();
+      await a.stop();
 
       const network2: FakeNetwork = new FakeNetwork(logger);
       // Second response ONLY has eqs.
@@ -651,7 +651,7 @@ export default function configurationTest() {
       expect(b.config.serverConfig.eventQueueSize).assertEqual(99);
       // rqs preserved from the previous merge.
       expect(b.config.serverConfig.requestQueueSize).assertEqual(222);
-      await b.halt();
+      await b.stop();
     });
 
     // ============================================================
@@ -700,7 +700,7 @@ export default function configurationTest() {
 
     it('filter_internalEventsBypassEventFilter', 0, async () => {
       // Even if an integrator names `[CLY]_view` in the event blacklist, a
-      // startView call still records it — internal events ride independently
+      // startView call still records it, internal events ride independently
       // of the public event filter. Mirrors Android's
       // `eventFilter_internalEventsNotAffected`.
       const body: string = buildSbsBody({ 'eb': ['[CLY]_view', 'public_block'] });
@@ -725,7 +725,7 @@ export default function configurationTest() {
     });
 
     it('filter_eventSpecialCharactersInName', 0, async () => {
-      // Special characters in event names — filter still applies by exact match.
+      // Special characters in event names, filter still applies by exact match.
       const body: string = buildSbsBody({
         'eb': ['event with spaces', 'event-with-dashes', 'event_with_underscores']
       });
@@ -785,7 +785,7 @@ export default function configurationTest() {
     });
 
     it('filter_userPropertyMods_respectFilter', 0, async () => {
-      // incrementBy/multiply/push must consult the user-property filter too —
+      // incrementBy/multiply/push must consult the user-property filter too,
       // otherwise an integrator could bypass it via mods. Mirrors Android's
       // `userPropertyFilter_modifyCustomData_respectsFilter`.
       const body: string = buildSbsBody({ 'upb': ['blocked_prop'] });
@@ -874,7 +874,7 @@ export default function configurationTest() {
       expect(decoded.indexOf('allowed_key') !== -1).assertTrue();
       expect(decoded.indexOf('blocked_for_event1') === -1).assertTrue();
 
-      // event2 — no rule for it, all keys pass through.
+      // event2, no rule for it, all keys pass through.
       const seg2: SegmentationMap = {};
       seg2['blocked_for_event1'] = 'v1';
       seg2['other_key'] = 'v2';
@@ -937,7 +937,7 @@ export default function configurationTest() {
 
     it('filter_emptySegmentationMap_recordsCleanly', 0, async () => {
       // Edge case: segmentation filter present but the event has no
-      // segmentation — must not throw or drop the event.
+      // segmentation, must not throw or drop the event.
       const body: string = buildSbsBody({ 'sb': ['some_key'] });
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
         cfg.events.setQueueSizeToSend(1);
@@ -962,7 +962,7 @@ export default function configurationTest() {
     });
 
     // ============================================================
-    // Filter parsing — comprehensive sweep with all filters in one body
+    // Filter parsing, comprehensive sweep with all filters in one body
     // ============================================================
 
     it('filter_allFiltersSetTogether_eachAppliedCorrectly', 0, async () => {
@@ -995,7 +995,7 @@ export default function configurationTest() {
 
     it('filter_purgeOpposites_storedBlacklistDroppedWhenWhitelistArrives', 0, async () => {
       // Apply blacklist via initial fetch, persist. Then a second apply of a
-      // whitelist on the same category — the persisted blob must lose the
+      // whitelist on the same category, the persisted blob must lose the
       // blacklist key entirely so a future restart doesn't re-load both.
       const logger: Logger = new Logger();
       const storage: InMemoryStorage = new InMemoryStorage(logger, 'test_app_key');
@@ -1008,7 +1008,7 @@ export default function configurationTest() {
       // Drive a SECOND server fetch that delivers a whitelist via halt+re-init
       // (Android-parity: SBS is fetched once at init time, not on device-id
       // change). This keeps the test focused on the apply-merge logic.
-      await a.halt();
+      await a.stop();
 
       const network2: FakeNetwork = new FakeNetwork(logger);
       network2.nextBody = buildSbsBody({ 'ew': ['y'] });
@@ -1023,11 +1023,11 @@ export default function configurationTest() {
       const stored: string = storage.dump()['cly_sbs'];
       expect(stored.indexOf('"eb"') === -1).assertTrue();
       expect(stored.indexOf('"ew"') !== -1).assertTrue();
-      await b.halt();
+      await b.stop();
     });
 
     // ============================================================
-    // userPropertyCacheLimit (upcl) — enforcement (NEW for HOS)
+    // userPropertyCacheLimit (upcl), enforcement (NEW for HOS)
     // ============================================================
 
     it('upcl_defaultLimitOf100', 0, async () => {
@@ -1057,7 +1057,7 @@ export default function configurationTest() {
     // mutate via the userProfile facade → `await save()` → parse the resulting
     // `user_details=` body → count custom keys / modifier-target keys. Each
     // setter only stages into the cache; `save()` is what flushes (and resets)
-    // it — so for tests that originally checked the cache twice, we either
+    // it, so for tests that originally checked the cache twice, we either
     // (a) save once at the end and assert the union, or (b) save in between
     // and assert each batch separately. Comments at each test mark the choice.
 
@@ -1077,7 +1077,7 @@ export default function configurationTest() {
       await flushTick(60);
       const calls = h.network.findCallsWithParam('user_details=');
       expect(calls.length).assertEqual(1);
-      // Only 3 should remain — the latest 3 in insertion order.
+      // Only 3 should remain, the latest 3 in insertion order.
       expect(countCustomPropsOnWire(calls[0].data)).assertEqual(3);
     });
 
@@ -1097,7 +1097,7 @@ export default function configurationTest() {
     });
 
     it('upcl_predefinedKeysNotCounted', 0, async () => {
-      // Named properties go on the predefined bag, not customSet — they are
+      // Named properties go on the predefined bag, not customSet, they are
       // NOT counted toward the upcl cache limit.
       const body: string = buildSbsBody({ 'upcl': 2 });
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
@@ -1124,7 +1124,7 @@ export default function configurationTest() {
     });
 
     it('upcl_acrossMultipleSetCalls', 0, async () => {
-      // Two batches, two saves — preserves the original "first-batch fits;
+      // Two batches, two saves, preserves the original "first-batch fits;
       // second-batch eviction" observation. After the first save() the cache
       // resets, so the second save sees the full 2 incoming keys; the cap
       // applies during staging when the third+fourth join an already-staged 2.
@@ -1289,7 +1289,7 @@ export default function configurationTest() {
     });
 
     it('apply_loggingDisabled_silencesLogger', 0, async () => {
-      // Server pushes log=false — Logger.setEnabled(false) should be invoked.
+      // Server pushes log=false, Logger.setEnabled(false) should be invoked.
       const body: string = buildSbsBody({ 'log': false });
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
         cfg.logging.enableLogging();
@@ -1630,7 +1630,7 @@ export default function configurationTest() {
     });
 
     it('apply_filterArrayWithNonStrings_skipsNonStrings', 0, async () => {
-      // toStringArray skips non-string entries — a mixed array should land
+      // toStringArray skips non-string entries, a mixed array should land
       // in the filter as only its string members.
       const body: string = '{"v":1,"t":2,"c":{"eb":["valid",42,null,"also_valid"]}}';
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
@@ -1648,7 +1648,7 @@ export default function configurationTest() {
       // propagate.
       const body: string = buildSbsBody({ 'cr': true });
       const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
-        // Don't call cfg.consent.setRequiresConsent — integrator is silent.
+        // Don't call cfg.consent.setRequiresConsent, integrator is silent.
         cfg.setSDKBehaviorSettings(body);
       });
       expect(h.instance.config.serverConfig.consentRequired).assertTrue();

@@ -8,7 +8,7 @@ import {
 } from '../types/Types';
 
 /**
- * User-facing feedback-widget surface — accessed via `Countly.sharedInstance().feedback`.
+ * User-facing feedback-widget surface, accessed via `Countly.sharedInstance().feedback`.
  *
  * DISABLED: the feedback-widgets module is intentionally turned off in this
  * build. Method bodies are no-op'd (see logs) and the property on
@@ -28,15 +28,15 @@ export class FeedbackApi {
   }
 
   public async getAvailableFeedbackWidgets(callback: RetrieveFeedbackWidgets): Promise<void> {
-    this.logger.w('[Feedback] getAvailableFeedbackWidgets — feedback module is disabled, no-op');
+    this.logger.w('[Feedback] getAvailableFeedbackWidgets, feedback module is disabled, no-op');
   }
 
   public async getFeedbackWidgetData(widget: CountlyFeedbackWidget | null, callback: RetrieveFeedbackWidgetData): Promise<void> {
-    this.logger.w('[Feedback] getFeedbackWidgetData — feedback module is disabled, no-op');
+    this.logger.w('[Feedback] getFeedbackWidgetData, feedback module is disabled, no-op');
   }
 
   public async presentFeedbackWidget(widget: CountlyFeedbackWidget | null, callback: FeedbackCallback | null): Promise<void> {
-    this.logger.w('[Feedback] presentFeedbackWidget — feedback module is disabled, no-op');
+    this.logger.w('[Feedback] presentFeedbackWidget, feedback module is disabled, no-op');
   }
 
   public async reportFeedbackWidgetManually(
@@ -44,18 +44,18 @@ export class FeedbackApi {
     widgetData: Record<string, Object> | null,
     widgetResult: Record<string, Object> | null
   ): Promise<void> {
-    this.logger.w('[Feedback] reportFeedbackWidgetManually — feedback module is disabled, no-op');
+    this.logger.w('[Feedback] reportFeedbackWidgetManually, feedback module is disabled, no-op');
   }
 
   public async presentNPS(nameIDorTag: string | null = null, callback: FeedbackCallback | null = null): Promise<void> {
-    this.logger.w('[Feedback] presentNPS — feedback module is disabled, no-op');
+    this.logger.w('[Feedback] presentNPS, feedback module is disabled, no-op');
   }
 
   public async presentSurvey(nameIDorTag: string | null = null, callback: FeedbackCallback | null = null): Promise<void> {
-    this.logger.w('[Feedback] presentSurvey — feedback module is disabled, no-op');
+    this.logger.w('[Feedback] presentSurvey, feedback module is disabled, no-op');
   }
 
   public async presentRating(nameIDorTag: string | null = null, callback: FeedbackCallback | null = null): Promise<void> {
-    this.logger.w('[Feedback] presentRating — feedback module is disabled, no-op');
+    this.logger.w('[Feedback] presentRating, feedback module is disabled, no-op');
   }
 }

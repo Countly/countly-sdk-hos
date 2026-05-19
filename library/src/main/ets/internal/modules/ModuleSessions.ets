@@ -15,12 +15,12 @@ class NoopFirstViewFlagHost implements FirstViewFlagHost {
 
 /**
  * Session tracking. Three modes:
- *   1. Fully automatic (default) — driven by foreground/background callbacks
+ *   1. Fully automatic (default), driven by foreground/background callbacks
  *      that the host app forwards via onEnterForeground/onEnterBackground.
  *      An internal counter handles "multiple UI components" so quick
  *      rotations don't fire multiple begin/end pairs.
- *   2. Manual — host calls beginSession/updateSession/endSession.
- *   3. Hybrid manual — host calls begin/end; updates are still automatic.
+ *   2. Manual, host calls beginSession/updateSession/endSession.
+ *   3. Hybrid manual, host calls begin/end; updates are still automatic.
  */
 export class ModuleSessions extends ModuleBase {
   private core: SdkCore;
@@ -52,7 +52,7 @@ export class ModuleSessions extends ModuleBase {
    * by `CountlyInstance` during construction. Implementations should
    * read the platform display, gate on `trackOrientationChanges` +
    * registration state, and call `viewsModule.updateOrientation(mode, true)`
-   * — the `true` bypasses the dedupe so every begin_session gets a fresh
+   *, the `true` bypasses the dedupe so every begin_session gets a fresh
    * baseline event.
    */
   public setOrientationBaselineEmitter(emitter: () => void): void {
@@ -93,7 +93,11 @@ export class ModuleSessions extends ModuleBase {
     if (!this.config.serverConfig.automaticSessionTrackingEnabled) return;
     this.lifecycleCounter--;
     if (this.lifecycleCounter < 0) {
-      this.config.logger.e('[ModuleSessions] onEnterBackground, unbalanced lifecycle (counter went negative) — clamping to 0');
+      // WARNING level, not ERROR: this is a defensive guard for
+      // integrators who manually fan out `lifecycleBackgroundAll()`
+      // (e.g. demo apps with explicit fg/bg buttons). The SDK clamps
+      // and continues; nothing is actually broken.
+      this.config.logger.w('[ModuleSessions] onEnterBackground, unbalanced lifecycle (counter went negative), clamping to 0');
       this.lifecycleCounter = 0;
       return;
     }
@@ -105,28 +109,31 @@ export class ModuleSessions extends ModuleBase {
   }
 
   public async beginSession(): Promise<void> {
+    if (this.rejectIfHalted('ModuleSessions', 'beginSession')) return;
     if (!this.config.manualSessionControl) {
-      this.config.logger.w('[ModuleSessions] beginSession, manual session control not enabled — ignored');
+      this.config.logger.w('[ModuleSessions] beginSession, manual session control not enabled, ignored');
       return;
     }
     await this.beginSessionInternal();
   }
 
   public async updateSession(): Promise<void> {
+    if (this.rejectIfHalted('ModuleSessions', 'updateSession')) return;
     if (!this.config.manualSessionControl) {
-      this.config.logger.w('[ModuleSessions] updateSession, manual session control not enabled — ignored');
+      this.config.logger.w('[ModuleSessions] updateSession, manual session control not enabled, ignored');
       return;
     }
     if (this.config.manualSessionHybridMode) {
-      this.config.logger.d('[ModuleSessions] updateSession, hybrid mode handles updates automatically — ignored');
+      this.config.logger.d('[ModuleSessions] updateSession, hybrid mode handles updates automatically, ignored');
       return;
     }
     await this.sendUpdate();
   }
 
   public async endSession(): Promise<void> {
+    if (this.rejectIfHalted('ModuleSessions', 'endSession')) return;
     if (!this.config.manualSessionControl) {
-      this.config.logger.w('[ModuleSessions] endSession, manual session control not enabled — ignored');
+      this.config.logger.w('[ModuleSessions] endSession, manual session control not enabled, ignored');
       return;
     }
     await this.endSessionInternal();
@@ -139,15 +146,15 @@ export class ModuleSessions extends ModuleBase {
       this.config.logger.v('[ModuleSessions] beginSessionInternal, no sessions consent');
       return;
     }
-    // SDK Behavior Settings `st` flag — server-side killswitch for session
+    // SDK Behavior Settings `st` flag, server-side killswitch for session
     // tracking. Independent of consent: an integrator-granted consent does
     // not override a server-side disable.
     if (!this.config.serverConfig.sessionTrackingEnabled) {
-      this.config.logger.d('[ModuleSessions] beginSessionInternal, session tracking disabled by server config — ignored');
+      this.config.logger.d('[ModuleSessions] beginSessionInternal, session tracking disabled by server config, ignored');
       return;
     }
     if (this.sessionActive) {
-      this.config.logger.w('[ModuleSessions] beginSessionInternal, session already active — ignored');
+      this.config.logger.w('[ModuleSessions] beginSessionInternal, session already active, ignored');
       return;
     }
     this.sessionActive = true;
@@ -168,7 +175,7 @@ export class ModuleSessions extends ModuleBase {
     const body: string = Utils.buildQueryString(params);
     await this.core.requestQueue.enqueue(body);
 
-    // Orientation baseline — fires AFTER begin_session is in the request
+    // Orientation baseline, fires AFTER begin_session is in the request
     // queue so the events batch that carries the orientation event is
     // ordered after the begin_session URL request on the wire. Forced
     // (dedupe bypassed) so every begin_session gets a fresh orientation
@@ -181,10 +188,10 @@ export class ModuleSessions extends ModuleBase {
 
   private async sendUpdate(): Promise<void> {
     if (!this.sessionActive) return;
-    // Consent may have flipped between ticks — re-check here before hitting
+    // Consent may have flipped between ticks, re-check here before hitting
     // the queue so revocation takes effect promptly.
     if (!this.core.consentModule.hasConsent(CountlyFeature.SESSIONS)) return;
-    // SBS `st` may have flipped too — same pattern as consent.
+    // SBS `st` may have flipped too, same pattern as consent.
     if (!this.config.serverConfig.sessionTrackingEnabled) return;
     const now: number = Date.now();
     const elapsed: number = Math.round((now - this.lastUpdateMs) / 1000);
@@ -214,7 +221,7 @@ export class ModuleSessions extends ModuleBase {
     this.firstViewFlagHost.reset();
 
     // When consent was just revoked, we still want to stop the timer and flip
-    // sessionActive — but we MUST NOT enqueue an end_session request (that's
+    // sessionActive, but we MUST NOT enqueue an end_session request (that's
     // the whole point of consent revocation).
     if (!emit) return;
 
@@ -226,7 +233,7 @@ export class ModuleSessions extends ModuleBase {
     // events server-side).
     await this.core.flushEvents();
     // Then ship pending user-profile changes so user_details lands between
-    // events and end_session — mid-session UP mutations must fall inside
+    // events and end_session, mid-session UP mutations must fall inside
     // the session window on the server.
     await this.core.saveUserProfileIfPending();
 
@@ -285,7 +292,7 @@ export class ModuleSessions extends ModuleBase {
    * Pre-swap closer for the changeWithoutMerge path. CountlyInstance's
    * pre-swap hook calls this UNDER THE OLD ID, before commit, so the wire
    * `end_session=1` carries the previous user's device_id. Emit only in
-   * non-manual mode — the caller is responsible for checking
+   * non-manual mode, the caller is responsible for checking
    * `manualSessionControl`.
    */
   public async endSessionForDeviceIdChange(): Promise<void> {

@@ -42,7 +42,7 @@ The SDK is distributed as a prebuilt **`.har`** attached to each [GitHub Release
    shasum -a 256 -c countly-sdk-hos-<version>.har.sha256
    ```
 
-2. Drop the file into your application module — for example `entry/libs/countly-sdk-hos-<version>.har`.
+2. Drop the file into your application module, for example `entry/libs/countly-sdk-hos-<version>.har`.
 
 3. Reference it from your module-level `oh-package.json5`:
 
@@ -87,7 +87,7 @@ The SDK needs access to the network. Ensure the following permissions are in you
 
 ### Initialization
 
-**Recommended:** initialize the SDK from an `AbilityStage`.`AbilityStage.onCreate` runs once per HAP module process, **before any UIAbility is created**, so the SDK's `applicationStateChange` and `abilityLifecycle` subscriptions are registered ahead of the platform's first foreground transitions — no cold-boot session/view drops.
+**Recommended:** initialize the SDK from an `AbilityStage`.`AbilityStage.onCreate` runs once per HAP module process, **before any UIAbility is created**, so the SDK's `applicationStateChange` and `abilityLifecycle` subscriptions are registered ahead of the platform's first foreground transitions, no cold-boot session/view drops.
 
 Create `entry/src/main/ets/myabilitystage/MyAbilityStage.ets`:
 
@@ -118,9 +118,9 @@ Wire the AbilityStage at the module level in `entry/src/main/module.json5`:
 }
 ```
 
-With this in place, your `EntryAbility` carries no SDK code — no `Countly.initShared` call, no `onForeground` / `onBackground` overrides.
+With this in place, your `EntryAbility` carries no SDK code, no `Countly.initShared` call, no `onForeground` / `onBackground` overrides.
 
-**Alternative — UIAbility init.** You can also initialize from `EntryAbility.onCreate` if you don't want to add an `AbilityStage`. The SDK still works, but the platform's cold-boot foreground transition may fire before the long async `init()` chain (storage + device-id + module inits) completes — in that race, the very first session and auto-view of a cold launch may be missed. Subsequent foreground/background cycles are unaffected. For a multi-window or production-grade integration, prefer `AbilityStage`.
+**Alternative, UIAbility init.** You can also initialize from `EntryAbility.onCreate` if you don't want to add an `AbilityStage`. The SDK still works, but the platform's cold-boot foreground transition may fire before the long async `init()` chain (storage + device-id + module inits) completes, in that race, the very first session and auto-view of a cold launch may be missed. Subsequent foreground/background cycles are unaffected. For a multi-window or production-grade integration, prefer `AbilityStage`.
 
 ```typescript
 import UIAbility from '@ohos.app.ability.UIAbility';
@@ -130,7 +130,7 @@ export default class EntryAbility extends UIAbility {
   async onCreate(want, launchParam): Promise<void> {
     const config = new CountlyConfig(this.context, 'https://YOUR_SERVER', 'YOUR_APP_KEY');
     await Countly.initShared(config);
-    // Lifecycle is auto-wired by the SDK — no onForeground / onBackground overrides needed.
+    // Lifecycle is auto-wired by the SDK, no onForeground / onBackground overrides needed.
   }
 }
 ```
@@ -159,7 +159,7 @@ config.deviceId.setId('custom-device-id');
 // Consent
 config.consent
   .setRequiresConsent(true)
-  .setEnabled([CountlyFeature.SESSIONS, CountlyFeature.EVENTS]);
+  .giveAll();
 
 // Location
 config.location.set('US', 'New York', '40.7,-74.0', null);
@@ -270,19 +270,95 @@ Countly.sharedInstance().crashes.addCrashBreadcrumb('tapped-pay');
 
 ### Consent Management
 
+The runtime consent surface is intentionally binary, only `giveConsentAll`,
+`removeConsentAll`, and `checkAllConsent` are exposed. Per-feature mutations
+are not user-callable; configure consent up front via `CountlyConfig.consent`.
+
 ```typescript
-// Grant consent for specific features
-Countly.sharedInstance().consent.giveConsent([
-  CountlyFeature.VIEWS, 
-  CountlyFeature.CRASHES
-]);
-
-// Revoke consent
-Countly.sharedInstance().consent.removeConsent([CountlyFeature.LOCATION]);
-
 // Grant consent for all features
 Countly.sharedInstance().consent.giveConsentAll();
+
+// Revoke consent for all features
+Countly.sharedInstance().consent.removeConsentAll();
+
+// Inspect whether every feature is currently consented
+const allGranted = Countly.sharedInstance().consent.checkAllConsent();
 ```
+
+#### Unknown Consent Mode
+
+When you need the SDK to collect telemetry while the user has not yet made a
+consent decision, enable Unknown Consent Mode at init. The SDK records
+sessions, views, events, etc. locally but the request queue is paused AND
+the network transport is silenced, nothing reaches the server until the
+integrator resolves the unknown state:
+
+```typescript
+config.consent.enableUnknownConsentMode();  // implies setRequiresConsent(true)
+```
+
+Once the user makes a decision, call exactly one of:
+
+* `giveConsentAll()`, "consent given, network calls can start." The transport
+  is unsilenced and the queue resumes; the buffered data (events, sessions,
+  the init-time consent snapshot) drains to the server. The SDK continues
+  running with full consent.
+* `removeConsentAll()`, "consent revoked, erase collected data, keep running
+  without consent." The buffered queue is erased, a single revocation
+  `consent=` snapshot (all features false) is shipped, and the runtime
+  consent surface is locked. Subsequent `giveConsentAll` / `removeConsentAll`
+  runtime calls log `consent is set per init` and no-op. The SDK keeps
+  running but every consent-gated feature is denied.
+
+The instance is NOT halted by either resolution, there is no re-init
+requirement for the give path, and the revoke path keeps the instance alive
+in "no consent" mode.
+
+To re-enable consent after a revoke, call `Countly.initShared(newConfig)`
+again (see the next section), initShared automatically detects the
+post-revoke lock and replaces the existing instance with a fresh one.
+No separate re-init API, no app restart.
+
+### Stop / Halt / Re-Init
+
+The SDK distinguishes between two ways to shut down an instance:
+
+```typescript
+// stop(), halt in-memory, KEEP persisted storage.
+await Countly.sharedInstance().stop();
+
+// halt(), halt + wipe every persisted SDK key. For "delete my data" flows.
+await Countly.sharedInstance().halt();
+
+// Static equivalents for every active instance (shared + named):
+await Countly.stopAll();   // preserve all storage
+await Countly.haltAll();   // wipe all storage
+```
+
+**In-process re-init** uses the same `initShared` call you'd use at startup:
+
+```typescript
+// initShared is idempotent on a healthy shared instance.
+await Countly.initShared(cfg);     // creates the shared
+await Countly.initShared(cfg);     // returns the cached one, no replace
+
+// After UCM revoke / stop / halt the existing shared is unusable.
+// The next initShared call detects that and rebuilds with the new config:
+await Countly.sharedInstance().consent.removeConsentAll();
+await Countly.initShared(newCfg);  // auto-replaces, fresh instance, new config
+
+// Or explicitly stop first when you want to force a config swap:
+await Countly.sharedInstance().stop();
+await Countly.initShared(newCfg);  // replaces because the previous was stopped
+```
+
+Replacement only touches the shared instance, named instances created via
+`createInstance` are unaffected. Persisted storage survives the replacement
+(via `stop()` semantics), so any buffered requests load into the new
+instance and ship.
+
+Both `stop()` and `halt()` are **idempotent** (calling them twice is safe)
+and **per-instance isolated** (halting one instance does not affect siblings).
 
 ### Device ID Management
 

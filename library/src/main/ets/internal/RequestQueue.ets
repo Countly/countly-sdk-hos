@@ -10,14 +10,14 @@ export const NEW_ENDPOINT_TAG: string = 'new_end_point';
 /**
  * Endpoints the SDK is allowed to route to via the internal `new_end_point`
  * tag. Anything outside this set is silently rejected and the request is
- * routed to `/i` instead — defense against a disk-level attacker editing the
+ * routed to `/i` instead, defense against a disk-level attacker editing the
  * persisted queue to redirect traffic off the Countly server.
  */
 const ALLOWED_ENDPOINTS: string[] = ['/i', '/o/sdk', '/o/sdk/content', '/feedback/widget'];
 
 /**
  * Hard cap on the exponential backoff delay. The base of the exponential is
- * the server-tunable `bom_d` (`bomDuration` in seconds — default 60), so the
+ * the server-tunable `bom_d` (`bomDuration` in seconds, default 60), so the
  * progression is `bom_d, 2·bom_d, 4·bom_d, …` capped here at 15 minutes
  * regardless of how aggressive the server tries to be.
  */
@@ -36,7 +36,7 @@ const BACKOFF_MAX_MS: number = 15 * 60 * 1000;
  */
 /**
  * Hook interface for ModuleHealthCheck. Wired from CountlyInstance post-init.
- * Intentionally minimal — only the three counter-affecting signals are exposed
+ * Intentionally minimal, only the three counter-affecting signals are exposed
  * so this remains a pure diagnostic side-channel (no user-behavior data).
  */
 export interface HealthListener {
@@ -75,6 +75,14 @@ export class RequestQueue {
     if (this.config.storage) {
       this.queue = await this.config.storage.loadRequestQueue();
     }
+    // Schedule a tick so a non-empty loaded queue drains without needing a
+    // fresh enqueue() to nudge it. Critical for re-init paths where the
+    // new instance picks up a buffered queue (e.g. UCM revocation snapshot
+    // persisted by the previous instance, or offline-mode traffic from a
+    // prior session). If the caller pauses the queue immediately after load
+    // (offline mode, UCM), the scheduled tick fires but tick() short-circuits
+    // on `paused`, so this is safe to call unconditionally.
+    if (this.queue.length > 0) this.scheduleTick();
   }
 
   public size(): number {
@@ -98,9 +106,17 @@ export class RequestQueue {
    * timed events (ModuleEvents.timed) are NOT affected per dev guide.
    */
   public async clear(): Promise<void> {
+    // INFO + timestamp + size so a UCM revoke investigation can see
+    // exactly when the wipe ran and how many entries it dropped. The
+    // individual entries are NOT logged here (queues can hold hundreds
+    // of entries, each up to 2KB+); the matching REQUEST ENQUEUED logs
+    // upstream already record their contents.
+    const ts: number = Date.now();
+    this.config.logger.i(`[RequestQueue] QUEUE CLEAR called at ${ts} (${new Date(ts).toISOString()}) droppingSize=${this.queue.length}`);
     if (this.queue.length === 0) return;
     this.queue = [];
     await this.persist();
+    this.config.logger.i(`[RequestQueue] QUEUE CLEAR persisted (empty queue written to storage)`);
   }
 
   /**
@@ -124,7 +140,7 @@ export class RequestQueue {
 
   /**
    * Drop any queued request whose `app_key=` parameter differs from the
-   * current app key. Paired with `replaceAllAppKeysWithCurrent` — use whichever
+   * current app key. Paired with `replaceAllAppKeysWithCurrent`, use whichever
    * matches the integrator's "what should happen to old-app-key traffic?"
    * policy.
    */
@@ -156,11 +172,21 @@ export class RequestQueue {
 
   public async enqueue(requestData: string): Promise<void> {
     if (requestData.length === 0) return;
-    // SDK Behavior Settings master tracking switch — server can short-circuit
+    // Intentionally NOT gated on `config.halted`, `CountlyInstance.halt()`
+    // sets `halted=true` BEFORE running `eventsModule.onHalt()` etc., and
+    // those drains call this method (via `flushEventQueue`) to persist
+    // buffered events to the request queue's storage before
+    // `requestQueue.halt()` stops processing. Gating here would silently
+    // drop those drain writes, the exact data-loss bug development
+    // guideline #3 forbids. The halt gate lives at each module's
+    // user-facing mutator (`rejectIfHalted` in ModuleBase) so by the time
+    // enqueue is reached internally, either the gate already fired or the
+    // call is a legitimate drain.
+    // SDK Behavior Settings master tracking switch, server can short-circuit
     // all telemetry collection in flight. We drop here (not in feature
     // modules) so the kill is centralised and every code path is covered.
     if (!this.config.serverConfig.trackingEnabled) {
-      this.config.logger.d('[RequestQueue] enqueue, tracking disabled by server config — dropped');
+      this.config.logger.d('[RequestQueue] enqueue, tracking disabled by server config, dropped');
       return;
     }
 
@@ -170,9 +196,10 @@ export class RequestQueue {
       this.config.logger.w('[RequestQueue] enqueue, dropped oldest request (queue full)');
     }
     this.queue.push(requestData);
-    // DEBUG — visible at default minLevel=DEBUG. Size is bounded so logging
-    // it per enqueue is cheap; lets integrators trace the queue growth.
-    this.config.logger.d(`[RequestQueue] enqueue, queued (size=${this.queue.length})`);
+    // INFO + URL-decoded request data so a "did this actually reach the
+    // wire?" investigation can read the payload without piping it
+    // through a decoder. Unredacted by deliberate choice for debugging.
+    this.config.logger.i(`[RequestQueue] REQUEST ENQUEUED (size=${this.queue.length}) data=${Utils.decodeQueryStringForLog(requestData)}`);
     await this.persist();
     this.scheduleTick();
   }
@@ -181,7 +208,7 @@ export class RequestQueue {
    * After temp-device-id mode ends, replace the placeholder `device_id=` value
    * in queued requests with the new real ID so they can be sent. Uses an
    * anchored regex so a user-set custom property value that happens to
-   * contain the literal `CLYTemporaryDeviceID` is NOT rewritten — only the
+   * contain the literal `CLYTemporaryDeviceID` is NOT rewritten, only the
    * query param itself is matched.
    */
   public async replaceTempDeviceId(realId: string): Promise<void> {
@@ -240,11 +267,11 @@ export class RequestQueue {
       this.config.logger.v('[RequestQueue] tick, temp device id mode active, not sending');
       return;
     }
-    // SDK Behavior Settings networking switch — server can pause sending
+    // SDK Behavior Settings networking switch, server can pause sending
     // without dropping queue contents. Requests stay durable; the next tick
     // after the server flips networking back on drains them.
     if (!this.config.serverConfig.networkingEnabled) {
-      this.config.logger.v('[RequestQueue] tick, networking disabled by server config — holding queue');
+      this.config.logger.v('[RequestQueue] tick, networking disabled by server config, holding queue');
       return;
     }
     if (Date.now() < this.backoffUntilMs) {
@@ -283,7 +310,7 @@ export class RequestQueue {
     }
 
     // Strip the new_end_point tag (if any) so we route to the right endpoint.
-    // The decoded endpoint MUST be in the allowlist — a disk-level attacker
+    // The decoded endpoint MUST be in the allowlist, a disk-level attacker
     // who edits the persisted queue could otherwise redirect traffic.
     let endpoint: string = '/i';
     let requestData: string = head;
@@ -302,12 +329,12 @@ export class RequestQueue {
         // queue to make decodeURIComponent throw. Rather than letting the
         // whole tick fail into backoff, treat this as an unknown endpoint
         // and route to the default /i.
-        this.config.logger.w(`[RequestQueue] processHead, malformed new_end_point value '${raw}' — falling back to /i`);
+        this.config.logger.w(`[RequestQueue] processHead, malformed new_end_point value '${raw}', falling back to /i`);
       }
       if (ALLOWED_ENDPOINTS.indexOf(requested) !== -1) {
         endpoint = requested;
       } else if (requested.length > 0) {
-        this.config.logger.w(`[RequestQueue] processHead, rejected endpoint override '${requested}' — falling back to /i`);
+        this.config.logger.w(`[RequestQueue] processHead, rejected endpoint override '${requested}', falling back to /i`);
       }
       requestData = requestData.substring(0, tagIdx) + requestData.substring(end);
     }
@@ -339,7 +366,7 @@ export class RequestQueue {
       return;
     }
 
-    const decision: string = RequestQueue.classify(this.config.logger, result);
+    const decision: string = RequestQueue.classify(this.config.logger, endpoint, result);
     if (decision === 'drop') {
       this.config.logger.e(`[RequestQueue] processHead, dropping head after unrecoverable response status=${result.statusCode} endpoint=${endpoint}`);
       if (this.healthListener !== null) this.healthListener.onFailedRequest(result.statusCode, result.body);
@@ -355,11 +382,17 @@ export class RequestQueue {
       return;
     }
 
-    // Success — reset backoff and remove head.
+    // Success, reset backoff and remove head.
     this.queue.shift();
     this.consecutiveBackedOff = 0;
     await this.persist();
-    this.config.logger.d(`[RequestQueue] processHead, sent OK endpoint=${endpoint} elapsedMs=${result.elapsedMs} remaining=${this.queue.length}`);
+    // INFO + URL-decoded request + full response body so post-mortem
+    // investigation (e.g. "did the UCM revocation snapshot actually ship
+    // and what did the server say?") can see both halves of the
+    // round-trip without piping through a decoder. Pairs with the
+    // matching REQUEST ENQUEUED log. Full body intentionally (no
+    // truncation) for active debugging.
+    this.config.logger.i(`[RequestQueue] REQUEST SENT endpoint=${endpoint} status=${result.statusCode} elapsedMs=${result.elapsedMs} remaining=${this.queue.length} data=${Utils.decodeQueryStringForLog(requestData)} response=${result.body}`);
     if (this.healthListener !== null) this.healthListener.onSuccessfulSend();
 
     if (this.config.backoffEnabled) {
@@ -385,7 +418,7 @@ export class RequestQueue {
 
   /**
    * Slow-success backoff (BOM in dev guide §SDK Behavior Settings). Triggered
-   * when a request succeeds but the server is straining — three gates must
+   * when a request succeeds but the server is straining, three gates must
    * all pass:
    *   - response time ≥ `bom_at` seconds (server is slow)
    *   - queue ≤ `bom_rqp` of capacity (we can afford to pause)
@@ -401,13 +434,13 @@ export class RequestQueue {
     const queueRatio: number = this.queue.length / this.config.maxRequestQueueSize;
     if (queueRatio > threshold) return;
     if (this.isOlderThanHours(requestData, sc.bomRequestAge)) {
-      this.config.logger.d('[RequestQueue] evaluateBackoff, head request older than bom_ra — skip');
+      this.config.logger.d('[RequestQueue] evaluateBackoff, head request older than bom_ra, skip');
       return;
     }
     const pauseMs: number = sc.bomDuration * 1000;
     this.backoffUntilMs = Date.now() + pauseMs;
     if (this.healthListener !== null) this.healthListener.onBackoff();
-    this.config.logger.d(`[RequestQueue] evaluateBackoff, slow server — pausing ${sc.bomDuration}s`);
+    this.config.logger.d(`[RequestQueue] evaluateBackoff, slow server, pausing ${sc.bomDuration}s`);
   }
 
   /** Used by both `dropOldRequestTime` (drop-by-age) and `bom_ra` (skip
@@ -418,7 +451,7 @@ export class RequestQueue {
     if (!match) return false;
     const tsMs: number = parseInt(match[1], 10);
     if (!Number.isFinite(tsMs)) {
-      this.config.logger.w('[RequestQueue] isOlderThanHours, unparseable timestamp — treating as stale');
+      this.config.logger.w('[RequestQueue] isOlderThanHours, unparseable timestamp, treating as stale');
       return true;
     }
     const ageMs: number = Date.now() - tsMs;
@@ -431,32 +464,40 @@ export class RequestQueue {
 
   /**
    * Decide what to do with a completed HTTP response:
-   *   'success' — 2xx with valid JSON containing "result"; shift head, reset backoff
-   *   'drop'    — 4xx (permanent), or 2xx without "result" (broken proxy);
-   *               shift head with ERROR log, reset backoff. Retrying forever
-   *               wastes battery/data.
-   *   'retry'   — 5xx and transport anomalies; keep head and enter backoff.
+   *   'success', 2xx — for the ingest `/i` endpoint the body MUST contain
+   *               `{"result": "Success"}` (a 2xx without it is a broken
+   *               proxy; dropping prevents infinite retry). Every other
+   *               endpoint (`/o/sdk*`, `/feedback/widget`) returns
+   *               arbitrary application payload (RC values, SBS config,
+   *               feedback widgets, etc.) so body shape is NOT validated
+   *               and any 2xx is success.
+   *   'drop'   , 4xx (permanent — wrong app_key, bad salt, etc.) or 2xx
+   *               on `/i` without `result`; shift head with WARNING log.
+   *               Retrying forever wastes battery/data.
+   *   'retry'  , 5xx and transport anomalies; keep head and enter backoff.
    */
-  private static classify(logger: Logger, result: HttpResult): string {
+  private static classify(logger: Logger, endpoint: string, result: HttpResult): string {
     const code: number = result.statusCode;
     if (code >= 200 && code < 300) {
+      // Strict body validation ONLY for the ingest endpoint. Other
+      // endpoints carry arbitrary application data in the response.
+      if (endpoint !== '/i') return 'success';
       try {
         const parsed: Object = JSON.parse(result.body);
         if ((parsed as Record<string, Object>)['result'] !== undefined) return 'success';
-        // 2xx without "result" — server or proxy broken; don't spin forever.
-        logger.w(`[RequestQueue] classify, 2xx missing "result" — dropping head. body=${RequestQueue.bodyPreview(result.body)}`);
+        logger.w(`[RequestQueue] classify, /i 2xx missing "result", dropping head (broken proxy?). body=${RequestQueue.bodyPreview(result.body)}`);
         return 'drop';
       } catch (err) {
-        logger.w(`[RequestQueue] classify, 2xx unparseable (${err}) — dropping head. body=${RequestQueue.bodyPreview(result.body)}`);
+        logger.w(`[RequestQueue] classify, /i 2xx unparseable (${err}), dropping head. body=${RequestQueue.bodyPreview(result.body)}`);
         return 'drop';
       }
     }
     if (code >= 400 && code < 500) {
-      // 4xx is permanent — wrong app_key, bad salt, revoked credentials.
-      logger.w(`[RequestQueue] classify, ${code} permanent failure — dropping head. body=${RequestQueue.bodyPreview(result.body)}`);
+      // 4xx is permanent, wrong app_key, bad salt, revoked credentials.
+      logger.w(`[RequestQueue] classify, ${code} permanent failure endpoint=${endpoint}, dropping head. body=${RequestQueue.bodyPreview(result.body)}`);
       return 'drop';
     }
-    // 5xx or anomalous code — assume transient, retry with backoff.
+    // 5xx or anomalous code, assume transient, retry with backoff.
     return 'retry';
   }
 
@@ -482,9 +523,9 @@ export class RequestQueue {
     if (!this.config.storage) return;
     const ok: boolean = await this.config.storage.saveRequestQueue(this.queue);
     if (!ok) {
-      // Storage write failed — in-memory queue is still authoritative, but
+      // Storage write failed, in-memory queue is still authoritative, but
       // the integrator should know requests will be lost on process restart.
-      this.config.logger.e('[RequestQueue] persist, saveRequestQueue returned false — queue will be lost on restart');
+      this.config.logger.e('[RequestQueue] persist, saveRequestQueue returned false, queue will be lost on restart');
     }
   }
 }

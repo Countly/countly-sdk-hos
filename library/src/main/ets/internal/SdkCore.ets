@@ -13,8 +13,8 @@ import { ConsentChangeSource } from '../types/Types';
  * Device-ID and consent reads route through the module references below
  * (`core.consentModule.hasConsent(...)`, `core.deviceIdModule.isTemporary()`)
  * rather than through convenience methods on the core. That keeps the
- * user-facing CountlyInstance surface clean — the public reads live on the
- * `consent` and `deviceId` API facades — without TypeScript's interface
+ * user-facing CountlyInstance surface clean, the public reads live on the
+ * `consent` and `deviceId` API facades, without TypeScript's interface
  * implementation rules forcing those methods onto the class.
  */
 export interface SdkCore {
@@ -22,9 +22,9 @@ export interface SdkCore {
   requestBuilder: RequestBuilder;
   requestQueue: RequestQueue;
 
-  /** @internal — for module-to-module reads (consent + device id). */
+  /** @internal, for module-to-module reads (consent + device id). */
   consentModule: ModuleConsent;
-  /** @internal — for module-to-module reads (consent + device id). */
+  /** @internal, for module-to-module reads (consent + device id). */
   deviceIdModule: ModuleDeviceId;
 
   /** Save pending user-profile changes before a request that should include them. */
@@ -33,13 +33,13 @@ export interface SdkCore {
   /**
    * Flush in-memory event queue to the request queue. No-op when the queue
    * is empty. Used by ModuleUserProfile to drain events before each
-   * user_details enqueue (HOS divergence — see ModuleUserProfile.ets).
+   * user_details enqueue (HOS divergence, see ModuleUserProfile.ets).
    */
   flushEvents(): Promise<void>;
 
   /**
    * Whether ModuleEvents currently has buffered events. ModuleUserProfile
-   * gates its auto-save on this — without events, the per-mutation trigger
+   * gates its auto-save on this, without events, the per-mutation trigger
    * skips both the flush and the user_details save (HOS divergence).
    */
   hasPendingEvents(): boolean;
@@ -53,8 +53,19 @@ export interface SdkCore {
 
   /**
    * Notify modules AFTER the consent map has flipped. Resolves once every
-   * module's onConsentChanged has settled — ordering between revocation work
+   * module's onConsentChanged has settled, ordering between revocation work
    * (e.g. location erasure) and a subsequent consent snapshot is then real.
    */
   notifyConsentDidChange(added: string[], removed: string[], source: ConsentChangeSource): Promise<void>;
+
+  /**
+   * Exit unknown consent mode. Called by `ModuleConsent` when the integrator
+   * calls `giveConsentAll` / `removeConsentAll` while the instance was started
+   * in unknown mode. `givenAll=true` keeps the buffered request queue on disk
+   * so a subsequent re-init can ship it; `givenAll=false` drops it.
+   * Halts the instance either way, the integrator must call `Countly.haltAll()`
+   * (to clear the static handle) and `Countly.initShared(newConfig)` to resume
+   * normal operation.
+   */
+  resolveUnknownConsent(givenAll: boolean): Promise<void>;
 }

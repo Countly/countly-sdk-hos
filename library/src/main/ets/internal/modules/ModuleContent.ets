@@ -18,7 +18,7 @@ import {
   WebViewDisplayOption
 } from '../../types/Types';
 
-/** Minimum zone interval (dev guide §Content Zone — "Must be greater than 15 seconds"). */
+/** Minimum zone interval (dev guide §Content Zone, "Must be greater than 15 seconds"). */
 const MIN_ZONE_INTERVAL_SEC: number = 15;
 
 /**
@@ -70,7 +70,7 @@ class ScreenDimensionsDp {
  *   4. The overlay calls back into this module via `handleContentUrl()` on
  *      webview URL interception, and `onContentClosed()` when it's dismissed.
  *
- * There is no ContentPresenter interface anymore — the SDK owns the WebView
+ * There is no ContentPresenter interface anymore, the SDK owns the WebView
  * rendering end-to-end via AppStorage. The only integrator requirement is
  * mounting `CountlyOverlayRoot()` somewhere in the UI tree.
  */
@@ -78,7 +78,7 @@ export class ModuleContent extends ModuleBase {
   private core: SdkCore;
   private globalCallback: ContentCallback | null = null;
 
-  /** True while the zone is "active" — periodic fetches should run. */
+  /** True while the zone is "active", periodic fetches should run. */
   private shouldFetchContents: boolean = false;
   /** True while an overlay is currently being displayed. */
   private isInContentZone: boolean = false;
@@ -104,7 +104,7 @@ export class ModuleContent extends ModuleBase {
   private queueFlusher: (() => Promise<void>) | null = null;
   /** Injected for opening external links from `action=link` / `cly_x_int=1`. */
   private externalUrlOpener: ((url: string) => void) | null = null;
-  /** Returns true when a feedback widget is currently showing — don't overlay content on top. */
+  /** Returns true when a feedback widget is currently showing, don't overlay content on top. */
   private feedbackShowingProvider: (() => boolean) | null = null;
 
   constructor(config: InternalConfig, core: SdkCore) {
@@ -147,19 +147,19 @@ export class ModuleContent extends ModuleBase {
 
   public async enterContentZone(): Promise<void> {
     if (!this.core.consentModule.hasConsent(CountlyFeature.CONTENT)) {
-      this.config.logger.v('[ModuleContent] enterContentZone, no content consent — skipped');
+      this.config.logger.v('[ModuleContent] enterContentZone, no content consent, skipped');
       return;
     }
     if (this.core.deviceIdModule.isTemporary()) {
-      this.config.logger.d('[ModuleContent] enterContentZone, temporary device ID mode — skipped');
+      this.config.logger.d('[ModuleContent] enterContentZone, temporary device ID mode, skipped');
       return;
     }
     if (this.isInContentZone) {
-      this.config.logger.d('[ModuleContent] enterContentZone, already displaying content — skipped');
+      this.config.logger.d('[ModuleContent] enterContentZone, already displaying content, skipped');
       return;
     }
     if (this.shouldFetchContents && this.timerHandle !== 0) {
-      this.config.logger.d('[ModuleContent] enterContentZone, already in zone with timer — skipped');
+      this.config.logger.d('[ModuleContent] enterContentZone, already in zone with timer, skipped');
       return;
     }
     this.shouldFetchContents = true;
@@ -173,7 +173,7 @@ export class ModuleContent extends ModuleBase {
 
   public exitContentZone(): void {
     if (!this.core.consentModule.hasConsent(CountlyFeature.CONTENT)) {
-      this.config.logger.v('[ModuleContent] exitContentZone, no content consent — skipped');
+      this.config.logger.v('[ModuleContent] exitContentZone, no content consent, skipped');
       return;
     }
     this.exitContentZoneInternal();
@@ -181,15 +181,15 @@ export class ModuleContent extends ModuleBase {
 
   public async refreshContentZone(): Promise<void> {
     if (!this.refreshEnabled) {
-      this.config.logger.d('[ModuleContent] refreshContentZone, refresh is disabled via config — skipped');
+      this.config.logger.d('[ModuleContent] refreshContentZone, refresh is disabled via config, skipped');
       return;
     }
     if (!this.core.consentModule.hasConsent(CountlyFeature.CONTENT)) {
-      this.config.logger.v('[ModuleContent] refreshContentZone, no content consent — skipped');
+      this.config.logger.v('[ModuleContent] refreshContentZone, no content consent, skipped');
       return;
     }
     if (this.isInContentZone) {
-      this.config.logger.d('[ModuleContent] refreshContentZone, content currently displayed — skipped');
+      this.config.logger.d('[ModuleContent] refreshContentZone, content currently displayed, skipped');
       return;
     }
     this.enterContentZoneWithRetries();
@@ -197,19 +197,19 @@ export class ModuleContent extends ModuleBase {
 
   public async previewContent(contentId: string): Promise<void> {
     if (Utils.isNullOrEmpty(contentId)) {
-      this.config.logger.w('[ModuleContent] previewContent, contentId is null or empty — skipped');
+      this.config.logger.w('[ModuleContent] previewContent, contentId is null or empty, skipped');
       return;
     }
     if (!this.core.consentModule.hasConsent(CountlyFeature.CONTENT)) {
-      this.config.logger.v('[ModuleContent] previewContent, no content consent — skipped');
+      this.config.logger.v('[ModuleContent] previewContent, no content consent, skipped');
       return;
     }
     if (this.core.deviceIdModule.isTemporary()) {
-      this.config.logger.d('[ModuleContent] previewContent, temporary device ID mode — skipped');
+      this.config.logger.d('[ModuleContent] previewContent, temporary device ID mode, skipped');
       return;
     }
     if (this.isInContentZone) {
-      this.config.logger.d('[ModuleContent] previewContent, content currently displayed — skipped');
+      this.config.logger.d('[ModuleContent] previewContent, content currently displayed, skipped');
       return;
     }
     await this.fetchContents(contentId);
@@ -234,7 +234,7 @@ export class ModuleContent extends ModuleBase {
 
     // Origin validation: command URLs must start with our sentinel base (not
     // configurable by integrators). External-link URLs can be any origin, so
-    // we skip the origin check for those — the marker alone is the signal.
+    // we skip the origin check for those, the marker alone is the signal.
     const params: Record<string, string> = ModuleContent.parseQueryParams(url);
 
     if (isExternalMarker && !isCommand) {
@@ -260,7 +260,7 @@ export class ModuleContent extends ModuleBase {
       return true;
     }
 
-    // Bare close (no action — just `?close=1` form)
+    // Bare close (no action, just `?close=1` form)
     if (params['close'] === '1') {
       this.closeOverlayFromProtocol();
       return true;
@@ -273,7 +273,7 @@ export class ModuleContent extends ModuleBase {
   /**
    * Called by the overlay component when the user dismisses it (e.g.
    * SDK-drawn close button for placed overlays) or when a load timeout fires.
-   * Idempotent — subsequent calls after close are no-ops.
+   * Idempotent, subsequent calls after close are no-ops.
    */
   public onContentClosedByUser(status: ContentStatus, data: Record<string, Object>): void {
     if (!this.isInContentZone) return;
@@ -290,7 +290,7 @@ export class ModuleContent extends ModuleBase {
 
   /** Called by the overlay when its WebView reports a fatal load error or timeout. */
   public onContentLoadTimedOut(): void {
-    this.config.logger.w('[ModuleContent] content load timed out — closing overlay');
+    this.config.logger.w('[ModuleContent] content load timed out, closing overlay');
     this.onContentClosedByUser(ContentStatus.CLOSED, { 'reason': 'timeout' });
   }
 
@@ -398,15 +398,15 @@ export class ModuleContent extends ModuleBase {
       if (url.length === origin.length) return true;
       const next: string = url.charAt(origin.length);
       if (next === '/' || next === '?' || next === '#') return true;
-      // The start-matched but differs at the next char — e.g.
-      // https://foo.com vs https://foo.com.evil.com — reject and continue.
+      // The start-matched but differs at the next char, e.g.
+      // https://foo.com vs https://foo.com.evil.com, reject and continue.
     }
     return false;
   }
 
   /**
    * Opens an external URL on link actions. Preference order:
-   *   1. Integrator-supplied opener (`setExternalUrlOpener`) — full override.
+   *   1. Integrator-supplied opener (`setExternalUrlOpener`), full override.
    *   2. SDK-default: launch a `viewData` intent against the UIAbility
    *      context the integrator passed to `CountlyConfig`. Works without
    *      any extra wiring in the typical case.
@@ -482,7 +482,7 @@ export class ModuleContent extends ModuleBase {
 
   private enterContentZoneWithRetries(): void {
     if (this.isCurrentlyRetrying) {
-      this.config.logger.w('[ModuleContent] enterContentZoneWithRetries, already retrying — skipped');
+      this.config.logger.w('[ModuleContent] enterContentZoneWithRetries, already retrying, skipped');
       return;
     }
     if (!this.core.consentModule.hasConsent(CountlyFeature.CONTENT)) return;
@@ -551,7 +551,7 @@ export class ModuleContent extends ModuleBase {
       const lStr: string = data.landscape !== null
         ? `${data.landscape.width}x${data.landscape.height}@(${data.landscape.x},${data.landscape.y})`
         : 'none';
-      this.config.logger.i(`[ModuleContent] fetchContents, got content url=${data.html} portrait=${pStr} landscape=${lStr} — publishing`);
+      this.config.logger.i(`[ModuleContent] fetchContents, got content url=${data.html} portrait=${pStr} landscape=${lStr}, publishing`);
       this.showContent(data);
     } catch (err) {
       this.config.logger.w(`[ModuleContent] fetchContents, failed: ${err}`);
@@ -566,11 +566,11 @@ export class ModuleContent extends ModuleBase {
       ? this.feedbackShowingProvider()
       : false;
     if (feedbackShowing) {
-      this.config.logger.d('[ModuleContent] showContent, feedback widget is showing — skipped');
+      this.config.logger.d('[ModuleContent] showContent, feedback widget is showing, skipped');
       return;
     }
     if (OverlayStore.isContentActive()) {
-      this.config.logger.d('[ModuleContent] showContent, overlay already active — skipped');
+      this.config.logger.d('[ModuleContent] showContent, overlay already active, skipped');
       return;
     }
     // Dev guide §Origin Validation: content URLs must match the configured
@@ -578,7 +578,7 @@ export class ModuleContent extends ModuleBase {
     // compromised server returning a URL to attacker-controlled HTML.
     if (!this.isAllowedContentOrigin(data.html)) {
       this.config.logger.w(
-        `[ModuleContent] showContent, content URL origin not in allowlist — rejected: ${data.html}`);
+        `[ModuleContent] showContent, content URL origin not in allowlist, rejected: ${data.html}`);
       return;
     }
     this.isInContentZone = true;
@@ -617,7 +617,7 @@ export class ModuleContent extends ModuleBase {
   /**
    * Server returns `geo` values in DP (the same unit we reported via
    * `resolution`). ArkUI's layout primitives treat bare numbers as **vp**
-   * (virtual pixels), which are effectively DP — so we pass the values
+   * (virtual pixels), which are effectively DP, so we pass the values
    * through unchanged. Multiplying by density here would double-upscale the
    * overlay and push it off-screen. The `density` parameter is kept so a
    * future switch to px-based layout (if we ever need it) remains a

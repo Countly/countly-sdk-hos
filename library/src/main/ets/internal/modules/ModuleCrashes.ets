@@ -36,7 +36,7 @@ function createCountlyErrorObserver(crashModule: ModuleCrashes): errorManager.Er
  *     global ErrorObserver; the registration is torn down in `onHalt` so
  *     test instances don't leak observers across runs.
  *   - Manual handled/unhandled crash recording.
- *   - Breadcrumbs (in-memory only — not persisted).
+ *   - Breadcrumbs (in-memory only, not persisted).
  *   - Global crash filter callback with _ob bit calculation.
  */
 export class ModuleCrashes extends ModuleBase {
@@ -49,7 +49,7 @@ export class ModuleCrashes extends ModuleBase {
   // or module init. `true` = we've already warned this session.
   private missingProviderWarned: boolean = false;
   // Observer ID returned by `errorManager.on('error', ...)`. Tracked so
-  // `onHalt` can pair it with `errorManager.off('error', id)` — without this,
+  // `onHalt` can pair it with `errorManager.off('error', id)`, without this,
   // each new ModuleCrashes (one per test) would leak an observer.
   private errorObserverId: number = -1;
 
@@ -89,11 +89,12 @@ export class ModuleCrashes extends ModuleBase {
    *
    *   countly.setThreadStackProvider(() => myWorkerRegistry.snapshotStacks());
    *
-   * The SDK calls this synchronously during crash recording — keep it cheap
+   * The SDK calls this synchronously during crash recording, keep it cheap
    * and non-throwing. A thrown error is caught and logged, then the crash
    * ships without extra thread info rather than being dropped.
    */
   public setThreadStackProvider(provider: ThreadStackProvider | null): void {
+    if (this.rejectIfHalted('ModuleCrashes', 'setThreadStackProvider')) return;
     this.threadStackProvider = provider;
   }
 
@@ -115,12 +116,13 @@ export class ModuleCrashes extends ModuleBase {
    * existing stack-normalisation in `recordInternal` is a pass-through.
    *
    * Public so the (non-exported) `CountlyErrorObserver` class above can
-   * forward the callback — ArkTS will not let an outer class reach into a
+   * forward the callback, ArkTS will not let an outer class reach into a
    * `private` from a sibling class declared in the same file.
    */
   public handleUnhandledException(errMsg: string): void {
+    if (this.rejectIfHalted('ModuleCrashes', 'handleUnhandledException')) return;
     const err: Error = ModuleCrashes.errorFromMessage(errMsg);
-    // Log a rejection from the auto-handler path rather than swallowing it —
+    // Log a rejection from the auto-handler path rather than swallowing it,
     // if crash recording fails (e.g. enqueue during OOM), the crash this
     // module exists to capture has been lost and the integrator needs to
     // know why.
@@ -130,8 +132,9 @@ export class ModuleCrashes extends ModuleBase {
   }
 
   public addBreadcrumb(record: string): void {
+    if (this.rejectIfHalted('ModuleCrashes', 'addBreadcrumb')) return;
     if (Utils.isNullOrEmpty(record)) {
-      this.config.logger.w('[ModuleCrashes] addBreadcrumb, null/empty — ignored');
+      this.config.logger.w('[ModuleCrashes] addBreadcrumb, null/empty, ignored');
       return;
     }
     const truncated: string = Utils.truncate(record, this.config.limits.maxValueSize);
@@ -142,10 +145,12 @@ export class ModuleCrashes extends ModuleBase {
   }
 
   public async recordHandledException(err: Error, customSegmentation: SegmentationMap | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleCrashes', 'recordHandledException')) return;
     await this.recordInternal(err, customSegmentation, false);
   }
 
   public async recordUnhandledException(err: Error, customSegmentation: SegmentationMap | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleCrashes', 'recordUnhandledException')) return;
     await this.recordInternal(err, customSegmentation, true);
   }
 
@@ -163,7 +168,7 @@ export class ModuleCrashes extends ModuleBase {
       this.errorObserverId = errorManager.on('error', createCountlyErrorObserver(this));
       this.config.logger.d(`[ModuleCrashes] installErrorHandler, registered observer id=${this.errorObserverId}`);
     } catch (e) {
-      // Don't fail SDK init because the platform refused the registration —
+      // Don't fail SDK init because the platform refused the registration,
       // manual recordHandled/Unhandled paths still work without it.
       this.config.logger.w(`[ModuleCrashes] installErrorHandler, errorManager.on failed: ${e}`);
     }
@@ -205,13 +210,13 @@ export class ModuleCrashes extends ModuleBase {
 
   private async recordInternal(err: Error, customSegmentation: SegmentationMap | null, fatal: boolean): Promise<void> {
     if (!this.core.consentModule.hasConsent(CountlyFeature.CRASHES)) return;
-    // SDK Behavior Settings `crt` killswitch — server-side disable.
+    // SDK Behavior Settings `crt` killswitch, server-side disable.
     if (!this.config.serverConfig.crashReportingEnabled) {
-      this.config.logger.d('[ModuleCrashes] recordInternal, crash reporting disabled by server config — dropped');
+      this.config.logger.d('[ModuleCrashes] recordInternal, crash reporting disabled by server config, dropped');
       return;
     }
     if (!err) {
-      this.config.logger.w('[ModuleCrashes] recordInternal, null error — ignored');
+      this.config.logger.w('[ModuleCrashes] recordInternal, null error, ignored');
       return;
     }
 
@@ -220,7 +225,7 @@ export class ModuleCrashes extends ModuleBase {
     // is applied INSIDE appendThreadStacks so adding a second thread can't
     // truncate the first. capOverallStack enforces the final char ceiling.
     //
-    // ArkTS's `Error.stack` is an unstable shape — sometimes it's just frames,
+    // ArkTS's `Error.stack` is an unstable shape, sometimes it's just frames,
     // sometimes it has `Name: message` prepended. Filter callbacks and
     // server-side parsers both need the name+message reliably at the head, so
     // normalize: prepend the head only if the stack doesn't already carry it.
@@ -277,11 +282,11 @@ export class ModuleCrashes extends ModuleBase {
           return;
         }
       } catch (filterErr) {
-        // A throwing filter is not the same as "filter not applied" — we can't
+        // A throwing filter is not the same as "filter not applied", we can't
         // know whether the filter had already redacted sensitive data before
         // throwing. Safer default: drop the crash. Integrators see a loud
         // ERROR so they can fix the filter without leaking unsanitized stacks.
-        this.config.logger.e(`[ModuleCrashes] recordInternal, filter threw — dropping crash to avoid leaking unfiltered data: ${filterErr}`);
+        this.config.logger.e(`[ModuleCrashes] recordInternal, filter threw, dropping crash to avoid leaking unfiltered data: ${filterErr}`);
         return;
       }
     }
@@ -307,7 +312,7 @@ export class ModuleCrashes extends ModuleBase {
       this.config.limits.maxValueSize,
       this.config.limits.maxSegmentationValues
     );
-    // Take the LAST maxBreadcrumbCount entries — a filter that pushes new
+    // Take the LAST maxBreadcrumbCount entries, a filter that pushes new
     // breadcrumbs past the cap should ship the most recent ones, not the
     // oldest. Mirrors the rotate-on-add behavior (oldest dropped first).
     const cap: number = this.config.limits.maxBreadcrumbCount;
@@ -328,7 +333,7 @@ export class ModuleCrashes extends ModuleBase {
     params['crash'] = JSON.stringify(crashObj);
     const body: string = Utils.buildQueryString(params);
     await this.core.requestQueue.enqueue(body);
-    // INFO — first line of evidence that a crash actually reached the queue.
+    // INFO, first line of evidence that a crash actually reached the queue.
     // The `ob` bit flags whether the filter mutated anything, which is the
     // most common diagnostic question when filters are wired.
     this.config.logger.i(`[ModuleCrashes] recordInternal, enqueued fatal=${crashData.fatal} stackChars=${finalStack.length} breadcrumbs=${finalBreadcrumbs.length} ob=${ob}`);
@@ -337,7 +342,7 @@ export class ModuleCrashes extends ModuleBase {
   /**
    * Append Worker/background-thread stacks to the primary stack trace when
    * `recordAllThreadsWithCrash` is enabled. If no provider is wired we log a
-   * one-time warning (not per-crash — that would drown the log listener
+   * one-time warning (not per-crash, that would drown the log listener
    * during a crash loop) so integrators notice the flag is effectively inert.
    * Returns the original stack unchanged when the flag is off or the provider
    * yields nothing.
@@ -347,7 +352,7 @@ export class ModuleCrashes extends ModuleBase {
     if (!this.threadStackProvider) {
       if (!this.missingProviderWarned) {
         this.missingProviderWarned = true;
-        this.config.logger.w('[ModuleCrashes] recordAllThreadsWithCrash is enabled but no threadStackProvider is wired — ArkTS isolates cannot enumerate Worker stacks from the main thread. Call Countly.setThreadStackProvider(...) to include them, or disable the flag to silence this warning.');
+        this.config.logger.w('[ModuleCrashes] recordAllThreadsWithCrash is enabled but no threadStackProvider is wired, ArkTS isolates cannot enumerate Worker stacks from the main thread. Call Countly.setThreadStackProvider(...) to include them, or disable the flag to silence this warning.');
       }
       return primaryStack;
     }
@@ -355,9 +360,9 @@ export class ModuleCrashes extends ModuleBase {
     try {
       extras = this.threadStackProvider();
     } catch (providerErr) {
-      // Crash-time code path — never let the provider's error mask the real
+      // Crash-time code path, never let the provider's error mask the real
       // crash. Log and fall back to the main stack only.
-      this.config.logger.e(`[ModuleCrashes] threadStackProvider threw: ${providerErr} — shipping crash without extra thread info`);
+      this.config.logger.e(`[ModuleCrashes] threadStackProvider threw: ${providerErr}, shipping crash without extra thread info`);
       return primaryStack;
     }
     if (!extras || extras.length === 0) return primaryStack;
@@ -396,7 +401,7 @@ export class ModuleCrashes extends ModuleBase {
   }
 
   /**
-   * Final char-ceiling for the whole crash payload — protects against
+   * Final char-ceiling for the whole crash payload, protects against
    * pathological Worker stacks pushing the request past sane wire sizes.
    * Per-line and per-thread caps already ran upstream.
    */
@@ -406,7 +411,7 @@ export class ModuleCrashes extends ModuleBase {
   }
 
   /**
-   * Per-line length cap only — no line count restriction. Used after the
+   * Per-line length cap only, no line count restriction. Used after the
    * crash filter runs so integrator edits that rearranged existing
    * sections aren't double-truncated, while lone runaway lines still get
    * clipped to the configured per-line maximum.

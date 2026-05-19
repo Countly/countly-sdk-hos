@@ -3,7 +3,7 @@ import { ModuleEvents } from '../internal/modules/ModuleEvents';
 import { SegmentationMap } from '../types/Types';
 
 /**
- * User-facing events surface — accessed via `Countly.sharedInstance().events`.
+ * User-facing events surface, accessed via `Countly.sharedInstance().events`.
  * Forwards to ModuleEvents and emits the same `[Events] Calling …` log lines
  * that previously lived on CountlyInstance, so log listeners see no change.
  */

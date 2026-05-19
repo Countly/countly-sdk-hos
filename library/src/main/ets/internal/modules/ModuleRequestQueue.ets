@@ -18,7 +18,7 @@ const DIRECT_REQUEST_RESERVED_KEYS: string[] = [
  * Owns the integration-wide queue operations: offline mode, queue flushing,
  * app-key rewrites, direct request injection, and the standalone metrics
  * request. The underlying RequestQueue infrastructure (FIFO + processor) is
- * still owned by CountlyInstance via SdkCore — this module is the policy
+ * still owned by CountlyInstance via SdkCore, this module is the policy
  * layer that decides when/how to mutate it.
  *
  * Surface includes integration-wide queue policy methods (offline mode,
@@ -51,20 +51,22 @@ export class ModuleRequestQueue extends ModuleBase {
    * nothing ships to the server until `disableOfflineMode(...)` is called.
    */
   public enableOfflineMode(): void {
+    if (this.rejectIfHalted('ModuleRequestQueue', 'enableOfflineMode')) return;
     if (this.core.requestQueue.isPaused()) {
       this.config.logger.d('[ModuleRequestQueue] enableOfflineMode, already paused');
       return;
     }
     this.core.requestQueue.pause();
-    this.config.logger.i('[ModuleRequestQueue] enableOfflineMode, request queue paused — no network traffic until disableOfflineMode()');
+    this.config.logger.i('[ModuleRequestQueue] enableOfflineMode, request queue paused, no network traffic until disableOfflineMode()');
   }
 
   /**
    * Resume outbound traffic. If `deviceId` is non-null, it's applied before
-   * the queue drains — matches the dev-guide pattern where integrators defer
+   * the queue drains, matches the dev-guide pattern where integrators defer
    * identity assignment until after a consent dialog while staying offline.
    */
   public async disableOfflineMode(deviceId: string | null = null): Promise<void> {
+    if (this.rejectIfHalted('ModuleRequestQueue', 'disableOfflineMode')) return;
     if (deviceId !== null && deviceId.length > 0) {
       await this.deviceIdModule.setID(deviceId);
     }
@@ -74,9 +76,10 @@ export class ModuleRequestQueue extends ModuleBase {
 
   /**
    * Drop both the request queue and the event queue. Started timed events are
-   * intentionally preserved. Use with caution — pending telemetry is lost.
+   * intentionally preserved. Use with caution, pending telemetry is lost.
    */
   public async flushQueues(): Promise<void> {
+    if (this.rejectIfHalted('ModuleRequestQueue', 'flushQueues')) return;
     this.eventsModule.clearEventQueue();
     await this.core.requestQueue.clear();
   }
@@ -86,25 +89,28 @@ export class ModuleRequestQueue extends ModuleBase {
    * the app key so old-app-key traffic gets re-associated.
    */
   public async replaceAllAppKeysInQueueWithCurrentAppKey(): Promise<void> {
+    if (this.rejectIfHalted('ModuleRequestQueue', 'replaceAllAppKeysInQueueWithCurrentAppKey')) return;
     await this.core.requestQueue.replaceAllAppKeysWithCurrent();
   }
 
   /** Drop queued requests that carry an app_key other than the current one. */
   public async removeDifferentAppKeysFromQueue(): Promise<void> {
+    if (this.rejectIfHalted('ModuleRequestQueue', 'removeDifferentAppKeysFromQueue')) return;
     await this.core.requestQueue.removeDifferentAppKeys();
   }
 
   /**
    * Add a raw request directly to the queue. Honors consent: if consent is
    * required and no feature has consent, the request is dropped. Keys/values
-   * are URL-encoded by the SDK — do not pre-encode. Attempts to override
+   * are URL-encoded by the SDK, do not pre-encode. Attempts to override
    * any reserved key (see DIRECT_REQUEST_RESERVED_KEYS) are logged and ignored.
    * The wire request carries `&dr=1` so server-side analytics can distinguish
    * direct requests from SDK-emitted ones.
    */
   public async addDirectRequest(requestParameters: Record<string, string>): Promise<void> {
+    if (this.rejectIfHalted('ModuleRequestQueue', 'addDirectRequest')) return;
     if (this.config.requiresConsent && !this.consentModule.hasAnyConsent()) {
-      this.config.logger.v('[ModuleRequestQueue] addDirectRequest, requires consent and no feature has consent — dropped');
+      this.config.logger.v('[ModuleRequestQueue] addDirectRequest, requires consent and no feature has consent, dropped');
       return;
     }
     const params: Record<string, string> = this.core.requestBuilder.baseParams();
@@ -113,10 +119,10 @@ export class ModuleRequestQueue extends ModuleBase {
       const k: string = keys[i];
       // Explicit denylist: base params (app_key, device_id, hour/dow/tz,
       // sdk_*) plus security-sensitive merge/integrity fields (old_device_id,
-      // checksum, checksum256). `timestamp` is intentionally NOT reserved —
+      // checksum, checksum256). `timestamp` is intentionally NOT reserved,
       // developers can override it for backfill scenarios.
       if (DIRECT_REQUEST_RESERVED_KEYS.indexOf(k) !== -1) {
-        this.config.logger.w(`[ModuleRequestQueue] addDirectRequest, cannot override reserved key '${k}' — skipped`);
+        this.config.logger.w(`[ModuleRequestQueue] addDirectRequest, cannot override reserved key '${k}', skipped`);
         continue;
       }
       params[k] = requestParameters[k];
@@ -131,6 +137,7 @@ export class ModuleRequestQueue extends ModuleBase {
    * caller-provided overrides. Requires the `metrics` consent.
    */
   public async recordMetrics(metricOverride: Record<string, string>): Promise<void> {
+    if (this.rejectIfHalted('ModuleRequestQueue', 'recordMetrics')) return;
     if (!this.core.consentModule.hasConsent('metrics')) return;
     const base: Record<string, string> = this.core.requestBuilder.baseParams();
     const metrics: Record<string, string> = DeviceInfo.collect(this.config.appVersion, this.config.metricOverride);

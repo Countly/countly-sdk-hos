@@ -9,7 +9,7 @@ const PAGE_LOAD_TIMEOUT_MS: number = 60 * 1000;
  * and driven entirely by AppStorage state published from ModuleFeedback.
  *
  * Versioned widgets (`widgetVersion` set, `xb=1` / `rw=1` in the custom
- * param) render fullscreen with the webview's own close button — dismissed
+ * param) render fullscreen with the webview's own close button, dismissed
  * via URL intercept (`cly_widget_command=1&close=1`). Legacy widgets
  * render in a dialog frame with an SDK-drawn Close button (they predate
  * the URL protocol).
@@ -17,7 +17,7 @@ const PAGE_LOAD_TIMEOUT_MS: number = 60 * 1000;
  * Follows the same load-visibility discipline as the content overlay:
  * start with `opacity(0) + hitTestBehavior(None)` and reveal after
  * `onPageEnd`, so the user never sees a half-painted widget and can
- * continue to use the underlying app while it loads — dev guide §5522.
+ * continue to use the underlying app while it loads, dev guide §5522.
  */
 @Component
 export struct CountlyFeedbackOverlay {
@@ -85,7 +85,7 @@ export struct CountlyFeedbackOverlay {
     catch (_err) { /* noop */ }
   }
 
-  /** Critical-resource matcher — mirrors CountlyContentOverlay. */
+  /** Critical-resource matcher, mirrors CountlyContentOverlay. */
   private static isCriticalResource(url: string): boolean {
     let p: string = url;
     const q: number = p.indexOf('?'); if (q !== -1) p = p.substring(0, q);
@@ -96,7 +96,7 @@ export struct CountlyFeedbackOverlay {
   }
 
   @Builder fullscreenWidget() {
-    // Versioned widgets — no SDK chrome, close comes from webview's own UI
+    // Versioned widgets, no SDK chrome, close comes from webview's own UI
     // via URL intercept (cly_widget_command=1).
     Web({ src: this.feedbackUrl, controller: this.webController })
       .width('100%').height('100%')
@@ -191,7 +191,7 @@ export struct CountlyFeedbackOverlay {
           .backgroundColor(Color.Transparent)
         }
       } else {
-        // Legacy dialog: centered with dimmed backdrop — the modal dim is
+        // Legacy dialog: centered with dimmed backdrop, the modal dim is
         // the whole point of dialog mode, so it stays opaque regardless of
         // IMMERSIVE/SAFE_AREA.
         Column() {
