@@ -1,7 +1,7 @@
 import { LogLevel, LogListener } from '../types/Types';
 
 /**
- * Internal callback for ModuleHealthCheck — fires on every WARNING/ERROR
+ * Internal callback for ModuleHealthCheck, fires on every WARNING/ERROR
  * log. A named type alias (rather than inline function type) keeps ArkTS
  * strict mode happy with the nominal-typing rules on class fields.
  */
@@ -18,9 +18,22 @@ export class Logger {
   private minLevel: LogLevel = LogLevel.DEBUG;
   private listenerErrorReported: boolean = false;
   private healthListener: HealthLogListener | null = null;
+  /**
+   * Optional named-instance suffix appended to the brand prefix:
+   * `[Countly]` for the shared instance, `[Countly:foo]` for an
+   * instance created via `Countly.createInstance('foo', ...)`. Set
+   * once by `createInstance` after the per-instance Logger is built
+   * so all subsequent log lines (including listener-side) can be
+   * disambiguated when multiple instances run in the same process.
+   */
+  private instanceName: string = '';
 
   public setHealthListener(listener: HealthLogListener | null): void {
     this.healthListener = listener;
+  }
+
+  public setInstanceName(name: string): void {
+    this.instanceName = name;
   }
 
   public setEnabled(enabled: boolean): void {
@@ -53,16 +66,29 @@ export class Logger {
 
     // Both the console and the listener now honor minLevel. If the integrator
     // wants more verbose logs in their listener, they should lower minLevel
-    // explicitly — routing VERBOSE keys/values to any wired-up cloud logger
+    // explicitly, routing VERBOSE keys/values to any wired-up cloud logger
     // by default is a data-exfiltration hazard.
     if (level < this.minLevel) return;
 
-    const tag: string = Logger.tagFor(level);
-    const formatted: string = `[${tag}] [Countly] ${message}`;
+    // No level tag in the message itself, the console method (and hilog,
+    // which `console.*` ultimately routes to on HMOS) already carries the
+    // severity. Adding `[Debug]`/`[Info]`/etc. produced "I [Debug] ..."
+    // double-tagged lines in hilog. Listeners that want the level get it
+    // via the second arg.
+    // Named instances get a `:name` suffix on the brand so concurrent
+    // instances are distinguishable in a shared hilog tail. Shared
+    // instance keeps the unadorned `[Countly]` for backwards-compat
+    // with existing hilog grep filters.
+    const brand: string = this.instanceName.length > 0
+      ? `[Countly:${this.instanceName}]`
+      : '[Countly]';
+    const formatted: string = `${brand} ${message}`;
 
     if (this.enabled) {
-      // HarmonyOS console routes through hilog under the hood; plain console
-      // is fine for a cross-platform style log line.
+      // HarmonyOS console routes through hilog under the hood with severity
+      // matched per method, console.error → E, .warn → W, .info → I, .debug
+      // → D, .log → I (same as info). VERBOSE has no console equivalent so
+      // it maps to .debug.
       switch (level) {
         case LogLevel.ERROR:
           console.error(formatted);
@@ -72,6 +98,10 @@ export class Logger {
           break;
         case LogLevel.INFO:
           console.info(formatted);
+          break;
+        case LogLevel.DEBUG:
+        case LogLevel.VERBOSE:
+          console.debug(formatted);
           break;
         default:
           console.log(formatted);
@@ -83,23 +113,12 @@ export class Logger {
         this.listener(formatted, level);
       } catch (err) {
         // Surface a misconfigured listener once via console.error, but never
-        // recurse through log() — that'd be infinite if listener wraps us.
+        // recurse through log(), that'd be infinite if listener wraps us.
         if (!this.listenerErrorReported) {
           this.listenerErrorReported = true;
-          console.error(`[Error] [Countly] log listener threw: ${err} — subsequent listener errors will be suppressed`);
+          console.error(`${brand} log listener threw: ${err}, subsequent listener errors will be suppressed`);
         }
       }
-    }
-  }
-
-  private static tagFor(level: LogLevel): string {
-    switch (level) {
-      case LogLevel.VERBOSE: return 'Verbose';
-      case LogLevel.DEBUG: return 'Debug';
-      case LogLevel.INFO: return 'Info';
-      case LogLevel.WARNING: return 'Warning';
-      case LogLevel.ERROR: return 'Error';
-      default: return 'Info';
     }
   }
 }

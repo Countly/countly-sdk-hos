@@ -2,7 +2,7 @@ import { Logger } from '../internal/Logger';
 import { ModuleViews } from '../internal/modules/ModuleViews';
 import { SegmentationMap } from '../types/Types';
 
-/** User-facing views surface — accessed via `Countly.sharedInstance().views`. */
+/** User-facing views surface, accessed via `Countly.sharedInstance().views`. */
 export class ViewsApi {
   private readonly logger: Logger;
   private readonly module: ModuleViews;
@@ -71,7 +71,7 @@ export class ViewsApi {
    * Report a UI orientation change. Pass either `'portrait'` or
    * `'landscape'`. Typical wiring: call from your UIAbility's
    * `onConfigurationUpdate`, or from a `@ohos.display` `on('change', ...)`
-   * callback — the SDK does not subscribe to display events itself to avoid
+   * callback, the SDK does not subscribe to display events itself to avoid
    * hard-depending on a UIAbilityContext. No-op if `trackOrientationChanges`
    * was disabled on `ViewsConfig`, if the mode is unchanged since the last
    * call, or if `users` consent is missing.

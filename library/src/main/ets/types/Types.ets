@@ -64,7 +64,7 @@ export type LogListener = (message: string, level: LogLevel) => void;
 /**
  * One thread's stack as `{ name, stack[] }`. ArkTS isolates can't enumerate
  * each other's stacks natively, so integrators who care about Worker-thread
- * crash context supply these via `setThreadStackProvider()` — typically by
+ * crash context supply these via `setThreadStackProvider()`, typically by
  * maintaining a registry of running Workers and calling their own recorded
  * last-known stack on demand.
  */
@@ -78,7 +78,7 @@ export interface ThreadStackEntry {
 /**
  * Callback that returns the integrator's currently-known non-main thread
  * stacks at crash time. Invoked only when `recordAllThreadsWithCrash` is
- * enabled. Returning an empty array is fine — it just means "I have no extra
+ * enabled. Returning an empty array is fine, it just means "I have no extra
  * stacks to contribute" and the crash will ship with the main stack only.
  */
 export type ThreadStackProvider = () => ThreadStackEntry[];
@@ -100,7 +100,7 @@ export class RCData {
 }
 
 /**
- * Outcome of a remote-config download — matches the dev guide's RequestResult
+ * Outcome of a remote-config download, matches the dev guide's RequestResult
  * enum so integrators can switch on it without string comparisons.
  */
 export enum RequestResult {
@@ -146,7 +146,7 @@ export class ContentPlacement {
  * Full parsed content payload. `html` is the content URL (named "html" for
  * server-protocol compatibility). The SDK fills whichever orientation(s) are
  * available in the server response; if only one is present, the other is
- * null. Integrators shouldn't need to construct these directly — the SDK
+ * null. Integrators shouldn't need to construct these directly, the SDK
  * publishes them through the overlay pipeline.
  */
 export class ContentData {
@@ -176,7 +176,7 @@ export enum WebViewDisplayOption {
 
 /**
  * Feedback widget types. Values match the server wire format ("nps", "survey",
- * "rating") — do not change the string values.
+ * "rating"), do not change the string values.
  */
 export enum FeedbackWidgetType {
   NPS = 'nps',
@@ -186,7 +186,7 @@ export enum FeedbackWidgetType {
 
 /**
  * Server-returned description of a feedback widget. `widgetVersion` is null
- * when the server response omits `wv` — such widgets must be displayed in the
+ * when the server response omits `wv`, such widgets must be displayed in the
  * legacy dialog mode with an SDK-provided close button. When `widgetVersion`
  * is set, the webview handles its own close UI and should be shown fullscreen.
  */

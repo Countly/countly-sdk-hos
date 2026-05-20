@@ -9,25 +9,31 @@ import { SegmentationMap, SegmentationValue } from '../types/Types';
  * Shared helpers used across modules. Kept stateless where possible.
  */
 export class Utils {
-  private static lastMsTs: number = 0;
-
-  /**
-   * Returns a strictly monotonic millisecond timestamp. Two calls in the same
-   * ms are split apart by bumping the last-used value — needed so the server
-   * can order events/requests that arrive in the same batch.
-   */
-  public static uniqueTimestampMs(): number {
-    let ts: number = Date.now();
-    if (Utils.lastMsTs >= ts) {
-      Utils.lastMsTs++;
-    } else {
-      Utils.lastMsTs = ts;
-    }
-    return Utils.lastMsTs;
-  }
-
   public static hourOf(tsMs: number): number {
     return new Date(tsMs).getHours();
+  }
+
+  /**
+   * URL-decode the value side of each `k=v` pair in a query-string body so
+   * debug logs are human-readable. Keys are kept as-is (they're ASCII
+   * identifiers); values get `decodeURIComponent`-ed individually so a
+   * single malformed pair doesn't ruin the whole line. On decode failure
+   * the original encoded value is preserved unchanged.
+   */
+  public static decodeQueryStringForLog(data: string): string {
+    if (data.length === 0) return data;
+    const parts: string[] = data.split('&');
+    const out: string[] = [];
+    for (let i = 0; i < parts.length; i++) {
+      const eq: number = parts[i].indexOf('=');
+      if (eq === -1) { out.push(parts[i]); continue; }
+      const k: string = parts[i].substring(0, eq);
+      const v: string = parts[i].substring(eq + 1);
+      let decoded: string = v;
+      try { decoded = decodeURIComponent(v); } catch (e) { /* keep encoded */ }
+      out.push(`${k}=${decoded}`);
+    }
+    return out.join('&');
   }
 
   /** 0 = Sunday ... 6 = Saturday (matches Countly server convention). */
@@ -42,15 +48,6 @@ export class Utils {
 
   public static generateUUID(): string {
     return util.generateRandomUUID(true);
-  }
-
-  /**
-   * Short event/view ID: random bytes base64-like encoded + ms timestamp.
-   * Unique per call within the same process.
-   */
-  public static generateEventId(): string {
-    const uuid: string = util.generateRandomUUID(false).replace(/-/g, '');
-    return uuid.substring(0, 16) + Date.now().toString();
   }
 
   public static isNullOrEmpty(value: string | null | undefined): boolean {
@@ -76,11 +73,11 @@ export class Utils {
    * their own throw / log-and-ignore behaviour.
    *
    * Codes:
-   *   ''          — valid
-   *   'empty'     — null / undefined / whitespace-only
-   *   'scheme'    — missing http:// or https://
-   *   'authority' — contains userinfo (`@` before the path), e.g.
-   *                 "https://legit.server.com@evil.com" — RFC 3986 parses
+   *   ''         , valid
+   *   'empty'    , null / undefined / whitespace-only
+   *   'scheme'   , missing http:// or https://
+   *   'authority', contains userinfo (`@` before the path), e.g.
+   *                 "https://legit.server.com@evil.com", RFC 3986 parses
    *                 the authority as `evil.com` so a misconfiguration here
    *                 silently redirects all telemetry.
    */
@@ -205,7 +202,7 @@ export class Utils {
     return false;
   }
 
-  /** Shallow merge — b overrides a. */
+  /** Shallow merge, b overrides a. */
   public static mergeMaps(a: SegmentationMap, b: SegmentationMap): SegmentationMap {
     const out: SegmentationMap = {};
     const aKeys: string[] = Object.keys(a);
@@ -245,7 +242,7 @@ export class Utils {
    * SDK-default external URL opener. Invoked from Content / Feedback when a
    * link action fires and no integrator-supplied opener is wired. Uses the
    * `UIAbilityContext` the integrator passed via `CountlyConfig(context,
-   * ...)` to launch a view-data intent — the platform routes the URL to
+   * ...)` to launch a view-data intent, the platform routes the URL to
    * the system browser or the registered default handler.
    *
    * Silent fail (with a warning log) is the right behavior here: external
@@ -254,7 +251,7 @@ export class Utils {
    */
   public static openExternalUrlViaContext(ctx: common.Context | null, url: string, logger: Logger): void {
     if (ctx === null) {
-      logger.w(`[Utils] openExternalUrl: no context available — dropped url=${url}`);
+      logger.w(`[Utils] openExternalUrl: no context available, dropped url=${url}`);
       return;
     }
     try {

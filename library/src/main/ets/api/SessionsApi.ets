@@ -1,7 +1,7 @@
 import { Logger } from '../internal/Logger';
 import { ModuleSessions } from '../internal/modules/ModuleSessions';
 
-/** User-facing sessions surface — accessed via `Countly.sharedInstance().sessions`. */
+/** User-facing sessions surface, accessed via `Countly.sharedInstance().sessions`. */
 export class SessionsApi {
   private readonly logger: Logger;
   private readonly module: ModuleSessions;

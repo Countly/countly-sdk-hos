@@ -15,7 +15,7 @@ export default function countlyConfigTest() {
       // Setters return `CountlyConfig` (the base type's `this`), so a chain off
       // a TestableCountlyConfig narrows back to CountlyConfig at compile time.
       // Split construction from the chained setters to keep the variable typed
-      // as TestableCountlyConfig — the *ForTest getters live on the subclass.
+      // as TestableCountlyConfig, the *ForTest getters live on the subclass.
       const cfg: TestableCountlyConfig = new TestableCountlyConfig(ctx(), 'https://x', 'k');
       cfg.setAppVersion('9.9');
       cfg.setMetricOverride(metricOverride);
@@ -39,7 +39,7 @@ export default function countlyConfigTest() {
         .setUpdateIntervalSec(30);
       cfg.consent
         .setRequiresConsent(true)
-        .setEnabled(['events', 'views']);
+        .giveAll();
       cfg.location.set('US', 'NY', '1.0,2.0', '8.8.8.8');
       const upProps: SegmentationMap = { 'name': 'Jane' };
       cfg.userProfile.setProperties(upProps);
@@ -60,7 +60,7 @@ export default function countlyConfigTest() {
       expect(cfg.network.maxRequestQueueSize).assertEqual(500);
       expect(cfg.sessions.manualControl).assertTrue();
       expect(cfg.consent.requires).assertTrue();
-      expect(cfg.consent.initial.length).assertEqual(2);
+      expect(cfg.consent.initialAll).assertTrue();
       expect(cfg.location.country).assertEqual('US');
       expect(cfg.metricOverride['_device']).assertEqual('Pixel');
       expect(cfg.userProfile.initialProperties['name']).assertEqual('Jane');
@@ -116,7 +116,7 @@ export default function countlyConfigTest() {
 
     /* ----- Ported from CountlyConfigTests.java ----- */
 
-    /** Port of `constructor()` — constructor wires context / serverUrl / appKey. */
+    /** Port of `constructor()`, constructor wires context / serverUrl / appKey. */
     it('constructor_wiresRequiredArgs', 0, () => {
       const c: common.Context = ctx();
       const cfg: TestableCountlyConfig = new TestableCountlyConfig(c, 'https://try.count.ly', 'Som345345');
@@ -125,7 +125,7 @@ export default function countlyConfigTest() {
       expect(cfg.serverUrl).assertEqual('https://try.count.ly');
     });
 
-    /** Port of `defaultValues()` — every sub-config starts at the documented default. */
+    /** Port of `defaultValues()`, every sub-config starts at the documented default. */
     it('defaultValues_allSubConfigs', 0, () => {
       const cfg: TestableCountlyConfig = new TestableCountlyConfig(ctx(), 'https://x', 'k');
       expect(cfg.appVersion).assertEqual('1.0');
@@ -140,8 +140,8 @@ export default function countlyConfigTest() {
       expect(cfg.deviceId.clearStored).assertFalse();
 
       expect(cfg.consent.requires).assertFalse();
-      expect(cfg.consent.initial.length).assertEqual(0);
       expect(cfg.consent.initialAll).assertFalse();
+      expect(cfg.consent.unknownMode).assertFalse();
 
       expect(cfg.network.maxRequestQueueSize).assertEqual(1000);
       expect(cfg.network.requestDropAgeHours).assertEqual(168);
@@ -176,7 +176,7 @@ export default function countlyConfigTest() {
       expect(cfg.location.disabled).assertFalse();
     });
 
-    /** Port of `config_testExperimentalInterface()` — toggle lands and is
+    /** Port of `config_testExperimentalInterface()`, toggle lands and is
      *  idempotent under repeat calls. */
     it('experimental_togglesAndIsIdempotent', 0, () => {
       const cfg: TestableCountlyConfig = new TestableCountlyConfig(ctx(), 'https://x', 'k');
@@ -193,7 +193,7 @@ export default function countlyConfigTest() {
       expect(cfg.experimental.visibilityTracking).assertTrue();
     });
 
-    /** Port of `settingAllValues()` slice — sets every cross-cutting value
+    /** Port of `settingAllValues()` slice, sets every cross-cutting value
      *  and confirms the fluent top-level setters return `this`. */
     it('settingAllValues_topLevel', 0, () => {
       const cfg: TestableCountlyConfig = new TestableCountlyConfig(ctx(), 'https://x', 'k');
@@ -205,16 +205,6 @@ export default function countlyConfigTest() {
       expect(cfg.appVersion).assertEqual('9.9.9');
       expect(cfg.metricOverride['SomeKey']).assertEqual('123');
       expect(cfg.metricOverride['_Carrier']).assertEqual('BoneyK');
-    });
-
-    /** Consent `setEnabled(...)` is defensively copied so caller mutation
-     *  after the call cannot retro-corrupt the config. */
-    it('consentSetEnabled_defensivelyCopied', 0, () => {
-      const cfg: TestableCountlyConfig = new TestableCountlyConfig(ctx(), 'https://x', 'k');
-      const feats: string[] = ['events', 'views'];
-      cfg.consent.setEnabled(feats);
-      feats.push('crashes');
-      expect(cfg.consent.initial.length).assertEqual(2);
     });
 
     /** Custom headers accumulate across calls. */
@@ -323,7 +313,7 @@ export default function countlyConfigTest() {
       expect(h.instance.config.recordAllThreadsWithCrash).assertTrue();
     });
 
-    /** InternalConfig decouples from the source CountlyConfig — mutating the
+    /** InternalConfig decouples from the source CountlyConfig, mutating the
      *  CountlyConfig after construction does not leak back. */
     it('internalConfig_decoupledFromSource', 0, async () => {
       const metric: Record<string, string> = { '_device': 'X' };
@@ -407,7 +397,7 @@ export default function countlyConfigTest() {
       const base: ModuleBase = new ModuleBase(internal);
       base.onEnterForeground();
       base.onEnterBackground();
-      // Intentionally no assertion — reaching here means the no-op didn't
+      // Intentionally no assertion, reaching here means the no-op didn't
       // throw and wasn't accidentally redefined to mutate state.
       expect(true).assertTrue();
     });

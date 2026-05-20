@@ -6,7 +6,7 @@ import { CountlyInstance } from '../CountlyInstance';
 /** Dev guide §Display Behavior: fail-close if page doesn't load in 60s. */
 const PAGE_LOAD_TIMEOUT_MS: number = 60 * 1000;
 
-/** Dev guide §Content Communication Protocol — resize debounce. */
+/** Dev guide §Content Communication Protocol, resize debounce. */
 const RESIZE_NOTIFY_DEBOUNCE_MS: number = 200;
 
 /**
@@ -17,16 +17,16 @@ const RESIZE_NOTIFY_DEBOUNCE_MS: number = 200;
  *   1. Re-render on OverlayStore publish / resize / close via @StorageLink.
  *   2. Mount a transparent `Web` component with the content URL.
  *      Start hidden + non-interactive; reveal once `onPageEnd` (the DOM
- *      `window.load` event) fires — dev guide §5522.
+ *      `window.load` event) fires, dev guide §5522.
  *   3. Route every URL navigation through the SDK's content URL protocol
  *      handler so the content HTML owns its own chrome (close button, etc).
  *   4. Re-read orientation on rotation and notify the content HTML via
- *      `window.postMessage({type:"resize",...})`, debounced 200ms — dev
+ *      `window.postMessage({type:"resize",...})`, debounced 200ms, dev
  *      guide §2418.
  *   5. Apply IMMERSIVE vs SAFE_AREA layout. `expandSafeArea` pairs with
  *      window-level `setWindowLayoutFullScreen(true)` from WindowImmersive.
  *   6. Enforce the 60s page-load timeout AND fail-close on main-frame,
- *      SSL, and critical sub-resource (js/css/image) load errors — dev
+ *      SSL, and critical sub-resource (js/css/image) load errors, dev
  *      guide §5541.
  */
 @Component
@@ -53,7 +53,7 @@ export struct CountlyContentOverlay {
   /**
    * True once `onPageEnd` fires for the current URL. Controls the Web's
    * opacity + hit-test so the user doesn't see half-painted content and
-   * can't interact with an incomplete widget — dev guide §5522.
+   * can't interact with an incomplete widget, dev guide §5522.
    */
   @State pageLoaded: boolean = false;
 
@@ -96,7 +96,7 @@ export struct CountlyContentOverlay {
 
   /**
    * Returns true when the server response had no `geo` placement. IMMERSIVE
-   * vs SAFE_AREA controls how the overlay meets system bars — it does NOT
+   * vs SAFE_AREA controls how the overlay meets system bars, it does NOT
    * force fullscreen; geo wins for sizing.
    */
   private isFullscreen(): boolean {
@@ -135,7 +135,7 @@ export struct CountlyContentOverlay {
 
   /**
    * Schedules a debounced `window.postMessage` call to the content so it
-   * can reflow for the new viewport. Per dev guide §2429 — debounce ~200ms
+   * can reflow for the new viewport. Per dev guide §2429, debounce ~200ms
    * to avoid flooding on rapid orientation changes.
    */
   private scheduleResizeNotify(): void {
@@ -160,7 +160,7 @@ export struct CountlyContentOverlay {
   }
 
   /**
-   * Page-load watchdog (60s timeout). onPageEnd cancels it — that event
+   * Page-load watchdog (60s timeout). onPageEnd cancels it, that event
    * fires on the DOM `window.load` event, which itself fires only after
    * all sub-resources have loaded or failed.
    */
@@ -211,7 +211,7 @@ export struct CountlyContentOverlay {
     Web({ src: this.contentUrl, controller: this.webController })
       .width('100%').height('100%')
       .backgroundColor(Color.Transparent)
-      // Hidden + non-interactive until onPageEnd — dev guide §5522 ("WebView
+      // Hidden + non-interactive until onPageEnd, dev guide §5522 ("WebView
       // should start as invisible and non-interactive").
       .opacity(this.pageLoaded ? 1 : 0)
       .hitTestBehavior(this.pageLoaded ? HitTestMode.Default : HitTestMode.None)

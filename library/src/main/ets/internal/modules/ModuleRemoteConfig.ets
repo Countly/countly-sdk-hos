@@ -29,17 +29,17 @@ const STORAGE_KEY: string = 'cly_remote_config';
  * persistence so downloaded values survive SDK restart.
  *
  * Implemented A/B testing surface:
- *   - `enrollIntoABTestsForKeys(keys)` — `/o/sdk?method=ab&keys=[...]`
- *   - `exitABTestsForKeys(keys)` — `/o/sdk?method=ab_exit&keys=[...]`
+ *   - `enrollIntoABTestsForKeys(keys)`, `/o/sdk?method=ab&keys=[...]`
+ *   - `exitABTestsForKeys(keys)`, `/o/sdk?method=ab_exit&keys=[...]`
  *   - `getValueAndEnroll(key)` / `getAllValuesAndEnroll()` convenience wrappers
  *
  * NOT implemented (documented gaps):
  *   - Variant-level testing surface (`testingDownloadVariantInformation`,
  *     `testingGetAllVariants`, `testingGetAllExperimentInfo`,
- *     `testingEnrollIntoVariant`) — these are developer-tooling paths for
+ *     `testingEnrollIntoVariant`), these are developer-tooling paths for
  *     A/B-test design, not production runtime paths.
  *
- * The legacy `method=fetch_remote_config` API is NOT used — this SDK defaults
+ * The legacy `method=fetch_remote_config` API is NOT used, this SDK defaults
  * to the modern API (equivalent to the cross-platform `useExplicitRcApi=true`).
  */
 export class ModuleRemoteConfig extends ModuleBase {
@@ -68,7 +68,7 @@ export class ModuleRemoteConfig extends ModuleBase {
             this.cache = parsed as Record<string, CacheEntry>;
           }
         } catch (err) {
-          this.config.logger.w(`[ModuleRemoteConfig] onInit, stored cache unparseable — starting empty: ${err}`);
+          this.config.logger.w(`[ModuleRemoteConfig] onInit, stored cache unparseable, starting empty: ${err}`);
         }
       }
     }
@@ -102,10 +102,12 @@ export class ModuleRemoteConfig extends ModuleBase {
   // -- Download API (modern `method=rc`) --
 
   public async downloadAllKeys(callback: RCDownloadCallback | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleRemoteConfig', 'downloadAllKeys')) return;
     await this.downloadInternal(null, null, callback);
   }
 
   public async downloadOmittingKeys(keysToOmit: string[] | null, callback: RCDownloadCallback | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleRemoteConfig', 'downloadOmittingKeys')) return;
     if (!keysToOmit || keysToOmit.length === 0) {
       await this.downloadInternal(null, null, callback);
       return;
@@ -114,6 +116,7 @@ export class ModuleRemoteConfig extends ModuleBase {
   }
 
   public async downloadSpecificKeys(keysToInclude: string[] | null, callback: RCDownloadCallback | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleRemoteConfig', 'downloadSpecificKeys')) return;
     if (!keysToInclude || keysToInclude.length === 0) {
       await this.downloadInternal(null, null, callback);
       return;
@@ -123,9 +126,10 @@ export class ModuleRemoteConfig extends ModuleBase {
 
   /**
    * Wipe the in-memory + persisted cache. Used by integrators on logout or
-   * data-clear flows — separate from the device-id-change automatic wipe.
+   * data-clear flows, separate from the device-id-change automatic wipe.
    */
   public async clearAll(): Promise<void> {
+    if (this.rejectIfHalted('ModuleRemoteConfig', 'clearAll')) return;
     this.cache = {};
     if (this.config.storage) {
       await this.config.storage.remove(STORAGE_KEY);
@@ -133,10 +137,12 @@ export class ModuleRemoteConfig extends ModuleBase {
   }
 
   public registerDownloadCallback(cb: RCDownloadCallback): void {
+    if (this.rejectIfHalted('ModuleRemoteConfig', 'registerDownloadCallback')) return;
     if (this.globalCallbacks.indexOf(cb) === -1) this.globalCallbacks.push(cb);
   }
 
   public removeDownloadCallback(cb: RCDownloadCallback): void {
+    if (this.rejectIfHalted('ModuleRemoteConfig', 'removeDownloadCallback')) return;
     const i: number = this.globalCallbacks.indexOf(cb);
     if (i !== -1) this.globalCallbacks.splice(i, 1);
   }
@@ -181,7 +187,7 @@ export class ModuleRemoteConfig extends ModuleBase {
       }
       const parsed: Object = JSON.parse(res.body);
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        this.config.logger.e('[ModuleRemoteConfig] download, response was not a JSON object — cache unchanged');
+        this.config.logger.e('[ModuleRemoteConfig] download, response was not a JSON object, cache unchanged');
         this.notifyAll(callback, RequestResult.Error, 'invalid payload', full, {});
         return;
       }
@@ -191,7 +197,7 @@ export class ModuleRemoteConfig extends ModuleBase {
 
       // Full download: replace the whole cache. Partial: merge keys that
       // arrived over the existing cache, leaving untouched keys at whatever
-      // freshness they previously had. ArkTS bans Object.assign — build the
+      // freshness they previously had. ArkTS bans Object.assign, build the
       // clone explicitly instead.
       const next: Record<string, CacheEntry> = {};
       if (!full) {
@@ -236,7 +242,7 @@ export class ModuleRemoteConfig extends ModuleBase {
     try {
       const ok: boolean = await this.config.storage.setString(STORAGE_KEY, JSON.stringify(this.cache));
       if (!ok) {
-        this.config.logger.w('[ModuleRemoteConfig] persistCache, setString returned false — cache will be lost on restart');
+        this.config.logger.w('[ModuleRemoteConfig] persistCache, setString returned false, cache will be lost on restart');
       }
     } catch (err) {
       this.config.logger.e(`[ModuleRemoteConfig] persistCache, failed: ${err}`);
@@ -255,7 +261,7 @@ export class ModuleRemoteConfig extends ModuleBase {
       this.cache = {};
       if (this.config.storage) await this.config.storage.remove(STORAGE_KEY);
     }
-    // Automatic download hook — the caller has already reset consent, so only
+    // Automatic download hook, the caller has already reset consent, so only
     // re-fetch when RC consent survives (consent was re-granted to the new
     // user) or requiresConsent is off.
     if (this.config.remoteConfigAutomaticTriggers
@@ -266,7 +272,7 @@ export class ModuleRemoteConfig extends ModuleBase {
   }
 
   public override async onDeviceIdChangedMerged(oldId: string, _newId: string): Promise<void> {
-    // `_cly.moduleRemoteConfig.clearAndDownloadAfterIdChange()` — both the
+    // `_cly.moduleRemoteConfig.clearAndDownloadAfterIdChange()`, both the
     // merge and non-merge paths clear the cache and re-download. Even though
     // a merge preserves identity server-side, the new id may map to a
     // different segment that returns different RC values.
@@ -286,7 +292,7 @@ export class ModuleRemoteConfig extends ModuleBase {
   }
 
   public override async onConsentChanged(added: string[], _removed: string[], _source: ConsentChangeSource): Promise<void> {
-    // Dev guide §Consent: revocation does NOT clear the in-memory cache —
+    // Dev guide §Consent: revocation does NOT clear the in-memory cache,
     // only `clearAll()` or device-id-change-not-merged wipes. On a grant we
     // optionally kick off an automatic download.
     if (added.indexOf(CountlyFeature.REMOTE_CONFIG) !== -1
@@ -308,9 +314,10 @@ export class ModuleRemoteConfig extends ModuleBase {
    * RC consent; invalid / empty keys are filtered with a warning.
    */
   public async enrollIntoABTestsForKeys(keys: string[] | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleRemoteConfig', 'enrollIntoABTestsForKeys')) return;
     const filtered: string[] = ModuleRemoteConfig.filterKeys(keys);
     if (filtered.length === 0) {
-      this.config.logger.w('[ModuleRemoteConfig] enrollIntoABTestsForKeys, no valid keys — omitted');
+      this.config.logger.w('[ModuleRemoteConfig] enrollIntoABTestsForKeys, no valid keys, omitted');
       return;
     }
     if (!this.canSendAB('enrollIntoABTestsForKeys')) return;
@@ -331,6 +338,7 @@ export class ModuleRemoteConfig extends ModuleBase {
    * under revoked RC consent.
    */
   public async exitABTestsForKeys(keys: string[] | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleRemoteConfig', 'exitABTestsForKeys')) return;
     if (!this.canSendAB('exitABTestsForKeys')) return;
     const params: Record<string, string> = this.core.requestBuilder.baseParams();
     params['method'] = 'ab_exit';
@@ -369,11 +377,11 @@ export class ModuleRemoteConfig extends ModuleBase {
 
   private canSendAB(caller: string): boolean {
     if (!this.core.consentModule.hasConsent(CountlyFeature.REMOTE_CONFIG)) {
-      this.config.logger.v(`[ModuleRemoteConfig] ${caller}, no remote-config consent — omitted`);
+      this.config.logger.v(`[ModuleRemoteConfig] ${caller}, no remote-config consent, omitted`);
       return false;
     }
     if (this.core.deviceIdModule.isTemporary()) {
-      this.config.logger.d(`[ModuleRemoteConfig] ${caller}, temporary device ID mode — omitted`);
+      this.config.logger.d(`[ModuleRemoteConfig] ${caller}, temporary device ID mode, omitted`);
       return false;
     }
     return true;
@@ -391,7 +399,7 @@ export class ModuleRemoteConfig extends ModuleBase {
 
   /**
    * Fire an automatic download, fire-and-forget. Triggers are best-effort
-   * side effects (init, consent grant, device-id change) — a failure here
+   * side effects (init, consent grant, device-id change), a failure here
    * shouldn't block the caller but must be logged.
    */
   private fireAutomaticDownload(reason: string): void {

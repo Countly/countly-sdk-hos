@@ -11,7 +11,7 @@ const K_VERSION: string = 'v';
 const K_TIMESTAMP: string = 't';
 const K_CONFIG: string = 'c';
 
-// Inner-config keys (`c.<key>`) — names match the dev guide table verbatim
+// Inner-config keys (`c.<key>`), names match the dev guide table verbatim
 const K_TRACKING: string = 'tracking';
 const K_NETWORKING: string = 'networking';
 const K_SESSION_TRACKING: string = 'st';
@@ -24,6 +24,9 @@ const K_REFRESH_CONTENT_ZONE: string = 'rcz';
 const K_BACKOFF_MECHANISM: string = 'bom';
 const K_LOGGING: string = 'log';
 const K_CONSENT_REQUIRED: string = 'cr';
+const K_AUTOMATIC_VIEW_TRACKING: string = 'avt';
+const K_AUTOMATIC_SESSION_TRACKING: string = 'ast';
+const K_AUTOMATIC_CRASH_REPORTING: string = 'acr';
 
 const K_REQUEST_QUEUE_SIZE: string = 'rqs';
 const K_EVENT_QUEUE_SIZE: string = 'eqs';
@@ -52,6 +55,7 @@ const K_SEGMENTATION_WHITELIST: string = 'sw';
 const K_EVENT_SEG_BLACKLIST: string = 'esb';
 const K_EVENT_SEG_WHITELIST: string = 'esw';
 const K_JOURNEY_TRIGGER_EVENTS: string = 'jte';
+const K_JOURNEY_TRIGGER_VIEWS: string = 'jtv';
 
 const HOUR_IN_MS: number = 60 * 60 * 1000;
 
@@ -60,14 +64,14 @@ const HOUR_IN_MS: number = 60 * 60 * 1000;
  * loads persisted/dev-supplied bootstrap config, validates the inner `c`
  * object against the dev-guide schema, applies surviving keys to the
  * `ServerConfig` field on `InternalConfig` (and propagates a few values to
- * other live mutables — `Limits`, `eventQueueThreshold`, `maxRequestQueueSize`,
+ * other live mutables, `Limits`, `eventQueueThreshold`, `maxRequestQueueSize`,
  * `sessionUpdateIntervalSec`, `requestDropAgeHours`, `backoffEnabled`,
  * `requiresConsent`, content-zone interval / refresh).
  *
  * Lifecycle ordering matters: this module's *constructor* applies any
  * already-persisted settings (so the rest of `CountlyInstance` constructs
  * against the post-applied values). The fetch happens in `onInit`, after
- * the device-id resolves — temporary mode skips fetch entirely per dev guide.
+ * the device-id resolves, temporary mode skips fetch entirely per dev guide.
  *
  * Implementation notes:
  *   - Storage key is `cly_sbs` (matches the comment in `Storage.ets`).
@@ -107,13 +111,13 @@ export class ModuleConfiguration extends ModuleBase {
 
   /**
    * Two-phase apply. Phase 1 (storage prelude) must be called BEFORE other
-   * modules read the live mutables — invoked by `CountlyInstance` right
+   * modules read the live mutables, invoked by `CountlyInstance` right
    * after `Storage.init()`. Phase 2 (server fetch) happens in `onInit`
    * after device-id resolves.
    */
   public async loadFromStorage(): Promise<void> {
     if (!this.config.storage) {
-      // No storage — fall back to dev-supplied bootstrap if any.
+      // No storage, fall back to dev-supplied bootstrap if any.
       if (this.config.sdkBehaviorSettings) {
         this.applyRawSettings(this.config.sdkBehaviorSettings, 'dev-supplied');
       }
@@ -134,11 +138,20 @@ export class ModuleConfiguration extends ModuleBase {
 
   public override async onInit(): Promise<void> {
     if (this.config.sdkBehaviorSettingsRequestsDisabled) {
-      this.config.logger.d('[ModuleConfiguration] onInit, SBS updates disabled by config — skipping fetch + timer');
+      this.config.logger.d('[ModuleConfiguration] onInit, SBS updates disabled by config, skipping fetch + timer');
       return;
     }
     if (this.core.deviceIdModule.isTemporary()) {
-      this.config.logger.d('[ModuleConfiguration] onInit, temporary device id — skipping fetch (dev guide §SDK Behavior Settings)');
+      this.config.logger.d('[ModuleConfiguration] onInit, temporary device id, skipping fetch (dev guide §SDK Behavior Settings)');
+      return;
+    }
+    if (this.config.unknownConsentMode) {
+      // Hold the init-time fetch until UCM resolves; `resolveUnknownConsent`
+      // calls `triggerPostUcmRefresh()` on exit to kick this off. The
+      // periodic fetch timer also skips while UCM is active, see the
+      // fire-time check in startFetchTimer. Matches Dart's
+      // `BehaviorModule.fetchAndApply()` early-return on UCM.
+      this.config.logger.d('[ModuleConfiguration] onInit, in unknown consent mode, deferring fetch + timer until UCM resolves');
       return;
     }
     await this.fetchFromServer();
@@ -147,6 +160,26 @@ export class ModuleConfiguration extends ModuleBase {
 
   public override async onHalt(): Promise<void> {
     this.stopFetchTimer();
+  }
+
+  /** Test seam — true while the periodic SBS-refresh interval is armed. */
+  public hasActiveTimers(): boolean {
+    return this.fetchTimer !== null;
+  }
+
+  /**
+   * Called by `CountlyInstance.resolveUnknownConsent` on UCM exit (both
+   * grant and revoke paths) to kick off the SBS fetch + periodic timer
+   * that `onInit` deferred while UCM was active. Fire-and-forget per the
+   * Dart parity protocol.
+   */
+  public triggerPostUcmRefresh(): void {
+    if (this.config.sdkBehaviorSettingsRequestsDisabled) return;
+    if (this.core.deviceIdModule.isTemporary()) return;
+    this.fetchFromServer().catch((err: Object) => {
+      this.config.logger.e(`[ModuleConfiguration] post-UCM SBS fetch rejected: ${err}`);
+    });
+    this.startFetchTimer();
   }
 
   // -- Fetch + persistence --
@@ -160,7 +193,7 @@ export class ModuleConfiguration extends ModuleBase {
     try {
       const res = await this.config.network.execute(this.config.serverUrl, '/o/sdk', qs, true);
       if (res.statusCode < 200 || res.statusCode >= 300) {
-        this.config.logger.w(`[ModuleConfiguration] fetchFromServer, http ${res.statusCode} — keeping existing settings`);
+        this.config.logger.w(`[ModuleConfiguration] fetchFromServer, http ${res.statusCode}, keeping existing settings`);
         return;
       }
       this.applyRawSettings(res.body, 'server');
@@ -169,7 +202,7 @@ export class ModuleConfiguration extends ModuleBase {
         await this.config.storage.setString(STORAGE_KEY, JSON.stringify(this.latestRetrievedFull));
       }
     } catch (err) {
-      this.config.logger.w(`[ModuleConfiguration] fetchFromServer, network error — keeping existing settings: ${err}`);
+      this.config.logger.w(`[ModuleConfiguration] fetchFromServer, network error, keeping existing settings: ${err}`);
     }
   }
 
@@ -178,9 +211,12 @@ export class ModuleConfiguration extends ModuleBase {
     const intervalMs: number = this.config.serverConfig.serverConfigUpdateInterval * HOUR_IN_MS;
     if (!Number.isFinite(intervalMs) || intervalMs <= 0) return;
     this.fetchTimer = setInterval(() => {
-      // Re-check temp / disabled at fire-time — state may have flipped since timer start.
+      // Re-check temp / disabled / UCM at fire-time, state may have flipped
+      // since timer start. UCM is held by the upstream silencer too, but the
+      // fire-time check here avoids a noisy "REQUEST BLOCKED" warning per tick.
       if (this.config.sdkBehaviorSettingsRequestsDisabled) return;
       if (this.core.deviceIdModule.isTemporary()) return;
+      if (this.config.unknownConsentMode) return;
       this.fetchFromServer().catch((err: Object) => {
         this.config.logger.e(`[ModuleConfiguration] periodic fetch rejected: ${err}`);
       });
@@ -201,11 +237,11 @@ export class ModuleConfiguration extends ModuleBase {
     try {
       parsed = JSON.parse(raw);
     } catch (err) {
-      this.config.logger.w(`[ModuleConfiguration] applyRawSettings (${origin}), JSON parse failed — ignoring: ${err}`);
+      this.config.logger.w(`[ModuleConfiguration] applyRawSettings (${origin}), JSON parse failed, ignoring: ${err}`);
       return;
     }
     if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-      this.config.logger.w(`[ModuleConfiguration] applyRawSettings (${origin}), root is not a JSON object — ignoring`);
+      this.config.logger.w(`[ModuleConfiguration] applyRawSettings (${origin}), root is not a JSON object, ignoring`);
       return;
     }
     const full: Record<string, Object> = parsed as Record<string, Object>;
@@ -216,7 +252,7 @@ export class ModuleConfiguration extends ModuleBase {
     // don't poison the persisted blob.
     const cleaned: Record<string, Object> = this.removeUnsupportedKeys(inner);
     if (Object.keys(cleaned).length === 0) {
-      this.config.logger.d(`[ModuleConfiguration] applyRawSettings (${origin}), inner config empty after validation — nothing to apply`);
+      this.config.logger.d(`[ModuleConfiguration] applyRawSettings (${origin}), inner config empty after validation, nothing to apply`);
       return;
     }
 
@@ -240,21 +276,24 @@ export class ModuleConfiguration extends ModuleBase {
     }
 
     this.applyToServerConfig(this.latestRetrievedInner!);
-    this.config.logger.i(`[ModuleConfiguration] applyRawSettings (${origin}), applied ${innerKeys.length} key(s)`);
+    // Full key/value dump alongside the count so integrators can see WHICH
+    // server-driven settings landed (queue limits, tracking switches,
+    // filters, etc.) without grepping the wire response separately.
+    this.config.logger.i(`[ModuleConfiguration] applyRawSettings (${origin}), applied ${innerKeys.length} key(s): ${JSON.stringify(this.latestRetrievedInner)}`);
   }
 
   private validateEnvelope(full: Record<string, Object>, origin: string): boolean {
     if (full[K_VERSION] === undefined) {
-      this.config.logger.w(`[ModuleConfiguration] validate (${origin}), missing 'v' field — ignoring`);
+      this.config.logger.w(`[ModuleConfiguration] validate (${origin}), missing 'v' field, ignoring`);
       return false;
     }
     if (full[K_TIMESTAMP] === undefined) {
-      this.config.logger.w(`[ModuleConfiguration] validate (${origin}), missing 't' field — ignoring`);
+      this.config.logger.w(`[ModuleConfiguration] validate (${origin}), missing 't' field, ignoring`);
       return false;
     }
     const c: Object | undefined = full[K_CONFIG];
     if (c === undefined || c === null || typeof c !== 'object' || Array.isArray(c)) {
-      this.config.logger.w(`[ModuleConfiguration] validate (${origin}), missing or invalid 'c' object — ignoring`);
+      this.config.logger.w(`[ModuleConfiguration] validate (${origin}), missing or invalid 'c' object, ignoring`);
       return false;
     }
     return true;
@@ -262,7 +301,7 @@ export class ModuleConfiguration extends ModuleBase {
 
   /**
    * Filter inner-config keys to those the SDK knows about AND whose value
-   * type matches the expected schema. Returns a new object — does not mutate
+   * type matches the expected schema. Returns a new object, does not mutate
    * the input.
    */
   private removeUnsupportedKeys(inner: Record<string, Object>): Record<string, Object> {
@@ -291,7 +330,9 @@ export class ModuleConfiguration extends ModuleBase {
     if (key === K_TRACKING || key === K_NETWORKING || key === K_SESSION_TRACKING ||
         key === K_VIEW_TRACKING || key === K_CUSTOM_EVENT_TRACKING || key === K_CRASH_REPORTING ||
         key === K_LOCATION_TRACKING || key === K_ENTER_CONTENT_ZONE || key === K_REFRESH_CONTENT_ZONE ||
-        key === K_BACKOFF_MECHANISM || key === K_LOGGING || key === K_CONSENT_REQUIRED) {
+        key === K_BACKOFF_MECHANISM || key === K_LOGGING || key === K_CONSENT_REQUIRED ||
+        key === K_AUTOMATIC_VIEW_TRACKING || key === K_AUTOMATIC_SESSION_TRACKING ||
+        key === K_AUTOMATIC_CRASH_REPORTING) {
       return typeof value === 'boolean';
     }
     // Positive integers (>= 1)
@@ -318,7 +359,7 @@ export class ModuleConfiguration extends ModuleBase {
     if (key === K_EVENT_BLACKLIST || key === K_EVENT_WHITELIST ||
         key === K_USER_PROP_BLACKLIST || key === K_USER_PROP_WHITELIST ||
         key === K_SEGMENTATION_BLACKLIST || key === K_SEGMENTATION_WHITELIST ||
-        key === K_JOURNEY_TRIGGER_EVENTS) {
+        key === K_JOURNEY_TRIGGER_EVENTS || key === K_JOURNEY_TRIGGER_VIEWS) {
       return Array.isArray(value);
     }
     // Per-event segmentation filter object
@@ -389,6 +430,9 @@ export class ModuleConfiguration extends ModuleBase {
       this.config.logger.setEnabled(sc.loggingEnabled);
     }
     if (inner[K_CONSENT_REQUIRED] !== undefined) sc.consentRequired = inner[K_CONSENT_REQUIRED] as boolean;
+    if (inner[K_AUTOMATIC_VIEW_TRACKING] !== undefined) sc.automaticViewTrackingEnabled = inner[K_AUTOMATIC_VIEW_TRACKING] as boolean;
+    if (inner[K_AUTOMATIC_SESSION_TRACKING] !== undefined) sc.automaticSessionTrackingEnabled = inner[K_AUTOMATIC_SESSION_TRACKING] as boolean;
+    if (inner[K_AUTOMATIC_CRASH_REPORTING] !== undefined) sc.automaticCrashReportingEnabled = inner[K_AUTOMATIC_CRASH_REPORTING] as boolean;
 
     // Numbers
     if (inner[K_REQUEST_QUEUE_SIZE] !== undefined) sc.requestQueueSize = inner[K_REQUEST_QUEUE_SIZE] as number;
@@ -410,7 +454,7 @@ export class ModuleConfiguration extends ModuleBase {
     if (inner[K_USER_PROPERTY_CACHE_LIMIT] !== undefined) sc.userPropertyCacheLimit = inner[K_USER_PROPERTY_CACHE_LIMIT] as number;
 
     // Filter lists. Whitelist beats blacklist (for the same category) per dev
-    // guide §SDK Behavior Settings — we already purged opposite keys above.
+    // guide §SDK Behavior Settings, we already purged opposite keys above.
     if (inner[K_EVENT_BLACKLIST] !== undefined) {
       sc.eventFilter = new FilterList<string[]>(this.toStringArray(inner[K_EVENT_BLACKLIST]), false);
     } else if (inner[K_EVENT_WHITELIST] !== undefined) {
@@ -436,11 +480,14 @@ export class ModuleConfiguration extends ModuleBase {
     if (inner[K_JOURNEY_TRIGGER_EVENTS] !== undefined) {
       sc.journeyTriggerEvents = this.toStringArray(inner[K_JOURNEY_TRIGGER_EVENTS]);
     }
+    if (inner[K_JOURNEY_TRIGGER_VIEWS] !== undefined) {
+      sc.journeyTriggerViews = this.toStringArray(inner[K_JOURNEY_TRIGGER_VIEWS]);
+    }
 
     // Propagate to live mutables ONLY for keys that arrived in this apply.
     // Skipping the propagation for absent keys preserves integrator-supplied
     // defaults (e.g. `requestDropAgeHours=168` from `NetworkConfig`) when the
-    // server response doesn't override them — "no value present → keep existing".
+    // server response doesn't override them, "no value present → keep existing".
     if (inner[K_LIMIT_KEY_LENGTH] !== undefined) this.config.limits.maxKeyLength = sc.limitKeyLength;
     if (inner[K_LIMIT_VALUE_SIZE] !== undefined) this.config.limits.maxValueSize = sc.limitValueSize;
     if (inner[K_LIMIT_SEG_VALUES] !== undefined) this.config.limits.maxSegmentationValues = sc.limitSegmentationValues;
@@ -454,7 +501,7 @@ export class ModuleConfiguration extends ModuleBase {
     if (inner[K_DROP_OLD_REQUEST_TIME] !== undefined) this.config.requestDropAgeHours = sc.dropOldRequestTime;
     if (inner[K_BACKOFF_MECHANISM] !== undefined) this.config.backoffEnabled = sc.bomEnabled;
     // `consentRequired` from server is a one-way override: server says
-    // "you MUST require consent" — flip the integrator-set field on, but
+    // "you MUST require consent", flip the integrator-set field on, but
     // never flip it OFF (an integrator who set requiresConsent=true for
     // a regulatory reason should not have it silently removed).
     if (inner[K_CONSENT_REQUIRED] !== undefined && sc.consentRequired) {

@@ -8,7 +8,7 @@ const STORAGE_KEY: string = 'HEALTH_CHECK';
 const ERROR_MESSAGE_MAX: number = 1000;
 
 /**
- * Persisted schema — matches the dev guide §Health Checks Storage spec
+ * Persisted schema, matches the dev guide §Health Checks Storage spec
  * verbatim so the in-memory counter can be rehydrated across restarts.
  * A class (not interface) so ArkTS strict mode can serialize/deserialize
  * under the nominal-typing + no-untyped-obj-literals rules.
@@ -35,19 +35,26 @@ class StoredState {
  * SDK Health Monitoring. Tracks internal error/warning log counts, the last
  * failed network request, and backoff counters; sends a single immediate
  * `/i?hc={...}` request after init. No consent is required (internal
- * diagnostic — no PII involved).
+ * diagnostic, no PII involved).
  *
  * Dev guide §Health Checks. State persists across restarts so a crashed app's
  * counters still get reported on the next launch. A successful acknowledgement
  * (response JSON contains `result`) clears both in-memory and persisted state.
  *
  * This module is wired to the Logger (via `setHealthListener`) and the
- * RequestQueue (via `setHealthListener`) — when those paths fire a warn / error
+ * RequestQueue (via `setHealthListener`), when those paths fire a warn / error
  * log or a failed network request, the counter increments here.
  */
 export class ModuleHealthCheck extends ModuleBase {
   private core: SdkCore;
   private sent: boolean = false;
+  /** Handle for the deferred initial send (setTimeout(0) in onInit). Stored
+   *  so `onHalt` can cancel it, otherwise a stop/halt that happens between
+   *  scheduling and firing lets the HC enqueue an extra request after the
+   *  instance is supposed to be quiet. `null` = not scheduled or already
+   *  fired. We don't use 0 as a sentinel because HMOS setTimeout may
+   *  legitimately return 0 (same gotcha as elsewhere in the SDK). */
+  private initialSendTimer: number | null = null;
 
   private countLogWarning: number = 0;
   private countLogError: number = 0;
@@ -69,11 +76,11 @@ export class ModuleHealthCheck extends ModuleBase {
     await this.loadState();
 
     if (this.config.disableHealthCheck) {
-      this.config.logger.d('[ModuleHealthCheck] onInit, health check disabled by config — no report will be sent');
+      this.config.logger.d('[ModuleHealthCheck] onInit, health check disabled by config, no report will be sent');
       return;
     }
     if (this.core.deviceIdModule.isTemporary()) {
-      this.config.logger.d('[ModuleHealthCheck] onInit, temporary device ID mode — no report this lifecycle');
+      this.config.logger.d('[ModuleHealthCheck] onInit, temporary device ID mode, no report this lifecycle');
       return;
     }
     // Hook the logger so warn/error logs bump the counters. The logger is
@@ -85,27 +92,67 @@ export class ModuleHealthCheck extends ModuleBase {
     });
     // Hook the request queue so failed requests + backoff events bump counters.
     // ArkTS strict mode bans object-literal interface implementations
-    // (arkts-no-untyped-obj-literals) — use a named adapter class instead.
+    // (arkts-no-untyped-obj-literals), use a named adapter class instead.
     this.core.requestQueue.setHealthListener(new HealthCheckQueueListener(this));
+
+    if (this.config.unknownConsentMode) {
+      // Don't schedule the init-time send while UCM is active.
+      // `resolveUnknownConsent` calls `triggerPostUcmSend()` on exit
+      // (both grant and revoke paths) to fire the report. Matches
+      // Dart's `_attemptHealthCheck` init gate + `_getOutOfUnknownConsent
+      // State` post-exit fire.
+      this.config.logger.d('[ModuleHealthCheck] onInit, in unknown consent mode, deferring health check until UCM resolves');
+      return;
+    }
 
     // Defer the first send to the next macrotask. The counter snapshot inside
     // sendHealthCheck is synchronous up to its first await, so a fire-and-
     // forget call here would race with anything the integrator (or test) does
     // synchronously after init returns. With setTimeout(0), the snapshot
     // happens after the microtask queue drains, giving post-init synchronous
-    // activity a chance to reach the counters first. Best-effort — a failure
+    // activity a chance to reach the counters first. Best-effort, a failure
     // keeps counters in storage for the next launch.
-    setTimeout(() => {
+    this.initialSendTimer = setTimeout(() => {
+      this.initialSendTimer = null;
       this.sendHealthCheck().catch((err: Object) => {
         this.config.logger.e(`[ModuleHealthCheck] sendHealthCheck rejected: ${err}`);
       });
-    }, 0);
+    }, 0) as number;
+  }
+
+  /**
+   * Called by `CountlyInstance.resolveUnknownConsent` on UCM exit (both
+   * grant and revoke paths) to fire the health check that `onInit`
+   * deferred while UCM was active. No-op if HC is disabled, in temp-id
+   * mode, or has already been sent successfully this lifecycle. Fire-
+   * and-forget per the Dart parity protocol.
+   */
+  public triggerPostUcmSend(): void {
+    if (this.config.disableHealthCheck) return;
+    if (this.core.deviceIdModule.isTemporary()) return;
+    if (this.sent) return;
+    this.sendHealthCheck().catch((err: Object) => {
+      this.config.logger.e(`[ModuleHealthCheck] post-UCM sendHealthCheck rejected: ${err}`);
+    });
   }
 
   public override async onHalt(): Promise<void> {
+    // Cancel the deferred initial send if it hasn't fired yet. Without this,
+    // a stop()/halt() that lands between scheduling and firing lets the HC
+    // enqueue/send an extra request after the instance is supposed to be
+    // quiet, breaking post-halt invariants ("no new wire traffic after halt").
+    if (this.initialSendTimer !== null) {
+      clearTimeout(this.initialSendTimer);
+      this.initialSendTimer = null;
+    }
     // Persist on shutdown so activity-stop / session-end lifecycle events
     // don't lose counters for unsent reports.
     await this.saveState();
+  }
+
+  /** Test seam — true while the deferred initial-send setTimeout is armed. */
+  public hasActiveTimers(): boolean {
+    return this.initialSendTimer !== null;
   }
 
   // -- Counter mutators (called from Logger + RequestQueue listeners) --
@@ -170,19 +217,19 @@ export class ModuleHealthCheck extends ModuleBase {
           const parsedRec: Record<string, Object> = parsed as Record<string, Object>;
           if (parsedRec['result'] !== undefined) {
             await this.clearAndSave();
-            this.config.logger.d('[ModuleHealthCheck] server acknowledged — counters cleared');
+            this.config.logger.d('[ModuleHealthCheck] server acknowledged, counters cleared');
             return;
           }
         } catch (parseErr) {
-          this.config.logger.w(`[ModuleHealthCheck] 2xx unparseable — retaining counters: ${parseErr}`);
+          this.config.logger.w(`[ModuleHealthCheck] 2xx unparseable, retaining counters: ${parseErr}`);
         }
       } else {
-        this.config.logger.w(`[ModuleHealthCheck] http ${res.statusCode} — retaining counters for next launch`);
+        this.config.logger.w(`[ModuleHealthCheck] http ${res.statusCode}, retaining counters for next launch`);
       }
       // Retain on any failure path so the next launch re-sends.
       await this.saveState();
     } catch (err) {
-      this.config.logger.w(`[ModuleHealthCheck] network error — retaining counters: ${err}`);
+      this.config.logger.w(`[ModuleHealthCheck] network error, retaining counters: ${err}`);
       await this.saveState();
     }
   }
@@ -196,7 +243,7 @@ export class ModuleHealthCheck extends ModuleBase {
     try {
       const parsed: Object = JSON.parse(raw);
       if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
-        // Malformed — reset + clear.
+        // Malformed, reset + clear.
         await this.clearAndSave();
         return;
       }
@@ -211,7 +258,7 @@ export class ModuleHealthCheck extends ModuleBase {
       this.maxConsecutiveBackoff = this.safeNumber(s['CBReq'] as number, 0);
     } catch (err) {
       // Dev guide explicitly says: malformed → reset + clear.
-      this.config.logger.w(`[ModuleHealthCheck] loadState, stored JSON malformed — resetting: ${err}`);
+      this.config.logger.w(`[ModuleHealthCheck] loadState, stored JSON malformed, resetting: ${err}`);
       await this.clearAndSave();
     }
   }

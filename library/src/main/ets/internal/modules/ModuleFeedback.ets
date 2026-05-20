@@ -53,7 +53,7 @@ class ShowingWidget {
  *   3. The overlay calls back via `handleFeedbackUrl(url)` on load
  *      intercept, and `onFeedbackClosedByUser()` when the overlay dismisses.
  *
- * No FeedbackPresenter interface — the SDK owns rendering end-to-end.
+ * No FeedbackPresenter interface, the SDK owns rendering end-to-end.
  */
 export class ModuleFeedback extends ModuleBase {
   private core: SdkCore;
@@ -179,15 +179,15 @@ export class ModuleFeedback extends ModuleBase {
     widgetResult: Record<string, Object> | null
   ): Promise<void> {
     if (widget === null) {
-      this.config.logger.w('[ModuleFeedback] reportFeedbackWidgetManually, null widget — dropped');
+      this.config.logger.w('[ModuleFeedback] reportFeedbackWidgetManually, null widget, dropped');
       return;
     }
     if (!this.core.consentModule.hasConsent(CountlyFeature.FEEDBACK)) {
-      this.config.logger.v('[ModuleFeedback] reportFeedbackWidgetManually, no feedback consent — dropped');
+      this.config.logger.v('[ModuleFeedback] reportFeedbackWidgetManually, no feedback consent, dropped');
       return;
     }
     if (this.core.deviceIdModule.isTemporary()) {
-      this.config.logger.d('[ModuleFeedback] reportFeedbackWidgetManually, temporary device ID mode — dropped');
+      this.config.logger.d('[ModuleFeedback] reportFeedbackWidgetManually, temporary device ID mode, dropped');
       return;
     }
     const seg: SegmentationMap = {};
@@ -267,7 +267,7 @@ export class ModuleFeedback extends ModuleBase {
   }
 
   public onFeedbackLoadTimedOut(): void {
-    this.config.logger.w('[ModuleFeedback] widget load timed out — closing overlay');
+    this.config.logger.w('[ModuleFeedback] widget load timed out, closing overlay');
     this.closeOverlayFromProtocol();
   }
 
@@ -289,7 +289,7 @@ export class ModuleFeedback extends ModuleBase {
     }
   }
 
-  /** See ModuleContent.openExternalUrl — identical two-tier lookup. */
+  /** See ModuleContent.openExternalUrl, identical two-tier lookup. */
   private openExternalUrl(url: string): void {
     const opener = this.externalUrlOpener;
     if (opener !== null) {
@@ -442,7 +442,7 @@ export class ModuleFeedback extends ModuleBase {
       if (typeRaw === FeedbackWidgetType.NPS) type = FeedbackWidgetType.NPS;
       else if (typeRaw === FeedbackWidgetType.SURVEY) type = FeedbackWidgetType.SURVEY;
       else if (typeRaw === FeedbackWidgetType.RATING) type = FeedbackWidgetType.RATING;
-      else { logger.w(`[ModuleFeedback] parseWidgetList, unknown type '${typeRaw}' — dropped`); continue; }
+      else { logger.w(`[ModuleFeedback] parseWidgetList, unknown type '${typeRaw}', dropped`); continue; }
       const nameRaw: Object | undefined = item['name'];
       const name: string = typeof nameRaw === 'string' ? nameRaw : '';
       const tagsRaw: Object | undefined = item['tg'];

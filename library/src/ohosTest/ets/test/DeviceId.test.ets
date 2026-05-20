@@ -81,17 +81,17 @@ export default function deviceIdTest() {
       });
       // Start a timed event, then swap user without merge.
       h.instance.events.startEvent('checkout');
-      expect(h.instance.consent.getConsent('events')).assertTrue();
+      expect(h.instance.consentModule.hasConsent('events')).assertTrue();
       await h.instance.deviceId.changeWithoutMerge('newUser');
       await flushTick(100);
       // All consents should have been cleared as part of the not-merged flow.
-      expect(h.instance.consent.getConsent('events')).assertFalse();
-      expect(h.instance.consent.getConsent('crashes')).assertFalse();
+      expect(h.instance.consentModule.hasConsent('events')).assertFalse();
+      expect(h.instance.consentModule.hasConsent('crashes')).assertFalse();
       // Timed events should have been cleared, so endEvent on the previous
       // key is a no-op (no events request produced).
       await h.instance.events.endEvent('checkout');
       await flushTick(60);
-      // Match on `events=` (the URL-encoded query param) — NOT bare `events`,
+      // Match on `events=` (the URL-encoded query param), NOT bare `events`,
       // which would also match the init-time consent snapshot whose JSON body
       // contains the feature name `"events":true` URL-encoded as %22events%22.
       // The init-time consent flush legitimately ships before this assertion.
@@ -115,7 +115,7 @@ export default function deviceIdTest() {
       expect(endCalls.length).assertEqual(1);
       // The closing end_session must carry the OLD device_id.
       expect(endCalls[0].data.indexOf(`device_id=${oldId}`) !== -1).assertTrue();
-      // No automatic begin yet — fresh session waits for the next foreground.
+      // No automatic begin yet, fresh session waits for the next foreground.
       expect(h.network.findCallsWithParam('begin_session=1').length).assertEqual(1);
 
       // Background → foreground cycles the session under the new id.
@@ -273,7 +273,7 @@ export default function deviceIdTest() {
     // storage manually from the first harness's persisted values.
 
     // Helper: build a second CountlyInstance wired to the same InMemoryStorage
-    // as the first harness. This simulates a cold restart — the second instance's
+    // as the first harness. This simulates a cold restart, the second instance's
     // init() reads the first harness's persisted cly_device_id / cly_device_id_type
     // state before picking an id. (buildHarness otherwise creates a fresh storage
     // per harness; this helper exists because several follow-up-init tests need
@@ -305,7 +305,7 @@ export default function deviceIdTest() {
     // followupInitPrevCustomProvidedCustomId: custom stored, custom supplied next → stored wins.
     it('followup_prevCustom_providedCustom_keepsStored', 0, async () => {
       const first: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('hjk'); });
-      // Reuse first harness's storage values to simulate a re-init — we don't have a
+      // Reuse first harness's storage values to simulate a re-init, we don't have a
       // shared-storage helper, so we manually replay the device-id keys into a fresh one.
       const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.setId('zxc'); });
       expect(second.instance.deviceId.getID()).assertEqual('hjk');
@@ -410,7 +410,7 @@ export default function deviceIdTest() {
       await first.instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=${tempEnc}&aa=45`);
       await flushTick(80);
 
-      // Simulate cold restart with the same storage — second init supplies a custom id.
+      // Simulate cold restart with the same storage, second init supplies a custom id.
       first.instance.requestQueue.halt();
       // Inspect the rewritten queue BEFORE init's post-resolveInitial drain
       // empties it. Setting shouldFail on the rehydrated network keeps the

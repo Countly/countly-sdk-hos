@@ -1,15 +1,20 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { Utils } from '../../../main/ets/internal/Utils';
+import { MonotonicClock } from '../../../main/ets/internal/MonotonicClock';
 import { Limits } from '../../../main/ets/internal/Limits';
 import { Logger } from '../../../main/ets/internal/Logger';
 import { SegmentationMap, SegmentationValue } from '../../../main/ets/types/Types';
 
 export default function utilsTest() {
   describe('UtilsTest', () => {
-    it('uniqueTimestampMs_alwaysIncreasing', 0, () => {
-      const a: number = Utils.uniqueTimestampMs();
-      const b: number = Utils.uniqueTimestampMs();
-      const c: number = Utils.uniqueTimestampMs();
+    it('monotonicClock_alwaysIncreasing', 0, () => {
+      // Migrated from `Utils.uniqueTimestampMs` static. The monotonic
+      // counter is now per-instance via `MonotonicClock` so each test
+      // builds its own clock and exercises the same invariant.
+      const clock: MonotonicClock = new MonotonicClock();
+      const a: number = clock.nowMs();
+      const b: number = clock.nowMs();
+      const c: number = clock.nowMs();
       expect(b > a).assertTrue();
       expect(c > b).assertTrue();
     });
@@ -60,10 +65,29 @@ export default function utilsTest() {
       expect(u.length > 0).assertTrue();
     });
 
-    it('generateEventId_unique', 0, () => {
-      const a: string = Utils.generateEventId();
-      const b: string = Utils.generateEventId();
+    it('monotonicClock_generateEventId_unique', 0, () => {
+      // Migrated from `Utils.generateEventId` static. Now an instance
+      // method on MonotonicClock so concurrent CountlyInstances don't
+      // share an id-generation counter.
+      const clock: MonotonicClock = new MonotonicClock();
+      const a: string = clock.generateEventId();
+      const b: string = clock.generateEventId();
       expect(a !== b).assertTrue();
+    });
+
+    it('monotonicClock_independent_perInstance', 0, () => {
+      // The whole point of moving off a static `Utils.lastMsTs` field:
+      // burning the counter on one clock must NOT contaminate another.
+      // A pre-bumped first clock's next value being lower than a fresh
+      // clock's would mean state crossed the boundary.
+      const a: MonotonicClock = new MonotonicClock();
+      // Burn 1000 timestamps to drive `lastMsTs` well past `Date.now()`.
+      for (let i: number = 0; i < 1000; i++) a.nowMs();
+      const b: MonotonicClock = new MonotonicClock();
+      const fresh: number = b.nowMs();
+      // A fresh clock returns ~Date.now(), not the burned counter's
+      // artificially-future value.
+      expect(fresh < a.nowMs()).assertTrue();
     });
 
     it('sanitizeSegmentation_dropsUnsupportedAndTruncates', 0, () => {
@@ -129,7 +153,7 @@ export default function utilsTest() {
     // --- ported from Android UtilsNetworkingTest ---
 
     it('isValidUrl_extendedCases', 0, () => {
-      // Ports Android testIsValidUrl — schemes and malformed inputs.
+      // Ports Android testIsValidUrl, schemes and malformed inputs.
       expect(Utils.isValidUrl('113')).assertFalse();
       expect(Utils.isValidUrl('sdfsdfgdg dfsd sdf dsf sdf')).assertFalse();
       expect(Utils.isValidUrl('www.d.dd')).assertFalse();
@@ -138,7 +162,7 @@ export default function utilsTest() {
     });
 
     it('encodeDecode_roundTrip', 0, () => {
-      // Ports Android testEncodeDecode — encoding and decoding must be inverse.
+      // Ports Android testEncodeDecode, encoding and decoding must be inverse.
       const samples: string[] = [
         '132',
         'āšēŗŗ',
@@ -153,7 +177,7 @@ export default function utilsTest() {
     });
 
     it('encode_specialCharactersMatchRFC3986', 0, () => {
-      // Ports Android testEncode — non-alphanumeric bytes get percent-encoded.
+      // Ports Android testEncode, non-alphanumeric bytes get percent-encoded.
       const input: string = '&#(%^$(&#^@$%$&!_)@(_$';
       const encoded: string = encodeURIComponent(input);
       // Hard-asserts that spaces/ampersands/etc are encoded, not passed through.
@@ -178,11 +202,14 @@ export default function utilsTest() {
 
     // --- ported from Android UtilsTimeTests ---
 
-    it('uniqueTimestampMs_strictlyIncreasingRapidCalls', 0, () => {
-      // Ports testDiff — tighter assertion on monotonicity under burst calls.
-      let prev: number = Utils.uniqueTimestampMs();
+    it('monotonicClock_strictlyIncreasingRapidCalls', 0, () => {
+      // Ports Android testDiff, tighter monotonicity assertion under
+      // burst calls. Same invariant the SDK relies on for server-side
+      // event ordering inside a single batch.
+      const clock: MonotonicClock = new MonotonicClock();
+      let prev: number = clock.nowMs();
       for (let i = 0; i < 50; i++) {
-        const next: number = Utils.uniqueTimestampMs();
+        const next: number = clock.nowMs();
         expect(next > prev).assertTrue();
         prev = next;
       }
@@ -231,7 +258,7 @@ export default function utilsTest() {
       input['bbd'] = 'ddd';
       input['bbe'] = 'eee';
       const out: SegmentationMap = Utils.sanitizeSegmentation(input as SegmentationMap, 2, 2, 10);
-      // 'a' survives as-is. All "bb*" keys collapse to "bb" — only one entry
+      // 'a' survives as-is. All "bb*" keys collapse to "bb", only one entry
       // remains with a 2-char value.
       expect(out['a']).assertEqual(1);
       const bbVal: Object | null | undefined = out['bb'];
@@ -362,7 +389,7 @@ export default function utilsTest() {
       // inner `typeof element` branch that was uncovered.
       // Double-cast through Object: the function's nominal `SegmentationValue`
       // signature is exactly what we're trying to violate, so ArkTS strict
-      // refuses a direct cast — going through Object is the documented escape
+      // refuses a direct cast, going through Object is the documented escape
       // hatch for testing invalid inputs without changing the prod signature.
       const bad: Object[] = ['ok', JSON.parse('{"o":1}')];
       expect(Utils.isSupportedSegmentationValue(bad as Object as SegmentationValue)).assertFalse();
@@ -373,7 +400,7 @@ export default function utilsTest() {
 
     it('sanitizeSegmentation_invokesOnDropForUnsupportedValue', 0, () => {
       // Specifically exercise the onDrop branch for an unsupported value type
-      // — the `droppedObject` case in the wider sanitize test asserts state,
+      //, the `droppedObject` case in the wider sanitize test asserts state,
       // but does NOT distinguish the value-type path from the empty-key path.
       const reasons: string[] = [];
       const input: Record<string, Object> = {};
@@ -390,7 +417,7 @@ export default function utilsTest() {
     });
 
     it('openExternalUrlViaContext_nullContext_logsAndReturns', 0, () => {
-      // Null context branch — must not throw and must log a warning.
+      // Null context branch, must not throw and must log a warning.
       const logger: Logger = new Logger();
       Utils.openExternalUrlViaContext(null, 'https://x.com', logger);
       // Reaching this point means the null path returned cleanly.

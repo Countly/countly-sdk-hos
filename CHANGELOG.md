@@ -1,12 +1,18 @@
 ## 26.1.0
 
-* Initial release of the Countly HarmonyOS / OpenHarmony SDK (ArkTS).
+* Initial release of the Countly HarmonyOS SDK (ArkTS).
 
 * Added multi-instance entrypoints on "Countly":
-  * "Countly.initShared(config)" / "Countly.sharedInstance()"
+  * "Countly.initShared(config)" / "Countly.sharedInstance()", initShared is smart: returns the cached instance when healthy, auto-replaces it (via "stop()") when the existing one is stopped, halted, or UCM-locked. Single in-process re-init API.
   * "Countly.createInstance(name, config)" / "Countly.getInstance(name)" / "Countly.listInstances()"
-  * "Countly.haltAll()"
+  * "Countly.stopAll()", stops every active instance, preserves storage.
+  * "Countly.haltAll()", halts every active instance and wipes storage.
   * Each instance owns its own storage, device ID, queues, and HarmonyOS lifecycle subscription.
+
+* Added the "stop" / "halt" lifecycle distinction on "CountlyInstance":
+  * "instance.stop()", halts in-memory (drains modules, halts the queue, deregisters lifecycle, cancels timers); persisted storage is preserved.
+  * "instance.halt()", does "stop()" then wipes every persisted SDK key. For "user data deletion" flows.
+  * Both are idempotent and per-instance isolated, halting one does not affect siblings.
 
 * Added the events API on "countly.events":
   * "recordEvent(key, segmentation, count, sum, duration)"
@@ -40,12 +46,14 @@
   * Predefined properties: name, username, email, organization, phone, picture, gender, byear
 
 * Added the consent API on "countly.consent":
-  * "giveConsent(featureNames)" / "removeConsent(featureNames)"
   * "giveConsentAll()" / "removeConsentAll()"
-  * "setConsent(featureNames, given)"
-  * "getConsent(featureName)" / "checkAllConsent()"
-  * "createFeatureGroup(groupName, features)" / "setConsentFeatureGroup(groupName, given)"
-  * Init-time configuration via "CountlyConfig.consent.setRequiresConsent(true)" and "setEnabled(featureNames)"
+  * "checkAllConsent()"
+  * Init-time configuration via "CountlyConfig.consent.setRequiresConsent(true)" and "giveAll()"
+
+* Added Unknown Consent Mode via "CountlyConfig.consent.enableUnknownConsentMode()". Collects telemetry locally with the queue paused and the network transport silenced; nothing ships until the integrator resolves. The instance keeps running through both paths.
+  * "giveConsentAll()", unsilences and resumes; buffered data ships. SDK continues with full consent.
+  * "removeConsentAll()", clears the buffered queue, ships a single all-false revocation snapshot, locks runtime consent ("consent is set per init"). Re-init with a new "CountlyConfig" to unlock.
+  * Implies "setRequiresConsent(true)".
 
 * Added the device ID API on "countly.deviceId":
   * "setID(deviceId)"
@@ -72,7 +80,7 @@
   * "addDirectRequest(parameters)"
   * "recordMetrics(metricOverride)"
 
-* Added automatic lifecycle tracking. Each "CountlyInstance" subscribes to the HarmonyOS "applicationStateChange" event during "init()" and unsubscribes during "halt()". Manual control remains available via "Countly.lifecycleForegroundAll()" and "Countly.lifecycleBackgroundAll()".
+* Added automatic lifecycle tracking. Each instance subscribes to HarmonyOS "applicationStateChange" on "init()" and unsubscribes on "stop()" / "halt()". Manual control available via "Countly.lifecycleForegroundAll()" / "lifecycleBackgroundAll()".
 
 * Added automatic view tracking via "CountlyConfig.views.enableAutomaticViewTracking()", with optional short names ("enableAutomaticViewShortNames") and ability exclusions ("setAutomaticViewTrackingExclusions").
 
@@ -83,6 +91,7 @@
   * Event and request queue size limits
   * Key and value length limits
   * Tracking control (global, events, views)
+  * Automatic view, session, and crash tracking toggles
   * Event and user-property allow/block lists
   * Segmentation allow/block lists, including per-event segmentation filtering
 

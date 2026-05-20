@@ -19,7 +19,7 @@ import { CountlyFeedbackOverlay } from './CountlyFeedbackOverlay';
  * ModuleContent or ModuleFeedback publish state to the OverlayStore, the
  * inner components re-render automatically via @StorageLink. Feedback is
  * stacked *after* content so if both happen to be active (e.g. a race
- * during a device-id change) feedback visually wins — matching the dev
+ * during a device-id change) feedback visually wins, matching the dev
  * guide's "content overlay is not shown if a feedback widget is currently
  * being displayed" rule at the UI level as a belt-and-braces backup to
  * ModuleContent's `feedbackShowingProvider` check.

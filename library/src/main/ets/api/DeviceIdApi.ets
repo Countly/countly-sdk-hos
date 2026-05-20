@@ -2,7 +2,7 @@ import { Logger } from '../internal/Logger';
 import { ModuleDeviceId } from '../internal/modules/ModuleDeviceId';
 import { DeviceIdType } from '../types/Types';
 
-/** User-facing device-id surface — accessed via `Countly.sharedInstance().deviceId`. */
+/** User-facing device-id surface, accessed via `Countly.sharedInstance().deviceId`. */
 export class DeviceIdApi {
   private readonly logger: Logger;
   private readonly module: ModuleDeviceId;

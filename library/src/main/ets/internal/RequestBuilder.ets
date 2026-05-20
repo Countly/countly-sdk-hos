@@ -19,7 +19,7 @@ export class RequestBuilder {
   }
 
   public baseParams(): Record<string, string> {
-    const ts: number = Utils.uniqueTimestampMs();
+    const ts: number = this.config.clock.nowMs();
     const out: Record<string, string> = {};
     out['app_key'] = this.config.appKey;
     out['device_id'] = this.deviceIdProvider();
@@ -34,7 +34,7 @@ export class RequestBuilder {
     // same av that DeviceInfo.collect reports in `metrics`. Without this,
     // integrators overriding _app_version see the override only in the
     // metrics JSON, while av (used for crash/view attribution) still uses
-    // the untouched config value — a silent reporting inconsistency.
+    // the untouched config value, a silent reporting inconsistency.
     const av: string | undefined = this.config.metricOverride['_app_version'];
     out['av'] = (av && av.length > 0) ? av : this.config.appVersion;
     return out;
@@ -52,7 +52,7 @@ export class RequestBuilder {
   /**
    * Server "t" source marker per dev guide:
    *   0 = developer-supplied, 1 = SDK-generated, 3 = temporary (offline).
-   * Exhaustive switch on the enum — ArkTS will warn if new variants are added
+   * Exhaustive switch on the enum, ArkTS will warn if new variants are added
    * without a case here.
    */
   private static deviceIdTypeToWire(type: DeviceIdType): string {

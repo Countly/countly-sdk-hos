@@ -202,8 +202,7 @@ export default function feedbackTest() {
     it('consentRevoked_hidesFeedbackOverlay', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true);
-        cfg.consent.setEnabled(['feedback']);
+        cfg.consent.setRequiresConsent(true).giveAll();
       });
       const widget = new CountlyFeedbackWidget('w', FeedbackWidgetType.NPS, 'N', [], null);
       await h.instance.presentFeedbackWidget(widget, null);
@@ -215,7 +214,7 @@ export default function feedbackTest() {
 
     // ---------- Ported from ModuleFeedbackTests.java ----------
 
-    // parseFeedbackList_null — parsing an empty/null body returns an empty list (no error).
+    // parseFeedbackList_null, parsing an empty/null body returns an empty list (no error).
     it('parseWidgetList_emptyBody_returnsEmpty', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -230,7 +229,7 @@ export default function feedbackTest() {
       expect(err).assertEqual(null);
     });
 
-    // parseFeedbackList_oneGoodWithGarbage — entries with unknown types or missing _id/type are dropped.
+    // parseFeedbackList_oneGoodWithGarbage, entries with unknown types or missing _id/type are dropped.
     it('parseWidgetList_oneGoodWithGarbage', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -253,7 +252,7 @@ export default function feedbackTest() {
       expect(widgets[0].tags[0]).assertEqual('/');
     });
 
-    // parseFeedbackList — mixed survey/nps/rating all parse.
+    // parseFeedbackList, mixed survey/nps/rating all parse.
     it('parseWidgetList_mixedTypes', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -280,7 +279,7 @@ export default function feedbackTest() {
       expect(widgets[3].name).assertEqual('ratingName1');
     });
 
-    // parseFaultyFeedbackList — missing 'tg' → empty tags; missing 'name' → ''; missing '_id' → dropped.
+    // parseFaultyFeedbackList, missing 'tg' → empty tags; missing 'name' → ''; missing '_id' → dropped.
     it('parseWidgetList_faulty_droppedOrDefaulted', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -315,7 +314,7 @@ export default function feedbackTest() {
       expect(widgets[5].name).assertEqual('');
     });
 
-    // reportFeedbackWidgetManuallyNPSReported — NPS result records widget_id/rating/comment.
+    // reportFeedbackWidgetManuallyNPSReported, NPS result records widget_id/rating/comment.
     it('reportFeedbackWidgetManually_npsReported', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -331,7 +330,7 @@ export default function feedbackTest() {
       expect(body.indexOf(encodeURIComponent('"platform":"h"')) !== -1).assertTrue();
     });
 
-    // reportFeedbackWidgetManuallyRatingReported — rating result records extra email/contactMe.
+    // reportFeedbackWidgetManuallyRatingReported, rating result records extra email/contactMe.
     it('reportFeedbackWidgetManually_ratingReported', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -350,7 +349,7 @@ export default function feedbackTest() {
       expect(body.indexOf(encodeURIComponent('"contactMe":true')) !== -1).assertTrue();
     });
 
-    // reportFeedbackWidgetManuallyNPSClosed — null result records closed=1.
+    // reportFeedbackWidgetManuallyNPSClosed, null result records closed=1.
     it('reportFeedbackWidgetManually_npsClosed', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -363,7 +362,7 @@ export default function feedbackTest() {
       expect(calls[0].data.indexOf(encodeURIComponent('"widget_id":"1234"')) !== -1).assertTrue();
     });
 
-    // reportFeedbackWidgetManuallyRatingClosed — null result on rating records closed=1.
+    // reportFeedbackWidgetManuallyRatingClosed, null result on rating records closed=1.
     it('reportFeedbackWidgetManually_ratingClosed', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -376,7 +375,7 @@ export default function feedbackTest() {
       expect(calls[0].data.indexOf(encodeURIComponent('"widget_id":"1234"')) !== -1).assertTrue();
     });
 
-    // reportFeedbackWidgetManuallySurveyClosed — null result on survey records closed=1.
+    // reportFeedbackWidgetManuallySurveyClosed, null result on survey records closed=1.
     it('reportFeedbackWidgetManually_surveyClosed', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -389,8 +388,8 @@ export default function feedbackTest() {
       expect(calls[0].data.indexOf(encodeURIComponent('"widget_id":"1234"')) !== -1).assertTrue();
     });
 
-    // reportFeedbackWidgetManuallyNPSBadResult_2 — out-of-range NPS rating is warned but still shipped.
-    // (HOS treats the server as source of truth; Android drops — ported as "still recorded with warning".)
+    // reportFeedbackWidgetManuallyNPSBadResult_2, out-of-range NPS rating is warned but still shipped.
+    // (HOS treats the server as source of truth; Android drops, ported as "still recorded with warning".)
     it('reportFeedbackWidgetManually_npsOutOfRangeRating_stillSent', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -402,7 +401,7 @@ export default function feedbackTest() {
       expect(calls[0].data.indexOf(encodeURIComponent('"rating":11')) !== -1).assertTrue();
     });
 
-    // reportFeedbackWidgetManuallyRatingBadResult_2 — out-of-range rating rating is warned but still shipped.
+    // reportFeedbackWidgetManuallyRatingBadResult_2, out-of-range rating rating is warned but still shipped.
     it('reportFeedbackWidgetManually_ratingOutOfRangeRating_stillSent', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });
@@ -414,7 +413,7 @@ export default function feedbackTest() {
       expect(calls[0].data.indexOf(encodeURIComponent('"rating":6')) !== -1).assertTrue();
     });
 
-    // internalLimit_reportFeedbackWidgetManuallySurvey — max value size applies to string segmentation values;
+    // internalLimit_reportFeedbackWidgetManuallySurvey, max value size applies to string segmentation values;
     // keys are NOT truncated (feedback widget event).
     it('reportFeedbackWidgetManually_survey_valuesTruncated_keysPreserved', 0, async () => {
       resetStore();
@@ -433,7 +432,7 @@ export default function feedbackTest() {
       expect(body.indexOf(encodeURIComponent('"key3":"va"')) !== -1).assertTrue();
     });
 
-    // internalLimit_reportFeedbackWidgetManually_setMaxValueSize — values of all types:
+    // internalLimit_reportFeedbackWidgetManually_setMaxValueSize, values of all types:
     // strings truncate, numbers/booleans pass through, Object/Map entries are stripped.
     it('reportFeedbackWidgetManually_nps_maxValueSize_stripsUnsupported', 0, async () => {
       resetStore();
@@ -458,7 +457,7 @@ export default function feedbackTest() {
       expect(body.indexOf('%22map%22') === -1).assertTrue();
     });
 
-    // reportFeedbackWidgetManually_validateSupportedArrays — primitive arrays survive,
+    // reportFeedbackWidgetManually_validateSupportedArrays, primitive arrays survive,
     // mixed Object[] arrays are stripped.
     it('reportFeedbackWidgetManually_supportedArrays', 0, async () => {
       resetStore();
@@ -483,7 +482,7 @@ export default function feedbackTest() {
       expect(body.indexOf('arrMixed') === -1).assertTrue();
     });
 
-    // reportFeedbackWidgetManually_unsupportedDataTypesSegmentation — Objects/plain maps are stripped.
+    // reportFeedbackWidgetManually_unsupportedDataTypesSegmentation, Objects/plain maps are stripped.
     it('reportFeedbackWidgetManually_unsupportedTypes_dropped', 0, async () => {
       resetStore();
       const h: Harness = await buildHarness((cfg) => { cfg.consent.giveAll(); });

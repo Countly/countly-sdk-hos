@@ -25,6 +25,25 @@ interface ActiveView {
   willStartAgain: boolean;
 }
 
+/**
+ * View state captured at `onEnterBackground` for replay at
+ * `onEnterForeground`. Keeps name, kind (auto-stopped vs manual), and
+ * the most recently accumulated segmentation so the restarted view
+ * carries the integrator's intent forward into the new session.
+ * ArkTS strict mode bans untyped object literals so a named class is
+ * the idiomatic shape.
+ */
+class ViewRestartSnapshot {
+  public name: string;
+  public autoStopped: boolean;
+  public segmentation: SegmentationMap;
+  constructor(name: string, autoStopped: boolean, segmentation: SegmentationMap) {
+    this.name = name;
+    this.autoStopped = autoStopped;
+    this.segmentation = segmentation;
+  }
+}
+
 const RESERVED_VIEW_KEYS: string[] = ['name', 'visit', 'start', 'segment', 'bounce', 'exit', 'view', 'domain', 'dur'];
 
 /**
@@ -42,6 +61,14 @@ export class ModuleViews extends ModuleBase {
   private events: ModuleEvents;
   private activeViews: Map<string, ActiveView> = new Map<string, ActiveView>();
   private currentAutoStoppedId: string = '';
+  /**
+   * Snapshots of every active view captured at `onEnterBackground` so
+   * `onEnterForeground` can restart each one with a fresh `visit:1`
+   * event. Both auto-stopped and manual views are restarted, the
+   * integrator's lifecycle intent ("I started this view") carries
+   * across bg/fg cycles. Empty array = nothing to restart.
+   */
+  private restartOnForeground: ViewRestartSnapshot[] = [];
   private currentViewId: string = '';
   private previousViewId: string = '';
   private firstViewInSession: boolean = true;
@@ -72,13 +99,35 @@ export class ModuleViews extends ModuleBase {
   }
 
   public async startAutoStoppedView(name: string, segmentation: SegmentationMap | null): Promise<string | null> {
-    if (!this.core.consentModule.hasConsent(CountlyFeature.VIEWS)) return null;
-    if (!this.config.serverConfig.viewTrackingEnabled) return null;
+    if (this.rejectIfHalted('ModuleViews', 'startAutoStoppedView')) return null;
+    if (!this.core.consentModule.hasConsent(CountlyFeature.VIEWS)) {
+      this.config.logger.w(`[ModuleViews] startAutoStoppedView, dropped, no VIEWS consent (name=${name})`);
+      return null;
+    }
+    if (!this.config.serverConfig.viewTrackingEnabled) {
+      this.config.logger.w(`[ModuleViews] startAutoStoppedView, dropped, view tracking disabled by server config (name=${name})`);
+      return null;
+    }
     if (Utils.isNullOrEmpty(name)) {
-      this.config.logger.w('[ModuleViews] startAutoStoppedView, empty name — omitted');
+      this.config.logger.w('[ModuleViews] startAutoStoppedView, empty name, omitted');
       return null;
     }
     if (this.currentAutoStoppedId.length > 0) {
+      const current: ActiveView | undefined = this.activeViews.get(this.currentAutoStoppedId);
+      if (current !== undefined && current.name === name) {
+        // Same auto-stopped view requested twice in a row, no-op so we
+        // don't emit a phantom stop+start pair. This guards two scenarios:
+        //   1. `onEnterForeground` restarted view `name`, then the
+        //      platform's `onAbilityForeground` fired
+        //      `startAutoStoppedView(name)` for the host UIAbility (same
+        //      name). The integrator's restart should win, the platform's
+        //      duplicate call is a no-op.
+        //   2. The platform fires `onAbilityForeground` twice for the
+        //      same ability (rare but possible on focus-change
+        //      sequences). Second call no-ops.
+        this.config.logger.d(`[ModuleViews] startAutoStoppedView, '${name}' already the current auto-stopped view, no-op`);
+        return this.currentAutoStoppedId;
+      }
       await this.stopViewWithID(this.currentAutoStoppedId, null);
     }
     const id: string = await this.startInternal(name, segmentation, true);
@@ -87,16 +136,24 @@ export class ModuleViews extends ModuleBase {
   }
 
   public async startView(name: string, segmentation: SegmentationMap | null): Promise<string | null> {
-    if (!this.core.consentModule.hasConsent(CountlyFeature.VIEWS)) return null;
-    if (!this.config.serverConfig.viewTrackingEnabled) return null;
+    if (this.rejectIfHalted('ModuleViews', 'startView')) return null;
+    if (!this.core.consentModule.hasConsent(CountlyFeature.VIEWS)) {
+      this.config.logger.w(`[ModuleViews] startView, dropped, no VIEWS consent (name=${name})`);
+      return null;
+    }
+    if (!this.config.serverConfig.viewTrackingEnabled) {
+      this.config.logger.w(`[ModuleViews] startView, dropped, view tracking disabled by server config (name=${name})`);
+      return null;
+    }
     if (Utils.isNullOrEmpty(name)) {
-      this.config.logger.w('[ModuleViews] startView, empty name — omitted');
+      this.config.logger.w('[ModuleViews] startView, empty name, omitted');
       return null;
     }
     return this.startInternal(name, segmentation, false);
   }
 
   public async stopViewWithName(name: string, segmentation: SegmentationMap | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleViews', 'stopViewWithName')) return;
     if (!this.core.consentModule.hasConsent(CountlyFeature.VIEWS)) return;
     if (!this.config.serverConfig.viewTrackingEnabled) return;
     // If multiple, stop the latest started.
@@ -112,6 +169,7 @@ export class ModuleViews extends ModuleBase {
   }
 
   public async stopViewWithID(id: string, segmentation: SegmentationMap | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleViews', 'stopViewWithID')) return;
     if (!this.core.consentModule.hasConsent(CountlyFeature.VIEWS)) return;
     if (!this.config.serverConfig.viewTrackingEnabled) return;
     const view: ActiveView | undefined = this.activeViews.get(id);
@@ -129,12 +187,13 @@ export class ModuleViews extends ModuleBase {
     if (this.currentAutoStoppedId === id) this.currentAutoStoppedId = '';
 
     // Force the stop event's `id` field to the view id, so start/stop pairs
-    // share the same id on the wire — the dashboard relies on it to
+    // share the same id on the wire, the dashboard relies on it to
     // attribute the duration to the right view.
     await this.events.recordViewEvent(id, finalSeg, durSec);
   }
 
   public pauseViewWithID(id: string): void {
+    if (this.rejectIfHalted('ModuleViews', 'pauseViewWithID')) return;
     const view: ActiveView | undefined = this.activeViews.get(id);
     if (!view) return;
     if (view.startTsSec === 0) return;
@@ -142,6 +201,7 @@ export class ModuleViews extends ModuleBase {
   }
 
   public resumeViewWithID(id: string): void {
+    if (this.rejectIfHalted('ModuleViews', 'resumeViewWithID')) return;
     const view: ActiveView | undefined = this.activeViews.get(id);
     if (!view) return;
     if (view.startTsSec !== 0) return;
@@ -149,6 +209,7 @@ export class ModuleViews extends ModuleBase {
   }
 
   public async stopAllViews(segmentation: SegmentationMap | null): Promise<void> {
+    if (this.rejectIfHalted('ModuleViews', 'stopAllViews')) return;
     const ids: string[] = this.activeViewIds();
     for (let i = 0; i < ids.length; i++) {
       await this.stopViewWithID(ids[i], segmentation);
@@ -156,6 +217,7 @@ export class ModuleViews extends ModuleBase {
   }
 
   public addSegmentationToViewWithID(id: string, seg: SegmentationMap): void {
+    if (this.rejectIfHalted('ModuleViews', 'addSegmentationToViewWithID')) return;
     const view: ActiveView | undefined = this.activeViews.get(id);
     if (!view) return;
     view.accumulatedSegmentation = Utils.mergeMaps(view.accumulatedSegmentation, seg);
@@ -171,6 +233,7 @@ export class ModuleViews extends ModuleBase {
   }
 
   public addSegmentationToViewWithName(name: string, seg: SegmentationMap): void {
+    if (this.rejectIfHalted('ModuleViews', 'addSegmentationToViewWithName')) return;
     const ids: string[] = this.activeViewIds();
     for (let i = ids.length - 1; i >= 0; i--) {
       const v: ActiveView | undefined = this.activeViews.get(ids[i]);
@@ -182,17 +245,19 @@ export class ModuleViews extends ModuleBase {
   }
 
   public setGlobalViewSegmentation(seg: SegmentationMap): void {
+    if (this.rejectIfHalted('ModuleViews', 'setGlobalViewSegmentation')) return;
     this.globalSegmentation = Utils.mergeMaps({}, seg);
   }
 
   public updateGlobalViewSegmentation(seg: SegmentationMap): void {
+    if (this.rejectIfHalted('ModuleViews', 'updateGlobalViewSegmentation')) return;
     this.globalSegmentation = Utils.mergeMaps(this.globalSegmentation, seg);
   }
 
   /**
    * Record an orientation change. Auto-driven by `LifecycleObserver` via
    * `applicationContext.on('environment', ...)` when
-   * `trackOrientationChanges` is on (default true) — see
+   * `trackOrientationChanges` is on (default true), see
    * `CountlyInstance.handleConfigurationUpdated`. Integrators can also
    * call this directly for manual control or in test harnesses.
    *
@@ -202,28 +267,29 @@ export class ModuleViews extends ModuleBase {
    * config-update fired with no actual orientation change) don't inflate
    * the event queue.
    *
-   * `forceSend=true` bypasses the dedupe — used at session boundaries so
+   * `forceSend=true` bypasses the dedupe, used at session boundaries so
    * every begin_session emits a fresh orientation baseline. Dashboards
    * always see the orientation that was current when the session started,
    * even if the device hasn't rotated since the last session. The
    * default-false matches the config-update path which should keep deduping.
    */
   public async updateOrientation(mode: string, forceSend: boolean = false): Promise<void> {
+    if (this.rejectIfHalted('ModuleViews', 'updateOrientation')) return;
     if (!this.config.trackOrientationChanges) {
-      this.config.logger.v('[ModuleViews] updateOrientation, trackOrientationChanges disabled — ignored');
+      this.config.logger.v('[ModuleViews] updateOrientation, trackOrientationChanges disabled, ignored');
       return;
     }
     if (!this.core.consentModule.hasConsent(CountlyFeature.USERS)) {
-      this.config.logger.v('[ModuleViews] updateOrientation, no users consent — ignored');
+      this.config.logger.v('[ModuleViews] updateOrientation, no users consent, ignored');
       return;
     }
     const normalized: string = mode === 'portrait' || mode === 'landscape' ? mode : '';
     if (normalized === '') {
-      this.config.logger.w(`[ModuleViews] updateOrientation, unsupported mode '${mode}' — expected 'portrait' or 'landscape'`);
+      this.config.logger.w(`[ModuleViews] updateOrientation, unsupported mode '${mode}', expected 'portrait' or 'landscape'`);
       return;
     }
     if (!forceSend && normalized === this.lastOrientationMode) {
-      this.config.logger.d(`[ModuleViews] updateOrientation, unchanged (${normalized}) — skipped`);
+      this.config.logger.d(`[ModuleViews] updateOrientation, unchanged (${normalized}), skipped`);
       return;
     }
     this.lastOrientationMode = normalized;
@@ -233,7 +299,7 @@ export class ModuleViews extends ModuleBase {
 
   public override async onConsentChanged(_added: string[], removed: string[], _source: ConsentChangeSource): Promise<void> {
     // Clear active views when VIEWS is revoked. Also clear when SESSIONS is
-    // revoked: views are session-bound per dev guide — a view without a
+    // revoked: views are session-bound per dev guide, a view without a
     // session on the server is an orphan and would inflate dashboards.
     const viewsRevoked: boolean = removed.indexOf(CountlyFeature.VIEWS) !== -1;
     const sessionsRevoked: boolean = removed.indexOf(CountlyFeature.SESSIONS) !== -1;
@@ -248,10 +314,10 @@ export class ModuleViews extends ModuleBase {
       this.previousViewId = '';
       this.firstViewInSession = true;
       if (dropped > 0) {
-        this.config.logger.i(`[ModuleViews] onConsentChanged, ${reason} consent revoked — dropped ${dropped} active view(s) without final event`);
+        this.config.logger.i(`[ModuleViews] onConsentChanged, ${reason} consent revoked, dropped ${dropped} active view(s) without final event`);
       }
     }
-    // Reset orientation dedupe when USERS consent is revoked — otherwise the
+    // Reset orientation dedupe when USERS consent is revoked, otherwise the
     // first orientation after re-grant would be suppressed by the stale
     // lastOrientationMode, leaving the server without a baseline value.
     if (removed.indexOf(CountlyFeature.USERS) !== -1) {
@@ -266,51 +332,83 @@ export class ModuleViews extends ModuleBase {
   }
 
   public override onEnterBackground(): void {
-    // Capture the foreground duration slice so the dashboard doesn't lose it,
-    // then mark the view paused. On foreground we resume without emitting a
-    // `visit=1` (which would double-count a "new visit"). Background time is
-    // NOT counted toward view duration.
+    // Mirrors Android's `(autoViewTracker || restartManualViews)` gate:
+    //   - `autoViewTracker` = `config.automaticViewTracking` (whether
+    //     auto view tracking is enabled at config level).
+    //   - `restartManualViews` = `!config.disableViewRestartForManual`
+    //     (whether `startView`-started views participate in the
+    //     bg→stop / fg→restart cycle).
+    // If neither is enabled the integrator manages everything manually,
+    // bg/fg is a no-op.
+    //
+    // Per-view participation within the snapshot:
+    //   - Auto-stopped views (`view.autoStopped=true`, started via
+    //     `startAutoStoppedView`, either platform-driven from
+    //     `onAbilityForeground` or integrator-driven for a named view
+    //     like 'Home'): always participate when the gate is open.
+    //     `currentAutoStoppedId` tracks the single-active invariant.
+    //   - Manual views (`view.autoStopped=false`, started via
+    //     `startView`): participate ONLY if `restartManualViews=true`.
+    //     With `disableViewRestartForManual=true` they're left
+    //     completely alone (their timing accumulates across bg/fg).
+    const restartManualViews: boolean = !this.config.disableViewRestartForManual;
+    const autoViewTracker: boolean = this.config.automaticViewTracking;
+    if (!autoViewTracker && !restartManualViews) return;
+
     const ids: string[] = this.activeViewIds();
-    const nowSec: number = Math.round(Date.now() / 1000);
+    const snapshots: ViewRestartSnapshot[] = [];
+    const idsToStop: string[] = [];
     for (let i = 0; i < ids.length; i++) {
       const view: ActiveView | undefined = this.activeViews.get(ids[i]);
-      if (!view) continue;
-      view.willStartAgain = !this.config.disableViewRestartForManual || view.autoStopped;
-      if (view.willStartAgain && view.startTsSec !== 0) {
-        const sliceSec: number = nowSec - view.startTsSec;
-        if (sliceSec > 0) {
-          // Fire-and-forget the background slice — a rejection here mustn't
-          // block the lifecycle callback. The error is logged instead.
-          const seg: SegmentationMap = this.stripReservedAndSanitize(
-            Utils.mergeMaps(this.globalSegmentation, view.accumulatedSegmentation)
-          );
-          seg['name'] = view.name;
-          // Slice event is the same view continuing — keep its id stable.
-          this.events.recordViewEvent(ids[i], seg, sliceSec).catch((err: Object) => {
-            this.config.logger.e(`[ModuleViews] onEnterBackground, slice event rejected: ${err}`);
-          });
-        }
-        // Pause — resume will update startTsSec on foreground.
-        view.startTsSec = 0;
-      }
+      if (view === undefined) continue;
+      // Manual views skip the snapshot when disabled.
+      if (!view.autoStopped && !restartManualViews) continue;
+      // Paused views (startTsSec=0) are skipped entirely, they aren't
+      // accumulating duration so there's nothing to flush, and emitting
+      // a stop+restart would change their integrator-controlled state.
+      // The view stays in `activeViews` so the integrator can resume it
+      // explicitly later.
+      if (view.startTsSec === 0) continue;
+      // Copy the accumulated segmentation, the original map is owned by
+      // the ActiveView and would be mutated/reset when we restart.
+      const segCopy: SegmentationMap = Utils.cloneSegmentationMap(view.accumulatedSegmentation);
+      snapshots.push(new ViewRestartSnapshot(view.name, view.autoStopped, segCopy));
+      idsToStop.push(ids[i]);
+    }
+    this.restartOnForeground = snapshots;
+    // Collected first so the in-loop `activeViews` mutations from
+    // `stopViewWithID` don't trip the iteration.
+    for (let i = 0; i < idsToStop.length; i++) {
+      this.stopViewWithID(idsToStop[i], null).catch((err: Object) => {
+        this.config.logger.e(`[ModuleViews] onEnterBackground, view stop rejected: ${err}`);
+      });
     }
   }
 
   public override onEnterForeground(): void {
-    // Restart any "willStartAgain" views: reset startTsSec so a subsequent
-    // stopView measures only the new foreground slice.
-    const ids: string[] = this.activeViewIds();
-    for (let i = 0; i < ids.length; i++) {
-      const view: ActiveView | undefined = this.activeViews.get(ids[i]);
-      if (view && view.willStartAgain) {
-        view.startTsSec = Math.round(Date.now() / 1000);
-        view.willStartAgain = false;
-      }
+    // Restart every view that was active at background time. Order
+    // matches the snapshot order from background so any integrator that
+    // relies on view-id chain (`pvid`) gets the same sequence. Auto-
+    // stopped views use `startAutoStoppedView` so the single-active
+    // invariant + same-name dedup with platform `onAbilityForeground`
+    // both keep working; manual views use `startView`.
+    const snapshots: ViewRestartSnapshot[] = this.restartOnForeground;
+    if (snapshots.length === 0) return;
+    this.restartOnForeground = [];
+    for (let i = 0; i < snapshots.length; i++) {
+      const snap: ViewRestartSnapshot = snapshots[i];
+      const seg: SegmentationMap = snap.segmentation;
+      const restarter: Promise<string | null> = snap.autoStopped
+        ? this.startAutoStoppedView(snap.name, seg)
+        : this.startView(snap.name, seg);
+      restarter.catch((err: Object) => {
+        this.config.logger.e(`[ModuleViews] onEnterForeground, restart of '${snap.name}' (autoStopped=${snap.autoStopped}) rejected: ${err}`);
+      });
     }
   }
 
   private async startInternal(name: string, segmentation: SegmentationMap | null, autoStopped: boolean): Promise<string> {
-    const id: string = Utils.generateEventId();
+    const id: string = this.config.clock.generateEventId();
     this.previousViewId = this.currentViewId;
     this.currentViewId = id;
 

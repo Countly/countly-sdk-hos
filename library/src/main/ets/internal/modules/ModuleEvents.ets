@@ -36,19 +36,29 @@ interface QueuedEvent {
 
 interface TimedEvent {
   startTs: number;
-  startHour: number;
-  startDow: number;
 }
 
 const IMMEDIATE_FLUSH_KEYS: string[] = ['[CLY]_nps', '[CLY]_survey', '[CLY]_push_action'];
 
 /**
  * Events + timed events. Internal events (keys starting with `[CLY]_`) bypass
- * the events-consent check — they use their own feature consent instead.
+ * the events-consent check, they use their own feature consent instead.
  */
 export class ModuleEvents extends ModuleBase {
   private core: SdkCore;
   private eventQueue: QueuedEvent[] = [];
+  /**
+   * Mutex guarding `flushEventQueue`. Lifecycle background fans the same
+   * flush call across three modules (sessions → endSessionInternal calls
+   * core.flushEvents, events.onEnterBackground calls flushEventQueue,
+   * and `endSessionInternal` itself also routes through this method).
+   * Without this flag two concurrent callers `slice(0, count)` the SAME
+   * events before either has spliced — verified live, two identical
+   * REQUEST ENQUEUED entries 1ms apart with the same 6 events. The flag
+   * makes the second call a no-op; the events stay in queue and ship on
+   * the next flush trigger (or via end_session's await).
+   */
+  private flushInProgress: boolean = false;
   private timed: Map<string, TimedEvent> = new Map<string, TimedEvent>();
   private lastEventId: string = '';
   private lastEventName: string = '';
@@ -56,7 +66,7 @@ export class ModuleEvents extends ModuleBase {
   /** Back-pointer so events can get current/previous view IDs from Views module. */
   private viewIdProvider: () => ViewIds = (): ViewIds => new ViewIds('', '');
 
-  /** Foreground/background tracking toggle — when set, cly_v is added to segmentation. */
+  /** Foreground/background tracking toggle, when set, cly_v is added to segmentation. */
   private visibilityTracking: boolean = false;
   private previousNameRecording: boolean = false;
   // Default false so events recorded BEFORE the first onEnterForeground (e.g.
@@ -81,7 +91,7 @@ export class ModuleEvents extends ModuleBase {
     this.inForeground = false;
     // Flush before going to background so we don't lose events. A rejection
     // here means the events remain in the in-memory queue for the next tick,
-    // but we still log it loudly — a silent drop masks data-loss bugs.
+    // but we still log it loudly, a silent drop masks data-loss bugs.
     this.flushEventQueue().catch((err: Object) => {
       this.config.logger.e(`[ModuleEvents] onEnterBackground, flushEventQueue rejected: ${err}`);
     });
@@ -91,7 +101,7 @@ export class ModuleEvents extends ModuleBase {
    * Public event recording entry. Consent gating:
    *   - custom events require "events" consent
    *   - internal events ([CLY]_*) require their feature-specific consent ONLY
-   *     (not "events") per dev guide. We enforce that here — don't trust
+   *     (not "events") per dev guide. We enforce that here, don't trust
    *     external callers to have done it.
    */
   public async recordEvent(
@@ -101,13 +111,14 @@ export class ModuleEvents extends ModuleBase {
     sum: number,
     dur: number
   ): Promise<void> {
-    await this.recordEventAt(key, segmentation, count, sum, dur, Utils.uniqueTimestampMs());
+    if (this.rejectIfHalted('ModuleEvents', 'recordEvent')) return;
+    await this.recordEventAt(key, segmentation, count, sum, dur, this.config.clock.nowMs());
   }
 
   /**
    * Record an event that already occurred at a known past timestamp. Useful
    * when an integrator buffers events themselves (e.g. while offline via a
-   * 3rd-party queue) and later flushes them into Countly — the original
+   * 3rd-party queue) and later flushes them into Countly, the original
    * wall-clock time matters for bucketing, so we don't overwrite it with
    * "now". Non-positive timestamps fall back to the current monotonic one.
    */
@@ -119,10 +130,11 @@ export class ModuleEvents extends ModuleBase {
     dur: number,
     timestamp: number
   ): Promise<void> {
+    if (this.rejectIfHalted('ModuleEvents', 'recordPastEvent')) return;
     let ts: number = timestamp;
     if (!Number.isFinite(ts) || ts <= 0) {
-      this.config.logger.w(`[ModuleEvents] recordPastEvent, timestamp must be > 0 (got ${timestamp}) — falling back to current time`);
-      ts = Utils.uniqueTimestampMs();
+      this.config.logger.w(`[ModuleEvents] recordPastEvent, timestamp must be > 0 (got ${timestamp}), falling back to current time`);
+      ts = this.config.clock.nowMs();
     }
     await this.recordEventAt(key, segmentation, count, sum, dur, ts);
   }
@@ -139,7 +151,7 @@ export class ModuleEvents extends ModuleBase {
     segmentation: SegmentationMap | null,
     dur: number
   ): Promise<void> {
-    await this.recordEventAt('[CLY]_view', segmentation, 1, 0, dur, Utils.uniqueTimestampMs(), viewId);
+    await this.recordEventAt('[CLY]_view', segmentation, 1, 0, dur, this.config.clock.nowMs(), viewId);
   }
 
   private async recordEventAt(
@@ -151,8 +163,13 @@ export class ModuleEvents extends ModuleBase {
     ts: number,
     forcedEventId?: string
   ): Promise<void> {
+    // Defense-in-depth gate: `recordViewEvent` is public and calls this
+    // path directly (bypassing the gate on `recordEvent`). Also catches
+    // any future internal caller. The halt-drain path (`flushEventQueue`)
+    // does NOT call this method, so the drain still works.
+    if (this.rejectIfHalted('ModuleEvents', `recordEvent('${key}')`)) return;
     if (Utils.isNullOrEmpty(key)) {
-      this.config.logger.w('[ModuleEvents] recordEvent, key is null/empty — omitted');
+      this.config.logger.w('[ModuleEvents] recordEvent, key is null/empty, omitted');
       return;
     }
     const isInternal: boolean = key.startsWith('[CLY]_');
@@ -167,28 +184,28 @@ export class ModuleEvents extends ModuleBase {
         if (this.core.consentModule.hasConsent(requiredConsents[i])) { granted = true; break; }
       }
       if (!granted) {
-        this.config.logger.v(`[ModuleEvents] recordEvent, none of [${requiredConsents.join(',')}] consent — omitted (key=${key})`);
+        this.config.logger.v(`[ModuleEvents] recordEvent, none of [${requiredConsents.join(',')}] consent, omitted (key=${key})`);
         return;
       }
     }
     if (count < 1) {
-      this.config.logger.w('[ModuleEvents] recordEvent, count < 1 — clamped to 1');
+      this.config.logger.w('[ModuleEvents] recordEvent, count < 1, clamped to 1');
       count = 1;
     }
 
     // Server-config filters apply to custom events only. Internal [CLY]_*
-    // events are part of the SDK's own data model — killswitching them via
+    // events are part of the SDK's own data model, killswitching them via
     // the generic "customEventTrackingEnabled" flag or a name filter would
     // corrupt sessions/views/crashes on the dashboard. Filters MUST run on
     // the original key (not the truncated one) so integrators can configure
     // them against the keys they actually pass in.
     if (!isInternal) {
       if (!this.config.serverConfig.customEventTrackingEnabled) {
-        this.config.logger.d(`[ModuleEvents] recordEvent, custom event tracking disabled by server config — dropped (key=${key})`);
+        this.config.logger.d(`[ModuleEvents] recordEvent, custom event tracking disabled by server config, dropped (key=${key})`);
         return;
       }
       if (!ListingFilters.applyEventFilter(key, this.config.serverConfig)) {
-        this.config.logger.w(`[ModuleEvents] recordEvent, key='${key}' filtered out by event filter — ignored`);
+        this.config.logger.w(`[ModuleEvents] recordEvent, key='${key}' filtered out by event filter, ignored`);
         return;
       }
     }
@@ -229,7 +246,7 @@ export class ModuleEvents extends ModuleBase {
     // Before recording, save pending user profile changes so ordering is right.
     await this.core.saveUserProfileIfPending();
 
-    const id: string = forcedEventId !== undefined ? forcedEventId : Utils.generateEventId();
+    const id: string = forcedEventId !== undefined ? forcedEventId : this.config.clock.generateEventId();
     const viewIds: ViewIds = this.viewIdProvider();
     const cvid: string = key === '[CLY]_view' ? '' : viewIds.currentViewId;
     const pvid: string = key === '[CLY]_view' ? viewIds.previousViewId : '';
@@ -256,10 +273,14 @@ export class ModuleEvents extends ModuleBase {
       this.lastEventName = finalKey;
     }
 
-    // Public API call trace — INFO per dev guide §Log Levels ("Info: public
+    // Public API call trace, INFO per dev guide §Log Levels ("Info: public
     // method calls"). Lets integrators confirm "yes, the event made it to the
     // event queue" without lowering minLevel to DEBUG/VERBOSE.
-    this.config.logger.i(`[ModuleEvents] recordEvent, queued key='${finalKey}' count=${count} queueSize=${this.eventQueue.length}`);
+    // Includes count/sum/dur plus the segmentation JSON so duplicate-event
+    // investigations can tell two adjacent recordEvent calls apart (e.g.
+    // auto-view start vs. auto-view stop on a transition) at a glance.
+    const segJson: string = segmentation !== null ? JSON.stringify(segmentation) : '{}';
+    this.config.logger.i(`[ModuleEvents] recordEvent, queued key='${finalKey}' count=${count} sum=${sum} dur=${dur} segmentation=${segJson} viewId=${forcedEventId ?? '-'} queueSize=${this.eventQueue.length}`);
 
     // Immediate-flush internal events.
     if (IMMEDIATE_FLUSH_KEYS.indexOf(key) !== -1) {
@@ -273,17 +294,19 @@ export class ModuleEvents extends ModuleBase {
   }
 
   public startEvent(key: string): void {
+    if (this.rejectIfHalted('ModuleEvents', 'startEvent')) return;
     if (Utils.isNullOrEmpty(key)) return;
     if (this.timed.has(key)) {
-      this.config.logger.w(`[ModuleEvents] startEvent, '${key}' already started — ignored`);
+      this.config.logger.w(`[ModuleEvents] startEvent, '${key}' already started, ignored`);
       return;
     }
-    const ts: number = Utils.uniqueTimestampMs();
-    this.timed.set(key, { startTs: ts, startHour: Utils.hourOf(ts), startDow: Utils.dayOfWeek(ts) });
+    const ts: number = this.config.clock.nowMs();
+    this.timed.set(key, { startTs: ts });
     this.config.logger.i(`[ModuleEvents] startEvent, started timer for '${key}'`);
   }
 
   public cancelEvent(key: string): void {
+    if (this.rejectIfHalted('ModuleEvents', 'cancelEvent')) return;
     if (!this.timed.has(key)) {
       this.config.logger.w(`[ModuleEvents] cancelEvent, no timed event '${key}'`);
       return;
@@ -293,52 +316,26 @@ export class ModuleEvents extends ModuleBase {
   }
 
   public async endEvent(key: string, segmentation: SegmentationMap | null, count: number, sum: number): Promise<void> {
+    if (this.rejectIfHalted('ModuleEvents', 'endEvent')) return;
     const timed: TimedEvent | undefined = this.timed.get(key);
     if (!timed) {
       this.config.logger.w(`[ModuleEvents] endEvent, no timed event '${key}'`);
       return;
     }
-    if (!this.core.consentModule.hasConsent(CountlyFeature.EVENTS)) {
-      this.timed.delete(key);
-      return;
-    }
-    const now: number = Date.now();
-    const durSec: number = (now - timed.startTs) / 1000;
+    const durSec: number = (Date.now() - timed.startTs) / 1000;
     this.timed.delete(key);
-
-    // Record with ORIGINAL start timestamp per dev guide.
-    const id: string = Utils.generateEventId();
-    const viewIds: ViewIds = this.viewIdProvider();
-    const finalSeg: SegmentationMap = Utils.sanitizeSegmentation(
-      segmentation,
-      this.config.limits.maxKeyLength,
-      this.config.limits.maxValueSize,
-      this.config.limits.maxSegmentationValues
-    );
-    const event: QueuedEvent = {
-      key: Utils.truncate(key, this.config.limits.maxKeyLength),
-      count: count < 1 ? 1 : count,
-      sum: sum,
-      dur: durSec,
-      segmentation: finalSeg,
-      timestamp: timed.startTs,
-      hour: timed.startHour,
-      dow: timed.startDow,
-      id: id,
-      pvid: '',
-      cvid: viewIds.currentViewId,
-      peid: this.lastEventId
-    };
-    this.eventQueue.push(event);
-    this.lastEventId = id;
-    this.lastEventName = event.key;
-    if (this.eventQueue.length >= this.config.eventQueueThreshold) {
-      await this.flushEventQueue();
-    }
+    // Delegate to the shared recording path with the ORIGINAL start
+    // timestamp (per dev guide), so hour/dow bucket on the start of the
+    // span rather than the end. Sanitization, server-config event +
+    // segmentation filters, consent gating, visibility/previous-name
+    // tagging, peid chain, the INFO log, and threshold-flushing all
+    // happen there — keeping `endEvent` aligned with `recordEvent`
+    // instead of maintaining a second near-duplicate pipeline.
+    await this.recordEventAt(key, segmentation, count, sum, durSec, timed.startTs);
   }
 
   /**
-   * Drop all buffered events without flushing — used by ModuleRequestQueue's
+   * Drop all buffered events without flushing, used by ModuleRequestQueue's
    * `flushQueues()` to reset both queues at once. Started timed events are
    * intentionally preserved per dev guide §Queue Operations.
    */
@@ -349,33 +346,47 @@ export class ModuleEvents extends ModuleBase {
 
   public async flushEventQueue(): Promise<void> {
     if (this.eventQueue.length === 0) return;
-    // Snapshot without mutating so an enqueue failure doesn't silently lose
-    // events. Only after enqueue resolves do we drop them from the in-memory
-    // queue. If enqueue throws, the events stay queued for the next trigger.
-    const count: number = Math.min(this.eventQueue.length, this.config.eventQueueThreshold);
-    const batch: QueuedEvent[] = this.eventQueue.slice(0, count);
-    const payload: Record<string, Object>[] = batch.map((e: QueuedEvent) => ModuleEvents.serializeEvent(e));
-    const params: Record<string, string> = this.core.requestBuilder.baseParams();
-    params['events'] = JSON.stringify(payload);
-    const body: string = Utils.buildQueryString(params);
-    // DEBUG — the flush-to-request-queue handoff. Visible at the default
-    // minLevel=DEBUG so integrators can see which recordEvent call triggered
-    // the batch send without going to VERBOSE.
-    this.config.logger.d(`[ModuleEvents] flushEventQueue, sending batch of ${count} event(s)`);
-    try {
-      await this.core.requestQueue.enqueue(body);
-    } catch (err) {
-      this.config.logger.e(`[ModuleEvents] flushEventQueue, enqueue rejected: ${err} — events remain in memory queue`);
+    if (this.flushInProgress) {
+      // A concurrent flush is mid-await on `requestQueue.enqueue`; the
+      // splice that would remove the in-flight batch hasn't run yet, so
+      // serializing here would re-batch the SAME events. Drop and let
+      // the next flush trigger (next recordEvent threshold, next
+      // endSession/onEnterBackground) pick up anything that's accumulated.
+      this.config.logger.d(`[ModuleEvents] flushEventQueue, skipped (concurrent flush in progress, queueSize=${this.eventQueue.length})`);
       return;
     }
-    // Successful enqueue — drop the batch. Splice on length not on identity
-    // because internal events (e.g. NPS) could have been pushed during the
-    // await and we want the batched-out ones, not the newcomers.
-    this.eventQueue.splice(0, count);
+    this.flushInProgress = true;
+    try {
+      // Snapshot without mutating so an enqueue failure doesn't silently lose
+      // events. Only after enqueue resolves do we drop them from the in-memory
+      // queue. If enqueue throws, the events stay queued for the next trigger.
+      const count: number = Math.min(this.eventQueue.length, this.config.eventQueueThreshold);
+      const batch: QueuedEvent[] = this.eventQueue.slice(0, count);
+      const payload: Record<string, Object>[] = batch.map((e: QueuedEvent) => ModuleEvents.serializeEvent(e));
+      const params: Record<string, string> = this.core.requestBuilder.baseParams();
+      params['events'] = JSON.stringify(payload);
+      const body: string = Utils.buildQueryString(params);
+      // DEBUG, the flush-to-request-queue handoff. Visible at the default
+      // minLevel=DEBUG so integrators can see which recordEvent call triggered
+      // the batch send without going to VERBOSE.
+      this.config.logger.d(`[ModuleEvents] flushEventQueue, sending batch of ${count} event(s)`);
+      try {
+        await this.core.requestQueue.enqueue(body);
+      } catch (err) {
+        this.config.logger.e(`[ModuleEvents] flushEventQueue, enqueue rejected: ${err}, events remain in memory queue`);
+        return;
+      }
+      // Successful enqueue, drop the batch. Splice on length not on identity
+      // because internal events (e.g. NPS) could have been pushed during the
+      // await and we want the batched-out ones, not the newcomers.
+      this.eventQueue.splice(0, count);
+    } finally {
+      this.flushInProgress = false;
+    }
   }
 
   public override async onDeviceIdChangedNotMerged(_oldId: string, _newId: string): Promise<void> {
-    // Clear timed events — they belonged to the previous user.
+    // Clear timed events, they belonged to the previous user.
     this.timed.clear();
     this.lastEventId = '';
     this.lastEventName = '';
@@ -394,7 +405,7 @@ export class ModuleEvents extends ModuleBase {
   private static consentForInternalEvent(key: string): string[] {
     if (key === '[CLY]_view') return [CountlyFeature.VIEWS];
     if (key === '[CLY]_nps' || key === '[CLY]_survey') return [CountlyFeature.FEEDBACK];
-    // Rating + action events accept multiple consents — gives integrators
+    // Rating + action events accept multiple consents, gives integrators
     // the flexibility to grant the narrow consent (starRating / clicks /
     // scrolls) without also having to grant the broader feedback consent.
     if (key === '[CLY]_star_rating') return [CountlyFeature.STAR_RATING, CountlyFeature.FEEDBACK];

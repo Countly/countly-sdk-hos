@@ -7,7 +7,7 @@ import { TEMP_DEVICE_ID } from '../RequestQueue';
 
 /**
  * Owns the current device ID and its type. Everything that needs to know
- * "who is this user?" asks us — including the RequestBuilder via a callback
+ * "who is this user?" asks us, including the RequestBuilder via a callback
  * closure. We also drive the tricky initialization matrix described in the
  * dev guide's "Device ID State Management" section.
  */
@@ -43,9 +43,9 @@ export class ModuleDeviceId extends ModuleBase {
     if (!storage) {
       // No storage → no persistence. Generate an ephemeral id so the instance
       // can still function; every restart will look like a new user. Log at
-      // ERROR so the integrator sees this — it only happens if init() failed
+      // ERROR so the integrator sees this, it only happens if init() failed
       // and storage is null, which should already have been logged there.
-      this.config.logger.e('[ModuleDeviceId] resolveInitial, no storage — generating ephemeral id');
+      this.config.logger.e('[ModuleDeviceId] resolveInitial, no storage, generating ephemeral id');
       this.currentId = Utils.generateUUID();
       this.currentType = DeviceIdType.SDK_GENERATED;
       return;
@@ -89,7 +89,7 @@ export class ModuleDeviceId extends ModuleBase {
       } else if (storedType === DeviceIdType.TEMPORARY_ID) {
         type = DeviceIdType.TEMPORARY_ID;
       } else {
-        this.config.logger.e(`[ModuleDeviceId] resolveInitial, unknown stored type '${storedType}' — defaulting to SDK_GENERATED`);
+        this.config.logger.e(`[ModuleDeviceId] resolveInitial, unknown stored type '${storedType}', defaulting to SDK_GENERATED`);
         type = DeviceIdType.SDK_GENERATED;
       }
       this.currentId = storedId;
@@ -104,17 +104,18 @@ export class ModuleDeviceId extends ModuleBase {
   public isTemporary(): boolean { return this.currentType === DeviceIdType.TEMPORARY_ID; }
 
   /**
-   * setID picks merge vs non-merge based on the current type — this is the
+   * setID picks merge vs non-merge based on the current type, this is the
    * method most integrators should use. The specialized change* methods are
    * advanced-only.
    */
   public async setID(newId: string): Promise<void> {
+    if (this.rejectIfHalted('ModuleDeviceId', 'setID')) return;
     if (Utils.isNullOrEmpty(newId)) {
       this.config.logger.w('[ModuleDeviceId] setID, null/empty ignored');
       return;
     }
     if (newId === this.currentId) {
-      this.config.logger.d('[ModuleDeviceId] setID, same id — ignored');
+      this.config.logger.d('[ModuleDeviceId] setID, same id, ignored');
       return;
     }
     // From DEV_SUPPLIED or TEMPORARY → DEV_SUPPLIED, route through
@@ -130,6 +131,7 @@ export class ModuleDeviceId extends ModuleBase {
   }
 
   public async changeWithoutMerge(newId: string): Promise<void> {
+    if (this.rejectIfHalted('ModuleDeviceId', 'changeWithoutMerge')) return;
     if (Utils.isNullOrEmpty(newId)) return;
     if (newId === this.currentId) return;
     if (this.isTemporary() && newId === TEMP_DEVICE_ID) return;
@@ -158,6 +160,7 @@ export class ModuleDeviceId extends ModuleBase {
   }
 
   public async changeWithMerge(newId: string): Promise<void> {
+    if (this.rejectIfHalted('ModuleDeviceId', 'changeWithMerge')) return;
     if (Utils.isNullOrEmpty(newId)) return;
     if (newId === this.currentId) return;
     const oldId: string = this.currentId;
@@ -178,6 +181,7 @@ export class ModuleDeviceId extends ModuleBase {
   }
 
   public async enableTemporaryIdMode(): Promise<void> {
+    if (this.rejectIfHalted('ModuleDeviceId', 'enableTemporaryIdMode')) return;
     if (this.isTemporary()) return;
     const oldId: string = this.currentId;
     await this.commit(TEMP_DEVICE_ID, DeviceIdType.TEMPORARY_ID);
@@ -195,7 +199,7 @@ export class ModuleDeviceId extends ModuleBase {
       // next cold start will see the old (or empty) stored ID and split the
       // user into two server-side identities. No way to recover silently.
       this.config.logger.e(
-        `[ModuleDeviceId] commit, failed to persist (okId=${okId} okType=${okType}) — device id will regenerate on next launch`
+        `[ModuleDeviceId] commit, failed to persist (okId=${okId} okType=${okType}), device id will regenerate on next launch`
       );
     }
   }

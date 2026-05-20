@@ -15,7 +15,7 @@ import common from '@ohos.app.ability.common';
  *   2. A/B testing (enroll, exit, value-and-enroll wrappers)
  *   3. Cache lifecycle (device-id change, value caching flag, persistence)
  *
- * We test the public facade on CountlyInstance — the download callback shape
+ * We test the public facade on CountlyInstance, the download callback shape
  * is the key contract.
  */
 
@@ -170,7 +170,7 @@ export default function remoteConfigTest() {
       await h.instance.remoteConfig.exitABTestsForKeys(null);
       const req = h.network.calls.filter((c) => c.endpoint === '/o/sdk' && c.data.indexOf('method=ab_exit') !== -1);
       expect(req.length).assertEqual(1);
-      // Null/empty should mean "exit all" — no keys= parameter expected.
+      // Null/empty should mean "exit all", no keys= parameter expected.
       expect(req[0].data.indexOf('keys=') === -1).assertTrue();
     });
 
@@ -208,23 +208,23 @@ export default function remoteConfigTest() {
       // NOTE: buildHarness creates a fresh storage; this test documents the
       // intent that the module DOES persist + rehydrate. For full survival
       // verification, the storage instance needs to be shared across harnesses
-      // — skipped here because buildHarness deliberately isolates per-test.
+      //, skipped here because buildHarness deliberately isolates per-test.
       // What we can verify: second instance starts with an empty cache
       // (confirms the fresh-storage contract).
       expect(Object.keys(h2.instance.remoteConfig.getValues()).length).assertEqual(0);
     });
 
     // ======================================================================
-    // Ports of ModuleRemoteConfigTests.java — behaviors NOT already covered
+    // Ports of ModuleRemoteConfigTests.java, behaviors NOT already covered
     // above. Skipped Android tests (with rationale) at the bottom of the file.
     // ======================================================================
 
     it('consentRemoval_doesNotClearStoredValues', 0, async () => {
-      // Android:valuesClearedOnConsentRemoval — despite the method name, the
+      // Android:valuesClearedOnConsentRemoval, despite the method name, the
       // original test asserts that consent removal does NOT wipe values (see
       // HOS ModuleRemoteConfig.onConsentChanged: revocation leaves cache).
       const h: Harness = await buildHarness((cfg) => {
-        cfg.consent.setRequiresConsent(true).setEnabled(['remote-config']);
+        cfg.consent.setRequiresConsent(true).giveAll();
         cfg.remoteConfig.enableValueCaching();
       });
       h.network.nextBody = RC_BODY;
@@ -240,7 +240,7 @@ export default function remoteConfigTest() {
     });
 
     it('automaticTriggers_downloadsOnInit', 0, async () => {
-      // Android:automaticRCTriggers — init branch. HOS fires an automatic
+      // Android:automaticRCTriggers, init branch. HOS fires an automatic
       // download on init when consent survives + not in temp-ID mode.
       const h: Harness = await buildHarness((cfg) => {
         cfg.remoteConfig.enableAutomaticTriggers();
@@ -251,7 +251,7 @@ export default function remoteConfigTest() {
     });
 
     it('automaticTriggers_fireOnConsentGrant', 0, async () => {
-      // Android:automaticRCTriggers — consent-grant branch.
+      // Android:automaticRCTriggers, consent-grant branch.
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true);
         cfg.remoteConfig.enableAutomaticTriggers();
@@ -259,14 +259,14 @@ export default function remoteConfigTest() {
       await flushTick(60);
       const beforeGrant = h.network.calls.filter((c) => c.endpoint === '/o/sdk' && c.data.indexOf('method=rc') !== -1).length;
 
-      h.instance.consent.giveConsent(['remote-config']);
+      h.instance.consentModule.giveConsent(['remote-config']);
       await flushTick(60);
       const afterGrant = h.network.calls.filter((c) => c.endpoint === '/o/sdk' && c.data.indexOf('method=rc') !== -1).length;
       expect(afterGrant > beforeGrant).assertTrue();
     });
 
     it('automaticTriggers_fireOnDeviceIdChangeMerged', 0, async () => {
-      // Android:automaticRCTriggers — merged-change branch.
+      // Android:automaticRCTriggers, merged-change branch.
       const h: Harness = await buildHarness((cfg) => {
         cfg.remoteConfig.enableAutomaticTriggers();
       });
@@ -280,7 +280,7 @@ export default function remoteConfigTest() {
     });
 
     it('automaticTriggers_skipInTempIdMode', 0, async () => {
-      // Android:automaticRCTriggers — tempID branch: entering temp mode must
+      // Android:automaticRCTriggers, tempID branch: entering temp mode must
       // NOT fire a download.
       const h: Harness = await buildHarness((cfg) => {
         cfg.remoteConfig.enableAutomaticTriggers();
@@ -307,7 +307,7 @@ export default function remoteConfigTest() {
     });
 
     it('rcValueCaching_off_deviceIdChangeWipesEvenIfDownloaded', 0, async () => {
-      // Android:rcValueCaching — caching-off branch.
+      // Android:rcValueCaching, caching-off branch.
       const h: Harness = await buildHarness();
       h.network.nextBody = RC_BODY;
       await h.instance.remoteConfig.downloadAllKeys(null);
@@ -319,7 +319,7 @@ export default function remoteConfigTest() {
     });
 
     it('rcValueCaching_on_preservesAcrossMultipleIdChanges', 0, async () => {
-      // Android:rcValueCaching — caching-on branch, repeated changes.
+      // Android:rcValueCaching, caching-on branch, repeated changes.
       const h: Harness = await buildHarness((cfg) => {
         cfg.remoteConfig.enableValueCaching();
       });
@@ -341,7 +341,7 @@ export default function remoteConfigTest() {
     });
 
     it('validatePersistence_rehydrateFromSharedStorage', 0, async () => {
-      // Android:validateValuePersistence — a second instance initialized
+      // Android:validateValuePersistence, a second instance initialized
       // against the same storage must see the previously-downloaded values.
       const logger: Logger = new Logger();
       const sharedStorage: InMemoryStorage = new InMemoryStorage(logger, 'test_app_key');
@@ -354,7 +354,7 @@ export default function remoteConfigTest() {
       await inst1.remoteConfig.downloadAllKeys(null);
       expect(Object.keys(inst1.remoteConfig.getValues()).length).assertEqual(3);
 
-      // Second instance, same storage — rehydrate.
+      // Second instance, same storage, rehydrate.
       const network2: FakeNetwork = new FakeNetwork(logger);
       const cfg2: CountlyConfig = new CountlyConfig({} as common.Context, 'https://try.count.ly', 'test_app_key');
       cfg2.logging.enableLogging();
@@ -368,7 +368,7 @@ export default function remoteConfigTest() {
     });
 
     it('clearAll_thenReDownload_repopulatesCache', 0, async () => {
-      // Android:validateClear — after clearAll, a new download must repopulate
+      // Android:validateClear, after clearAll, a new download must repopulate
       // and the values must be fresh (isCurrentUsersData=true).
       const h: Harness = await buildHarness();
       h.network.nextBody = RC_BODY;
@@ -387,7 +387,7 @@ export default function remoteConfigTest() {
     });
 
     it('rcGlobalCallback_firesForEveryDownloadPath', 0, async () => {
-      // Android:rcGlobalCallback — global callbacks must see every path
+      // Android:rcGlobalCallback, global callbacks must see every path
       // (downloadAllKeys, downloadSpecificKeys, downloadOmittingKeys).
       let globalCount: number = 0;
       const h: Harness = await buildHarness((cfg) => {
@@ -401,7 +401,7 @@ export default function remoteConfigTest() {
     });
 
     it('registerDownloadCallback_runtimeAdd_firesOnNextDownload', 0, async () => {
-      // Android:rcGlobalCallback — runtime add/remove behavior on the
+      // Android:rcGlobalCallback, runtime add/remove behavior on the
       // registerDownloadCallback / removeDownloadCallback API.
       let added: number = 0;
       const cb = () => { added++; };
@@ -418,7 +418,7 @@ export default function remoteConfigTest() {
     });
 
     it('perCallCallback_firesOnEveryDownload', 0, async () => {
-      // Android:rcGlobalCallback — per-call callback fires exactly once per
+      // Android:rcGlobalCallback, per-call callback fires exactly once per
       // individual download call.
       const h: Harness = await buildHarness();
       h.network.nextBody = '{}';
@@ -432,7 +432,7 @@ export default function remoteConfigTest() {
     });
 
     it('getters_returnRCDataWithCorrectValues', 0, async () => {
-      // Android:validateGetters — getValue + getValues correctness across
+      // Android:validateGetters, getValue + getValues correctness across
       // primitive / string / object / array payloads.
       const h: Harness = await buildHarness();
       h.network.nextBody = '{"a":123,"b":"fg","c":222222222222,"d":1.5,"e":[3,"44",5.1,7.7],"f":{"q":6,"w":"op"}}';
@@ -458,13 +458,13 @@ export default function remoteConfigTest() {
     });
 
     it('getValue_unknownKey_returnsNull', 0, async () => {
-      // Android:validateGetters — unknown key → null.
+      // Android:validateGetters, unknown key → null.
       const h: Harness = await buildHarness();
       expect(h.instance.remoteConfig.getValue('nonexistent')).assertEqual(null);
     });
 
     it('passingBadValues_doesNotThrow', 0, async () => {
-      // Android:passingBadValues — passing null/empty arguments must not
+      // Android:passingBadValues, passing null/empty arguments must not
       // throw from any public RC entry point.
       const h: Harness = await buildHarness();
 
@@ -482,7 +482,7 @@ export default function remoteConfigTest() {
     });
 
     it('enrollIntoABTestsForKeys_emptyKeys_sendsNothing', 0, async () => {
-      // Android:passingBadValues — empty keys filter out and no request fires.
+      // Android:passingBadValues, empty keys filter out and no request fires.
       const h: Harness = await buildHarness();
       await h.instance.remoteConfig.enrollIntoABTestsForKeys([]);
       const abCalls = h.network.calls.filter((c) => c.data.indexOf('method=ab&') !== -1);
@@ -502,7 +502,7 @@ export default function remoteConfigTest() {
     });
 
     it('mergePartialDownload_preservesExistingAndOverwritesSharedKeys', 0, async () => {
-      // Android:validateMergeReceivedResponse — merging a partial response
+      // Android:validateMergeReceivedResponse, merging a partial response
       // must preserve unaffected keys and overwrite shared keys with the
       // latest value.
       const h: Harness = await buildHarness();
@@ -520,7 +520,7 @@ export default function remoteConfigTest() {
     });
 
     it('fullDownload_replacesEntireCache', 0, async () => {
-      // Android:validateMergeReceivedResponse — final branch where a full
+      // Android:validateMergeReceivedResponse, final branch where a full
       // download replaces the whole cache.
       const h: Harness = await buildHarness();
       h.network.nextBody = JSON.stringify({ a: 1, b: 2, c: 3 });
@@ -537,7 +537,7 @@ export default function remoteConfigTest() {
     });
 
     it('concurrentDownloadsAndReads_noCorruption', 0, async () => {
-      // Android:concurrentMergeAndReads — ported as a sequential-stress test
+      // Android:concurrentMergeAndReads, ported as a sequential-stress test
       // (ArkTS is single-threaded but we still exercise rapid interleavings
       // through the microtask queue to catch any partial-write errors).
       const h: Harness = await buildHarness();
@@ -569,9 +569,9 @@ export default function remoteConfigTest() {
     // ======================================================================
 
     it('dataFromDownload_markedFresh_defaultIsCurrentUsersData', 0, async () => {
-      // Android:dataFromString_CurrentStructure — every downloaded value lands
+      // Android:dataFromString_CurrentStructure, every downloaded value lands
       // with isCurrentUsersData=true (HOS has no concept of pre-injecting
-      // cached entries directly — that path is covered by the device-id
+      // cached entries directly, that path is covered by the device-id
       // change/caching tests).
       const h: Harness = await buildHarness();
       h.network.nextBody = JSON.stringify({ a: 123, b: 'ccx' });
@@ -581,7 +581,7 @@ export default function remoteConfigTest() {
     });
 
     it('serializeDeserialize_roundTripsThroughStorage', 0, async () => {
-      // Android:rcvsSerializeDeserialize — the HOS module round-trips values
+      // Android:rcvsSerializeDeserialize, the HOS module round-trips values
       // through storage (the persistence test above already covers end-to-end
       // rehydration). This is a narrower check that the JSON encoding the
       // module persists is itself parseable back to the same values.
@@ -602,7 +602,7 @@ export default function remoteConfigTest() {
     });
 
     it('downloadAllKeys_emptyResponse_cacheEmpty', 0, async () => {
-      // Android:rcvsDataFromStringNullEmpty — empty-ish response must leave
+      // Android:rcvsDataFromStringNullEmpty, empty-ish response must leave
       // the cache empty without throwing.
       const h: Harness = await buildHarness();
       h.network.nextBody = '{}';
@@ -625,7 +625,7 @@ export default function remoteConfigTest() {
     });
 
     it('downloadAllKeys_nonObjectResponse_callbackReportsError', 0, async () => {
-      // Android:rcvsDataFromStringNullEmpty — null-at-root response leaves the
+      // Android:rcvsDataFromStringNullEmpty, null-at-root response leaves the
       // store empty without throwing.
       const h: Harness = await buildHarness();
       h.network.nextBody = 'null';
@@ -636,7 +636,7 @@ export default function remoteConfigTest() {
     });
 
     it('downloadAllKeys_unicodeAndSpecialKeys_roundTripCorrectly', 0, async () => {
-      // Android:rcvsDataFromStringSamples_2 — ensure emoji/unicode keys survive
+      // Android:rcvsDataFromStringSamples_2, ensure emoji/unicode keys survive
       // the download → cache path.
       const h: Harness = await buildHarness();
       const payload: Record<string, Object> = {};
@@ -660,7 +660,7 @@ export default function remoteConfigTest() {
     //
     //  - RemoteConfigAnrTest.java (both tests): rely on Android's global
     //    synchronized(Countly.sharedInstance()) lock + main-thread runner.
-    //    ArkTS is single-threaded with microtask/isolate semantics — there
+    //    ArkTS is single-threaded with microtask/isolate semantics, there
     //    is no equivalent global monitor to contend on, so the latency
     //    assertions cannot be reproduced here.
     //
@@ -675,11 +675,11 @@ export default function remoteConfigTest() {
     //
     //  - ModuleRemoteConfigTests.validateGetters legacy getters
     //    (getValueForKey, getAllValues) + old RemoteConfigCallback path:
-    //    not implemented in HOS — only the modern RCData/RCDownloadCallback
+    //    not implemented in HOS, only the modern RCData/RCDownloadCallback
     //    surface exists.
     //
     //  - Any tests that rely on the Android ImmediateRequestGenerator hook
-    //    to inspect individual request construction at the helper level —
+    //    to inspect individual request construction at the helper level,
     //    translated to FakeNetwork endpoint/data inspection throughout.
     // ======================================================================
   });
