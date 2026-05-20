@@ -162,6 +162,11 @@ export class ModuleConfiguration extends ModuleBase {
     this.stopFetchTimer();
   }
 
+  /** Test seam — true while the periodic SBS-refresh interval is armed. */
+  public hasActiveTimers(): boolean {
+    return this.fetchTimer !== null;
+  }
+
   /**
    * Called by `CountlyInstance.resolveUnknownConsent` on UCM exit (both
    * grant and revoke paths) to kick off the SBS fetch + periodic timer

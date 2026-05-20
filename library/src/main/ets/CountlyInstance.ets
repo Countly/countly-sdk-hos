@@ -472,7 +472,7 @@ export class CountlyInstance implements SdkCore {
       // means the integrator expected a different config to take effect and
       // it silently won't. Only `Countly.initShared` short-circuits by
       // design; if you reach *this* path you almost certainly have a bug.
-      this.config.logger.e('[Countly] init, already initialized, ignoring (check for duplicate init() calls)');
+      this.config.logger.e('init, already initialized, ignoring (check for duplicate init() calls)');
       return;
     }
     this.initialized = true;
@@ -493,11 +493,11 @@ export class CountlyInstance implements SdkCore {
       // No context means no preferences file, the SDK will run in memory
       // only and everything will reset on process restart. Surface this at
       // ERROR so the integrator can see it in both console and log listeners.
-      this.config.logger.e('[Countly] init, no context provided, persistence is disabled, device id will regenerate on restart');
+      this.config.logger.e('init, no context provided, persistence is disabled, device id will regenerate on restart');
     } else if (this.config.storage) {
       const ok: boolean = await this.config.storage.init(this.config.context);
       if (!ok) {
-        this.config.logger.e('[Countly] init, storage init failed, persistence is disabled, device id will regenerate on restart');
+        this.config.logger.e('init, storage init failed, persistence is disabled, device id will regenerate on restart');
       }
     }
     // Apply persisted / dev-supplied SDK Behavior Settings BEFORE the request
@@ -512,7 +512,7 @@ export class CountlyInstance implements SdkCore {
       // calls `disableOfflineMode(...)`. Load persisted requests first so they
       // survive the pause.
       this.requestQueue.pause();
-      this.config.logger.i('[Countly] init, starting in offline mode, no network traffic until disableOfflineMode()');
+      this.config.logger.i('init, starting in offline mode, no network traffic until disableOfflineMode()');
     }
     if (this.config.unknownConsentMode) {
       // Same pause primitive as offline mode, collected telemetry queues
@@ -535,7 +535,7 @@ export class CountlyInstance implements SdkCore {
       // telemetry-bearing paths re-open for buffered drain (give) or
       // the revocation snapshot (revoke).
       this.config.network.setSilenced(true);
-      this.config.logger.i('[Countly] init, starting in unknown consent mode, telemetry held locally until giveConsentAll/removeConsentAll');
+      this.config.logger.i('init, starting in unknown consent mode, telemetry held locally until giveConsentAll/removeConsentAll');
     }
     await this.deviceIdModule.resolveInitial();
 
@@ -551,7 +551,7 @@ export class CountlyInstance implements SdkCore {
 
     // Never log the full device ID, it's a stable identifier that could
     // leak via a log listener. Log only the type.
-    this.config.logger.i(`[Countly] init complete appKey=${this.config.appKey} deviceIdType=${this.deviceIdModule.getType()}`);
+    this.config.logger.i(`init complete appKey=${this.config.appKey} deviceIdType=${this.deviceIdModule.getType()}`);
     await this.eventsModule.onInit();
     await this.viewsModule.onInit();
     await this.sessionsModule.onInit();
@@ -587,6 +587,15 @@ export class CountlyInstance implements SdkCore {
     // request queue, and every module's `onInit` have completed, so a
     // begin_session enqueue here goes through the fully-loaded pipeline.
     this.lifecycleObserver.markReady();
+    // Cold-boot fg synthesis for the late-create case: a named instance
+    // created via `Countly.createInstance` while the host UIAbility is
+    // already in foreground will have missed the platform's cold-boot fg
+    // transition (it fired before `register()` subscribed) and `markReady`
+    // had nothing to replay. Query the process state via HMOS and
+    // synthesise a fg dispatch if we're actually foreground, otherwise
+    // the named instance's session counter would go 0 → -1 on the next
+    // bg event. Idempotent: a no-op when a real fg has already fired.
+    await this.lifecycleObserver.synthesiseForegroundIfNeeded();
   }
 
   // -- SdkCore interface --
@@ -618,6 +627,20 @@ export class CountlyInstance implements SdkCore {
     return this.crashesModule.isErrorHandlerInstalled();
   }
 
+  /**
+   * Test seam — true while ANY of this instance's internally-owned timers
+   * is still armed. Aggregates RequestQueue (processor + backoff),
+   * ModuleConsent (snapshot coalesce), ModuleHealthCheck (deferred initial
+   * send), and ModuleConfiguration (periodic SBS refresh). Used by leak
+   * tests to assert that `halt()` cancels every pending callback.
+   */
+  public hasAnyActiveTimers(): boolean {
+    return this.requestQueue.hasActiveTimers()
+      || this.consentModule.hasActiveTimers()
+      || this.healthCheckModule.hasActiveTimers()
+      || this.configurationModule.hasActiveTimers();
+  }
+
   public async notifyConsentWillChange(added: string[], removed: string[], source: ConsentChangeSource): Promise<void> {
     // Each hook is pre-wrapped in captureRejection so Promise.all behaves like
     // allSettled here, one module's failure is logged and swallowed, never
@@ -643,7 +666,7 @@ export class CountlyInstance implements SdkCore {
    */
   private captureRejection(tag: string, p: Promise<void>): Promise<void> {
     return p.catch((err: Object) => {
-      this.config.logger.e(`[Countly] ${tag} rejected: ${err}`);
+      this.config.logger.e(`${tag} rejected: ${err}`);
     });
   }
 
@@ -658,7 +681,7 @@ export class CountlyInstance implements SdkCore {
     // for manual `lifecycleForegroundAll` calls, but those WOULD have
     // re-queued telemetry on a halted instance without this guard.
     if (this.config.halted) {
-      this.config.logger.w('[Countly] lifecycleForeground called after halt, ignored');
+      this.config.logger.w('lifecycleForeground called after halt, ignored');
       return;
     }
     this.sessionsModule.onEnterForeground();
@@ -674,7 +697,7 @@ export class CountlyInstance implements SdkCore {
 
   public lifecycleBackground(): void {
     if (this.config.halted) {
-      this.config.logger.w('[Countly] lifecycleBackground called after halt, ignored');
+      this.config.logger.w('lifecycleBackground called after halt, ignored');
       return;
     }
     this.sessionsModule.onEnterBackground();
@@ -704,7 +727,7 @@ export class CountlyInstance implements SdkCore {
     else if (dir === ConfigurationConstant.Direction.DIRECTION_HORIZONTAL) mode = 'landscape';
     else return; // DIRECTION_NOT_SET, nothing to report
     this.viewsModule.updateOrientation(mode).catch((err: Object): void => {
-      this.config.logger.e(`[Countly] auto-orientation updateOrientation rejected: ${err}`);
+      this.config.logger.e(`auto-orientation updateOrientation rejected: ${err}`);
     });
   }
 
@@ -726,11 +749,11 @@ export class CountlyInstance implements SdkCore {
       const d: display.Display = display.getDefaultDisplaySync();
       mode = d.height >= d.width ? 'portrait' : 'landscape';
     } catch (err) {
-      this.config.logger.d(`[Countly] auto-orientation, display unavailable: ${err}`);
+      this.config.logger.d(`auto-orientation, display unavailable: ${err}`);
       return;
     }
     this.viewsModule.updateOrientation(mode, forceSend).catch((err: Object): void => {
-      this.config.logger.e(`[Countly] auto-orientation (display) updateOrientation rejected: ${err}`);
+      this.config.logger.e(`auto-orientation (display) updateOrientation rejected: ${err}`);
     });
   }
 
@@ -760,16 +783,16 @@ export class CountlyInstance implements SdkCore {
     }
     const name: string = this.config.automaticViewShortNames ? shortName : fullName;
     if (name.length === 0) {
-      this.config.logger.d('[Countly] auto-view, empty ability name, skipped');
+      this.config.logger.d('auto-view, empty ability name, skipped');
       return;
     }
     if (this.config.autoViewExclusions.indexOf(name) !== -1) {
-      this.config.logger.d(`[Countly] auto-view, excluded: ${name}`);
+      this.config.logger.d(`auto-view, excluded: ${name}`);
       return;
     }
     this.viewsModule.startAutoStoppedView(name, this.config.globalViewSegmentation)
       .catch((err: Object): void => {
-        this.config.logger.e(`[Countly] auto-view startAutoStoppedView rejected: ${err}`);
+        this.config.logger.e(`auto-view startAutoStoppedView rejected: ${err}`);
       });
   }
 
@@ -800,7 +823,7 @@ export class CountlyInstance implements SdkCore {
    */
   public async resolveUnknownConsent(givenAll: boolean): Promise<void> {
     if (!this.config.unknownConsentMode) {
-      this.config.logger.w('[Countly] resolveUnknownConsent called outside unknown mode, ignored');
+      this.config.logger.w('resolveUnknownConsent called outside unknown mode, ignored');
       return;
     }
     // Clear the flag FIRST so re-entry is impossible during the async work
@@ -822,7 +845,7 @@ export class CountlyInstance implements SdkCore {
     this.healthCheckModule.triggerPostUcmSend();
 
     if (givenAll) {
-      this.config.logger.i('[Countly] resolveUnknownConsent, givenAll=true, network calls enabled, buffered data will ship');
+      this.config.logger.i('resolveUnknownConsent, givenAll=true, network calls enabled, buffered data will ship');
       // Resume the queue; the init-time consent snapshot + any buffered
       // events/sessions/views drain in arrival order. Internal consent
       // map is already all-true (set by `initialConsentAll=true` at
@@ -832,26 +855,26 @@ export class CountlyInstance implements SdkCore {
       return;
     }
 
-    this.config.logger.i(`[Countly] removeConsentAll, unknown consent mode: erasing buffered data and sending revocation at ${Date.now()} (${new Date().toISOString()})`);
+    this.config.logger.i(`removeConsentAll, unknown consent mode: erasing buffered data and sending revocation at ${Date.now()} (${new Date().toISOString()})`);
     // Flip every consent to false. notifyConsentDidChange fires; modules
     // may enqueue cleanup requests (end_session, location erasure, etc.)
     // into the still-paused queue. Those are about to be dropped.
-    this.config.logger.i('[Countly] removeConsentAll, flipping all consents to false and notifying modules');
+    this.config.logger.i('removeConsentAll, flipping all consents to false and notifying modules');
     await this.consentModule.applyRevokeFromUnknownMode_phase1();
-    this.config.logger.i('[Countly] removeConsentAll, consent flip complete');
+    this.config.logger.i('removeConsentAll, consent flip complete');
     // Drop everything: buffered-during-UCM data PLUS the cleanup requests
     // modules just emitted. The server never observed the implicit "all
     // granted" state, so it must not see the cleanup either. The
     // coalesced revocation snapshot timer scheduled above is NOT touched
     // by queue.clear(), it stays pending and is flushed explicitly next.
-    this.config.logger.i('[Countly] removeConsentAll, clearing buffered request queue');
+    this.config.logger.i('removeConsentAll, clearing buffered request queue');
     await this.requestQueue.clear();
-    this.config.logger.i('[Countly] removeConsentAll, buffered queue cleared');
+    this.config.logger.i('removeConsentAll, buffered queue cleared');
     // Ship the revocation snapshot. This is the ONLY wire request the
     // server sees from this resolution.
-    this.config.logger.i('[Countly] removeConsentAll, sending revocation snapshot (all features = false)');
+    this.config.logger.i('removeConsentAll, sending revocation snapshot (all features = false)');
     await this.consentModule.applyRevokeFromUnknownMode_phase2();
-    this.config.logger.i('[Countly] removeConsentAll, revocation snapshot enqueued');
+    this.config.logger.i('removeConsentAll, revocation snapshot enqueued');
     // Lock the runtime consent surface. From this point on,
     // `giveConsentAll` / `removeConsentAll` log "consent is set per init"
     // and return without effect.
@@ -908,29 +931,29 @@ export class CountlyInstance implements SdkCore {
     // mid-shutdown doesn't try to drive modules whose onHalt is already
     // running. After this call, lifecycle is integrator-driven only.
     try { this.lifecycleObserver.deregister(); }
-    catch (e) { this.config.logger.e(`[Countly] stop, lifecycleObserver deregister rejected: ${e}`); }
+    catch (e) { this.config.logger.e(`stop, lifecycleObserver deregister rejected: ${e}`); }
     // Await in order so pending events land first, then session end, then
     // final crash flush. Any rejection is caught so shutdown still proceeds.
-    try { await this.eventsModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, events onHalt rejected: ${e}`); }
-    try { await this.sessionsModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, sessions onHalt rejected: ${e}`); }
-    try { await this.crashesModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, crashes onHalt rejected: ${e}`); }
-    try { await this.contentModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, content onHalt rejected: ${e}`); }
-    try { await this.feedbackModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, feedback onHalt rejected: ${e}`); }
+    try { await this.eventsModule.onHalt(); } catch (e) { this.config.logger.e(`stop, events onHalt rejected: ${e}`); }
+    try { await this.sessionsModule.onHalt(); } catch (e) { this.config.logger.e(`stop, sessions onHalt rejected: ${e}`); }
+    try { await this.crashesModule.onHalt(); } catch (e) { this.config.logger.e(`stop, crashes onHalt rejected: ${e}`); }
+    try { await this.contentModule.onHalt(); } catch (e) { this.config.logger.e(`stop, content onHalt rejected: ${e}`); }
+    try { await this.feedbackModule.onHalt(); } catch (e) { this.config.logger.e(`stop, feedback onHalt rejected: ${e}`); }
     // AppStorage is process-wide; modules' onHalt already hides their
     // overlays, but call clearAll as a belt-and-braces measure so
     // re-initialising the SDK (a fresh `initShared` after stop) starts
     // with known-empty overlay state.
     try { OverlayStore.clearAll(); }
-    catch (e) { this.config.logger.e(`[Countly] stop, OverlayStore clear rejected: ${e}`); }
+    catch (e) { this.config.logger.e(`stop, OverlayStore clear rejected: ${e}`); }
     // Revert any IMMERSIVE window-layout change so a re-init doesn't inherit
     // a fullscreen window that the next overlay didn't actually ask for.
     try { WindowImmersive.reset(this.config.context, this.config.logger); }
-    catch (e) { this.config.logger.e(`[Countly] stop, WindowImmersive reset rejected: ${e}`); }
+    catch (e) { this.config.logger.e(`stop, WindowImmersive reset rejected: ${e}`); }
     // Health check onHalt persists counters so lifecycle-end doesn't lose them.
-    try { await this.healthCheckModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, healthCheck onHalt rejected: ${e}`); }
+    try { await this.healthCheckModule.onHalt(); } catch (e) { this.config.logger.e(`stop, healthCheck onHalt rejected: ${e}`); }
     // Stop the SBS periodic-fetch timer; otherwise a detached instance keeps
     // firing fetches against a network that may be reset between tests.
-    try { await this.configurationModule.onHalt(); } catch (e) { this.config.logger.e(`[Countly] stop, configuration onHalt rejected: ${e}`); }
+    try { await this.configurationModule.onHalt(); } catch (e) { this.config.logger.e(`stop, configuration onHalt rejected: ${e}`); }
 
     // Cancel any pending background timers so a detached instance's callbacks
     // don't fire on the next test / integration. This matters more than it
@@ -961,9 +984,9 @@ export class CountlyInstance implements SdkCore {
     if (this.config.storage) {
       const ok: boolean = await this.config.storage.clear();
       if (!ok) {
-        this.config.logger.w('[Countly] halt, storage.clear() returned false, persisted data may not be fully wiped');
+        this.config.logger.w('halt, storage.clear() returned false, persisted data may not be fully wiped');
       } else {
-        this.config.logger.i('[Countly] halt, persisted storage wiped');
+        this.config.logger.i('halt, persisted storage wiped');
       }
     }
   }
@@ -980,10 +1003,10 @@ export class CountlyInstance implements SdkCore {
    */
   public setExternalUrlOpener(opener: ((url: string) => void) | null): void {
     if (this.config.halted) {
-      this.config.logger.w('[Countly] setExternalUrlOpener called after halt, ignored');
+      this.config.logger.w('setExternalUrlOpener called after halt, ignored');
       return;
     }
-    this.config.logger.i(`[Countly] Calling setExternalUrlOpener, opener=[${opener !== null}]`);
+    this.config.logger.i(`Calling setExternalUrlOpener, opener=[${opener !== null}]`);
     this.contentModule.setExternalUrlOpener(opener);
     this.feedbackModule.setExternalUrlOpener(opener);
   }
@@ -997,29 +1020,29 @@ export class CountlyInstance implements SdkCore {
 
   /** @internal, called by the exported overlay component on WebView load intercept. */
   public handleContentOverlayUrl(url: string): boolean {
-    this.config.logger.w('[Countly] handleContentOverlayUrl, content module is disabled, no-op');
+    this.config.logger.w('handleContentOverlayUrl, content module is disabled, no-op');
     return false;
   }
   /** @internal, called by the exported overlay component when dismissed. */
   public onContentOverlayClosed(status: ContentStatus, data: Record<string, Object>): void {
-    this.config.logger.w('[Countly] onContentOverlayClosed, content module is disabled, no-op');
+    this.config.logger.w('onContentOverlayClosed, content module is disabled, no-op');
   }
   /** @internal, called by the exported overlay component on WebView load timeout. */
   public onContentOverlayLoadTimedOut(): void {
-    this.config.logger.w('[Countly] onContentOverlayLoadTimedOut, content module is disabled, no-op');
+    this.config.logger.w('onContentOverlayLoadTimedOut, content module is disabled, no-op');
   }
   /** @internal, called by the exported feedback overlay on WebView load intercept. */
   public handleFeedbackOverlayUrl(url: string): boolean {
-    this.config.logger.w('[Countly] handleFeedbackOverlayUrl, feedback module is disabled, no-op');
+    this.config.logger.w('handleFeedbackOverlayUrl, feedback module is disabled, no-op');
     return false;
   }
   /** @internal, called by the exported feedback overlay when dismissed. */
   public onFeedbackOverlayClosed(): void {
-    this.config.logger.w('[Countly] onFeedbackOverlayClosed, feedback module is disabled, no-op');
+    this.config.logger.w('onFeedbackOverlayClosed, feedback module is disabled, no-op');
   }
   /** @internal, called by the exported feedback overlay on WebView load timeout. */
   public onFeedbackOverlayLoadTimedOut(): void {
-    this.config.logger.w('[Countly] onFeedbackOverlayLoadTimedOut, feedback module is disabled, no-op');
+    this.config.logger.w('onFeedbackOverlayLoadTimedOut, feedback module is disabled, no-op');
   }
 
   // -- Other Features --
@@ -1031,24 +1054,24 @@ export class CountlyInstance implements SdkCore {
    */
   public setServerURL(url: string): void {
     if (this.config.halted) {
-      this.config.logger.w('[Countly] setServerURL called after halt, ignored');
+      this.config.logger.w('setServerURL called after halt, ignored');
       return;
     }
     const reason: string = Utils.validateServerUrl(url);
     if (reason === 'empty') {
-      this.config.logger.w('[Countly] setServerURL, empty url, ignored');
+      this.config.logger.w('setServerURL, empty url, ignored');
       return;
     }
     if (reason === 'scheme') {
-      this.config.logger.w(`[Countly] setServerURL, must start with http:// or https://, ignored (${url})`);
+      this.config.logger.w(`setServerURL, must start with http:// or https://, ignored (${url})`);
       return;
     }
     if (reason === 'authority') {
-      this.config.logger.e('[Countly] setServerURL, authority contains "@", ignored (userinfo hazard)');
+      this.config.logger.e('setServerURL, authority contains "@", ignored (userinfo hazard)');
       return;
     }
     this.config.serverUrl = Utils.stripTrailingSlashes(url);
-    this.config.logger.i('[Countly] setServerURL, server URL updated, queued requests will send to the new host');
+    this.config.logger.i('setServerURL, server URL updated, queued requests will send to the new host');
   }
 
 }

@@ -5,7 +5,7 @@ import UIAbility from '@ohos.app.ability.UIAbility';
 import { Configuration as SystemConfig } from '@ohos.app.ability.Configuration';
 import window from '@ohos.window';
 import { Logger } from './Logger';
-import { common } from '@kit.AbilityKit';
+import { common, appManager } from '@kit.AbilityKit';
 
 /**
  * `ApplicationStateChangeCallback` is exported as a *class* (not an interface)
@@ -193,11 +193,23 @@ export class LifecycleObserver {
   // can't immediately dispatch into modules whose async init is still in
   // flight (request queue not loaded, device id unresolved, server config
   // not applied), so any platform event that arrives before `markReady()` is
-  // buffered here and replayed once init has finished. We don't synthesise
-  // anything, only platform-confirmed events ever fire downstream.
+  // buffered here and replayed once init has finished. Platform-confirmed
+  // events are preferred, but `CountlyInstance.init()` calls
+  // `synthesiseForegroundIfNeeded()` after `markReady()` to cover the
+  // late-create case where the platform fg already fired before
+  // `register()` subscribed (typical for `Countly.createInstance` invoked
+  // after the host UIAbility was already in foreground).
   private ready: boolean = false;
   private pendingFg: boolean = false;
   private pendingAutoView: PendingAutoView | null = null;
+  /**
+   * Sticky "we have observed at least one foreground transition" flag.
+   * Set when `pendingFg` is replayed by `markReady()` AND when
+   * `dispatchFg` fires directly post-ready. Used by
+   * `synthesiseForegroundIfNeeded()` to decide whether the cold-boot fg
+   * was missed (named instance created mid-foreground).
+   */
+  private dispatchedFg: boolean = false;
 
   constructor(
     logger: Logger,
@@ -224,6 +236,7 @@ export class LifecycleObserver {
       this.pendingFg = true;
       return;
     }
+    this.dispatchedFg = true;
     this.onForeground();
   }
 
@@ -268,6 +281,7 @@ export class LifecycleObserver {
     this.ready = true;
     if (this.pendingFg) {
       this.pendingFg = false;
+      this.dispatchedFg = true;
       this.onForeground();
     }
     if (this.pendingAutoView !== null) {
@@ -275,6 +289,47 @@ export class LifecycleObserver {
       const pending: PendingAutoView = this.pendingAutoView;
       this.pendingAutoView = null;
       if (cb !== null) cb(pending.shortName, pending.fullName);
+    }
+  }
+
+  /**
+   * Cold-boot fg synthesis for the late-create case. HMOS lifecycle events
+   * fire on transitions only, so when `Countly.createInstance('name', cfg)`
+   * runs while the host UIAbility is already in foreground, the cold-boot
+   * `applicationStateChange` foreground transition already fired and our
+   * observer (subscribed by `register()` later) never sees it. The
+   * `pendingFg` buffer covers the *during-init* race; this method covers
+   * the *before-register* race.
+   *
+   * Logic: if no fg has been dispatched yet (`dispatchedFg=false`) AND the
+   * platform reports the current process as foreground or active, fire
+   * `onForeground` synthetically so the instance starts a session and
+   * stops emitting "unbalanced lifecycle" warnings on the next bg event.
+   *
+   * Safe to call multiple times; the dispatchedFg gate makes it idempotent.
+   * Falls through silently on any HMOS API failure, no-op is the safe
+   * default for an SDK that's only trying to fix a counter drift.
+   */
+  public async synthesiseForegroundIfNeeded(): Promise<void> {
+    if (this.dispatchedFg) return;
+    if (this.appContext === null) return;
+    try {
+      const infos: appManager.ProcessInformation[] = await this.appContext.getRunningProcessInformation();
+      let foreground: boolean = false;
+      for (let i = 0; i < infos.length; i++) {
+        const s: appManager.ProcessState = infos[i].state;
+        if (s === appManager.ProcessState.STATE_FOREGROUND || s === appManager.ProcessState.STATE_ACTIVE) {
+          foreground = true;
+          break;
+        }
+      }
+      if (!foreground) return;
+      if (this.dispatchedFg) return; // re-check, a real fg may have fired while awaiting
+      this.dispatchedFg = true;
+      this.logger.d('[LifecycleObserver] synthesiseForegroundIfNeeded, no platform fg observed but process is foreground (late-create case), dispatching synthetic fg');
+      this.onForeground();
+    } catch (err) {
+      this.logger.d(`[LifecycleObserver] synthesiseForegroundIfNeeded, getRunningProcessInformation failed: ${err}`);
     }
   }
 

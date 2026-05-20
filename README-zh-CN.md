@@ -390,6 +390,70 @@ await instanceA.events.recordEvent('login');
 await instanceB.crashes.recordHandledException(new Error('demo'));
 ```
 
+### 日志
+
+集成阶段可以开启详细日志,稳定后再提升级别:
+
+```typescript
+import { LogLevel } from 'countly-sdk-hos';
+
+config.logging
+  .enableLogging()             // 将日志输出到 hilog (release 版本默认关闭)
+  .setMinLevel(LogLevel.DEBUG); // VERBOSE | DEBUG | INFO | WARNING | ERROR | OFF
+```
+
+#### 日志行结构
+
+SDK 的每一条日志由两段前缀加正文组成:
+
+```text
+<品牌前缀> <模块标签> <消息正文>
+```
+
+* **品牌前缀** 表示这条日志来自哪个 SDK 实例:
+  * `[Countly]` ,通过 `Countly.initShared(config)` 创建的共享实例。
+  * `[Countly:<name>]` ,通过 `Countly.createInstance('<name>', config)` 创建的命名实例。`<name>` 就是你传给 `createInstance` 的名字,方便在同一个 hilog 流中区分并发的多个实例。
+* **模块标签** 表示这条日志来自哪个内部子系统,例如 `[Network]`、`[RequestQueue]`、`[ModuleEvents]`、`[ModuleSessions]`、`[ModuleViews]`、`[ModuleCrashes]`、`[ModuleConsent]`、`[ModuleConfiguration]`、`[ModuleHealthCheck]`、`[ModuleRemoteConfig]`、`[Storage]`,以及 `[Events]`/`[Views]`/`[Crashes]` 等公开门面调用轨迹。
+
+示例:
+
+```text
+I  [Countly] [ModuleEvents] recordEvent, queued key='login' count=1 sum=0 dur=0 segmentation={...} queueSize=1
+I  [Countly:analytics] [Network] REQUEST SENDING endpoint=/i usePost=true bytes=330 data=...
+W  [Countly:analytics] [ModuleSessions] onEnterBackground, unbalanced lifecycle (counter went negative), clamping to 0
+```
+
+#### 日志级别与路由
+
+SDK 使用六个逻辑级别,每一个都会映射到对应的 `console.*` 调用,HarmonyOS 再把它转发到 hilog 并附带正确的严重程度列(因此消息中不会再夹带 `[Info]`/`[Debug]` 等文本前缀,hilog 已经显示过了)。
+
+| `LogLevel` | `console` 方法    | hilog 严重程度 |
+| ---------- | ----------------- | -------------- |
+| `VERBOSE`  | `console.debug`   | D              |
+| `DEBUG`    | `console.debug`   | D              |
+| `INFO`     | `console.info`    | I              |
+| `WARNING`  | `console.warn`    | W              |
+| `ERROR`    | `console.error`   | E              |
+| `OFF`      | (不调用 console)   | —              |
+
+默认 `minLevel` 为 `DEBUG`。`VERBOSE` 主要用于 SDK 内部排查,会输出大量队列/请求生命周期日志,正常使用时不建议保留。
+
+#### 日志监听器(侧通道)
+
+如果你需要把 SDK 日志转发到自己的接收端(应用内日志面板、远程日志上报等)而不依赖 hilog 过滤,可以设置监听器。它接收的内容与 console 一致,同样受 `minLevel` 过滤:
+
+```typescript
+import { LogLevel } from 'countly-sdk-hos';
+
+config.logging.setListener((msg: string, level: LogLevel) => {
+  // `msg` 是已经格式化好的整行日志,例如 "[Countly] [Network] REQUEST SENDING ..."
+  // `level` 是数值型的 LogLevel,便于按严重程度分流。
+  myAppLogger.append(level, msg);
+});
+```
+
+监听器抛出的异常会被捕获,首次失败时通过 `console.error` 提示一次,之后的失败将被静默以避免递归崩溃。
+
 ## 中国大陆部署小贴士
 
 * **服务端地址:** Countly 是自托管产品,请将 `YOUR_SERVER` 替换为您自己部署的服务地址(中国大陆境内私有部署可避免跨境延迟与合规问题)。

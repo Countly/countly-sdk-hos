@@ -19,6 +19,8 @@ import healthCheckTest from './HealthCheck.test';
 import configurationTest from './Configuration.test';
 import countlyFacadeTest from './Countly.test';
 import countlyConfigTest from './CountlyConfig.test';
+import performanceTest from './Performance.test';
+import leakTest from './Leak.test';
 
 export default function testsuite() {
   utilsTest();
@@ -38,4 +40,6 @@ export default function testsuite() {
   configurationTest();
   countlyFacadeTest();
   countlyConfigTest();
+  performanceTest();
+  leakTest();
 }

@@ -1,6 +1,9 @@
 import deviceInfo from '@ohos.deviceInfo';
 import display from '@ohos.display';
 import i18n from '@ohos.i18n';
+import { hidebug } from '@kit.PerformanceAnalysisKit';
+import statvfs from '@ohos.file.statvfs';
+import { common } from '@kit.AbilityKit';
 
 /**
  * Collects HarmonyOS device/OS metrics. Values are read lazily and cached per
@@ -77,6 +80,73 @@ export class DeviceInfo {
     for (let i = 0; i < overrideKeys.length; i++) {
       const k: string = overrideKeys[i];
       out[k] = metricOverride[k];
+    }
+    return out;
+  }
+
+  /**
+   * RAM snapshot for crash metrics ONLY. Android collects RAM (and disk)
+   * exclusively inside `getCrashMetricsJSON`, not the session-metrics
+   * builder. We mirror that: `collect()` above is the session/RC/etc.
+   * metric builder and intentionally does NOT carry `_ram_*`;
+   * `ModuleCrashes.recordInternal` calls this method to enrich the crash
+   * payload only.
+   *
+   * Sync because `hidebug.getSystemMemInfo()` is a synchronous /proc
+   * read. Returns `_ram_total` / `_ram_current` in MB (server units).
+   * On failure (hidebug unavailable in some sandboxed contexts) the
+   * record is empty — same "missing rather than zero" contract as the
+   * disk path; downstream `_ob` change-detection treats missing keys as
+   * "not present" while a "0" string would be a legitimate-looking lie.
+   */
+  public static collectRamMetrics(): Record<string, string> {
+    const out: Record<string, string> = {};
+    try {
+      const mem: hidebug.SystemMemInfo = hidebug.getSystemMemInfo();
+      const totalKb: number = Number(mem.totalMem);
+      const availKb: number = Number(mem.availableMem);
+      if (Number.isFinite(totalKb) && totalKb > 0) {
+        out['_ram_total'] = String(Math.round(totalKb / 1024));
+        if (Number.isFinite(availKb) && availKb >= 0) {
+          const usedKb: number = totalKb - availKb;
+          out['_ram_current'] = String(Math.round(usedKb / 1024));
+        }
+      }
+    } catch (err) {
+      // hidebug unavailable, omit silently.
+    }
+    return out;
+  }
+
+  /**
+   * Disk metrics for the app sandbox (`context.filesDir`). Async because
+   * `statvfs.getTotalSize` ships as a Promise; `getFreeSizeSync` exists
+   * but the sync total variant is unconfirmed, so both run async for
+   * symmetry. Returns `_disk_total` / `_disk_current` in MB (matches
+   * Android units). On any failure (no context, permission, I/O) the
+   * returned record is empty and the caller omits the keys, same
+   * "missing rather than zero" rule as the RAM path.
+   *
+   * Like `collectRamMetrics`, this is crash-only — Android does not put
+   * disk into session metrics either.
+   */
+  public static async collectDiskMetrics(context: common.Context | null): Promise<Record<string, string>> {
+    const out: Record<string, string> = {};
+    if (context === null) return out;
+    try {
+      const path: string = context.filesDir;
+      const total: number = await statvfs.getTotalSize(path);
+      const free: number = await statvfs.getFreeSize(path);
+      if (Number.isFinite(total) && total > 0) {
+        const totalMb: number = Math.round(total / 1048576);
+        out['_disk_total'] = String(totalMb);
+        if (Number.isFinite(free) && free >= 0) {
+          const usedMb: number = Math.round((total - free) / 1048576);
+          out['_disk_current'] = String(usedMb);
+        }
+      }
+    } catch (err) {
+      // statvfs failure (path invalid, permission denied, fs unmounted), omit.
     }
     return out;
   }

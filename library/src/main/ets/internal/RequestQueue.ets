@@ -170,6 +170,11 @@ export class RequestQueue {
     if (this.backoffTimer !== null) { clearTimeout(this.backoffTimer); this.backoffTimer = null; }
   }
 
+  /** Test seam — true while the processor tick timer or backoff timer is armed. */
+  public hasActiveTimers(): boolean {
+    return this.processorTimer !== null || this.backoffTimer !== null;
+  }
+
   public async enqueue(requestData: string): Promise<void> {
     if (requestData.length === 0) return;
     // Intentionally NOT gated on `config.halted`, `CountlyInstance.halt()`

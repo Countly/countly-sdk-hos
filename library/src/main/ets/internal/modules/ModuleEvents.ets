@@ -36,8 +36,6 @@ interface QueuedEvent {
 
 interface TimedEvent {
   startTs: number;
-  startHour: number;
-  startDow: number;
 }
 
 const IMMEDIATE_FLUSH_KEYS: string[] = ['[CLY]_nps', '[CLY]_survey', '[CLY]_push_action'];
@@ -303,7 +301,7 @@ export class ModuleEvents extends ModuleBase {
       return;
     }
     const ts: number = Utils.uniqueTimestampMs();
-    this.timed.set(key, { startTs: ts, startHour: Utils.hourOf(ts), startDow: Utils.dayOfWeek(ts) });
+    this.timed.set(key, { startTs: ts });
     this.config.logger.i(`[ModuleEvents] startEvent, started timer for '${key}'`);
   }
 
@@ -324,43 +322,16 @@ export class ModuleEvents extends ModuleBase {
       this.config.logger.w(`[ModuleEvents] endEvent, no timed event '${key}'`);
       return;
     }
-    if (!this.core.consentModule.hasConsent(CountlyFeature.EVENTS)) {
-      this.timed.delete(key);
-      return;
-    }
-    const now: number = Date.now();
-    const durSec: number = (now - timed.startTs) / 1000;
+    const durSec: number = (Date.now() - timed.startTs) / 1000;
     this.timed.delete(key);
-
-    // Record with ORIGINAL start timestamp per dev guide.
-    const id: string = Utils.generateEventId();
-    const viewIds: ViewIds = this.viewIdProvider();
-    const finalSeg: SegmentationMap = Utils.sanitizeSegmentation(
-      segmentation,
-      this.config.limits.maxKeyLength,
-      this.config.limits.maxValueSize,
-      this.config.limits.maxSegmentationValues
-    );
-    const event: QueuedEvent = {
-      key: Utils.truncate(key, this.config.limits.maxKeyLength),
-      count: count < 1 ? 1 : count,
-      sum: sum,
-      dur: durSec,
-      segmentation: finalSeg,
-      timestamp: timed.startTs,
-      hour: timed.startHour,
-      dow: timed.startDow,
-      id: id,
-      pvid: '',
-      cvid: viewIds.currentViewId,
-      peid: this.lastEventId
-    };
-    this.eventQueue.push(event);
-    this.lastEventId = id;
-    this.lastEventName = event.key;
-    if (this.eventQueue.length >= this.config.eventQueueThreshold) {
-      await this.flushEventQueue();
-    }
+    // Delegate to the shared recording path with the ORIGINAL start
+    // timestamp (per dev guide), so hour/dow bucket on the start of the
+    // span rather than the end. Sanitization, server-config event +
+    // segmentation filters, consent gating, visibility/previous-name
+    // tagging, peid chain, the INFO log, and threshold-flushing all
+    // happen there — keeping `endEvent` aligned with `recordEvent`
+    // instead of maintaining a second near-duplicate pipeline.
+    await this.recordEventAt(key, segmentation, count, sum, durSec, timed.startTs);
   }
 
   /**
