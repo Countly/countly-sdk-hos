@@ -1,15 +1,20 @@
 import { describe, it, expect } from '@ohos/hypium';
 import { Utils } from '../../../main/ets/internal/Utils';
+import { MonotonicClock } from '../../../main/ets/internal/MonotonicClock';
 import { Limits } from '../../../main/ets/internal/Limits';
 import { Logger } from '../../../main/ets/internal/Logger';
 import { SegmentationMap, SegmentationValue } from '../../../main/ets/types/Types';
 
 export default function utilsTest() {
   describe('UtilsTest', () => {
-    it('uniqueTimestampMs_alwaysIncreasing', 0, () => {
-      const a: number = Utils.uniqueTimestampMs();
-      const b: number = Utils.uniqueTimestampMs();
-      const c: number = Utils.uniqueTimestampMs();
+    it('monotonicClock_alwaysIncreasing', 0, () => {
+      // Migrated from `Utils.uniqueTimestampMs` static. The monotonic
+      // counter is now per-instance via `MonotonicClock` so each test
+      // builds its own clock and exercises the same invariant.
+      const clock: MonotonicClock = new MonotonicClock();
+      const a: number = clock.nowMs();
+      const b: number = clock.nowMs();
+      const c: number = clock.nowMs();
       expect(b > a).assertTrue();
       expect(c > b).assertTrue();
     });
@@ -60,10 +65,29 @@ export default function utilsTest() {
       expect(u.length > 0).assertTrue();
     });
 
-    it('generateEventId_unique', 0, () => {
-      const a: string = Utils.generateEventId();
-      const b: string = Utils.generateEventId();
+    it('monotonicClock_generateEventId_unique', 0, () => {
+      // Migrated from `Utils.generateEventId` static. Now an instance
+      // method on MonotonicClock so concurrent CountlyInstances don't
+      // share an id-generation counter.
+      const clock: MonotonicClock = new MonotonicClock();
+      const a: string = clock.generateEventId();
+      const b: string = clock.generateEventId();
       expect(a !== b).assertTrue();
+    });
+
+    it('monotonicClock_independent_perInstance', 0, () => {
+      // The whole point of moving off a static `Utils.lastMsTs` field:
+      // burning the counter on one clock must NOT contaminate another.
+      // A pre-bumped first clock's next value being lower than a fresh
+      // clock's would mean state crossed the boundary.
+      const a: MonotonicClock = new MonotonicClock();
+      // Burn 1000 timestamps to drive `lastMsTs` well past `Date.now()`.
+      for (let i: number = 0; i < 1000; i++) a.nowMs();
+      const b: MonotonicClock = new MonotonicClock();
+      const fresh: number = b.nowMs();
+      // A fresh clock returns ~Date.now(), not the burned counter's
+      // artificially-future value.
+      expect(fresh < a.nowMs()).assertTrue();
     });
 
     it('sanitizeSegmentation_dropsUnsupportedAndTruncates', 0, () => {
@@ -178,11 +202,14 @@ export default function utilsTest() {
 
     // --- ported from Android UtilsTimeTests ---
 
-    it('uniqueTimestampMs_strictlyIncreasingRapidCalls', 0, () => {
-      // Ports testDiff, tighter assertion on monotonicity under burst calls.
-      let prev: number = Utils.uniqueTimestampMs();
+    it('monotonicClock_strictlyIncreasingRapidCalls', 0, () => {
+      // Ports Android testDiff, tighter monotonicity assertion under
+      // burst calls. Same invariant the SDK relies on for server-side
+      // event ordering inside a single batch.
+      const clock: MonotonicClock = new MonotonicClock();
+      let prev: number = clock.nowMs();
       for (let i = 0; i < 50; i++) {
-        const next: number = Utils.uniqueTimestampMs();
+        const next: number = clock.nowMs();
         expect(next > prev).assertTrue();
         prev = next;
       }

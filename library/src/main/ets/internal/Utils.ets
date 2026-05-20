@@ -9,23 +9,6 @@ import { SegmentationMap, SegmentationValue } from '../types/Types';
  * Shared helpers used across modules. Kept stateless where possible.
  */
 export class Utils {
-  private static lastMsTs: number = 0;
-
-  /**
-   * Returns a strictly monotonic millisecond timestamp. Two calls in the same
-   * ms are split apart by bumping the last-used value, needed so the server
-   * can order events/requests that arrive in the same batch.
-   */
-  public static uniqueTimestampMs(): number {
-    let ts: number = Date.now();
-    if (Utils.lastMsTs >= ts) {
-      Utils.lastMsTs++;
-    } else {
-      Utils.lastMsTs = ts;
-    }
-    return Utils.lastMsTs;
-  }
-
   public static hourOf(tsMs: number): number {
     return new Date(tsMs).getHours();
   }
@@ -65,15 +48,6 @@ export class Utils {
 
   public static generateUUID(): string {
     return util.generateRandomUUID(true);
-  }
-
-  /**
-   * Short event/view ID: random bytes base64-like encoded + ms timestamp.
-   * Unique per call within the same process.
-   */
-  public static generateEventId(): string {
-    const uuid: string = util.generateRandomUUID(false).replace(/-/g, '');
-    return uuid.substring(0, 16) + Date.now().toString();
   }
 
   public static isNullOrEmpty(value: string | null | undefined): boolean {
