@@ -20,6 +20,7 @@ export { RemoteConfigApi } from './src/main/ets/api/RemoteConfigApi';
 export { RequestQueueApi } from './src/main/ets/api/RequestQueueApi';
 export {
   CountlyConfig,
+  SdkInternalLimitsConfig,
   CrashesConfig,
   ViewsConfig,
   ContentConfig,

@@ -167,14 +167,38 @@ export class SessionsConfig {
 
 /**
  * Events sub-config. Only the batching threshold lives here, per-event limits
- * (max key length etc.) come from the SDK-level `Limits` class and aren't
- * intended to be user-tuned.
+ * come from the SDK-level `Limits` class; the ones integrators can tune are
+ * set through `CountlyConfig.sdkInternalLimits`.
  */
 export class EventsConfig {
   public queueThreshold: number = 100;
 
   public setQueueSizeToSend(threshold: number): EventsConfig {
     this.queueThreshold = Math.max(1, threshold);
+    return this;
+  }
+}
+
+/**
+ * SDK internal limits sub-config. Exposed under `CountlyConfig.sdkInternalLimits`
+ * to match the dev guide API shape. A limit left unset (null) keeps the SDK
+ * default from `Limits`; SDK Behavior Settings from the server override any
+ * value set here.
+ */
+export class SdkInternalLimitsConfig {
+  public maxKeyLength: number | null = null;
+
+  /**
+   * Set the maximum length of the keys the SDK records: event keys, view
+   * names, segmentation keys, custom user property keys and the keys of
+   * custom user property modifiers. Longer keys are truncated. The default
+   * is 128; a value below 1 is raised to 1.
+   */
+  public setMaxKeyLength(maxKeyLength: number): SdkInternalLimitsConfig {
+    if (maxKeyLength < 1) {
+      console.warn(`[Countly] SdkInternalLimitsConfig setMaxKeyLength, ${maxKeyLength} is less than 1, using 1`);
+    }
+    this.maxKeyLength = Math.max(1, maxKeyLength);
     return this;
   }
 }
@@ -530,6 +554,7 @@ export class CountlyConfig {
   public readonly network: NetworkConfig = new NetworkConfig();
   public readonly sessions: SessionsConfig = new SessionsConfig();
   public readonly events: EventsConfig = new EventsConfig();
+  public readonly sdkInternalLimits: SdkInternalLimitsConfig = new SdkInternalLimitsConfig();
   public readonly crashes: CrashesConfig = new CrashesConfig();
   public readonly views: ViewsConfig = new ViewsConfig();
   protected readonly content: ContentConfig = new ContentConfig();
