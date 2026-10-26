@@ -10,9 +10,12 @@ import { DemoLog, StoreKeys } from '../model/DemoState';
 const TAG: string = 'CountlyDemo';
 const DOMAIN: number = 0xC047;
 
-// Fill these in before running. COUNTLY_SERVER_URL must be an https:// URL of a
-// Countly server you control (or a trial server from trial.count.ly).
-const COUNTLY_SERVER_URL: string = 'https://master.count.ly';
+// Fill these in before running. COUNTLY_SERVER_URL must point at a Countly
+// server you control. From inside the HarmonyOS emulator, the host
+// machine's `localhost` is reachable at `10.0.2.2` (QEMU host-loopback
+// convention). If you're running on a real device, switch this to the
+// LAN IP of the host running the server, or a public URL.
+const COUNTLY_SERVER_URL: string = 'http://192.168.1.108:8080';
 const COUNTLY_APP_KEY: string = 'sdk_qa_test';
 
 /**
@@ -59,9 +62,9 @@ export default class MyAbilityStage extends AbilityStage {
         // Two consumers: DevEco's HiLog window (filter on tag "CountlyDemo"),
         // and the on-screen LogPanel so you can read SDK internals without
         // leaving the device. Gate at INFO so fetch lifecycle lines surface.
-        hilog.info(DOMAIN, TAG, `[sdk:${level}] ${msg}`);
+        //hilog.info(DOMAIN, TAG, `[sdk:${level}] ${msg}`);
         if (level >= LogLevel.INFO) {
-          DemoLog.append(msg);
+          //DemoLog.append(msg);
         }
       });
 
@@ -71,8 +74,11 @@ export default class MyAbilityStage extends AbilityStage {
       .setRequiresConsent(true)
       .giveAll();
 
-    config.crashes.enableCrashReporting();
-    config.views.enableAutomaticViewTracking();
+    //config.crashes.enableCrashReporting();
+    //config.views.enableAutomaticViewTracking();
+    // Report ability short names ("EntryAbility") instead of bundle-prefixed
+    // full names ("ly.count.sdk.hos.demo.EntryAbility") in auto-tracked views.
+    config.views.enableAutomaticViewShortNames();
 
     try {
       await Countly.initShared(config);

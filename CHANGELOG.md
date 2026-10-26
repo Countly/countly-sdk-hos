@@ -1,3 +1,7 @@
+## XX.XX.XX
+
+* Added "CountlyConfig.sdkInternalLimits.setMaxKeyLength(maxKeyLength)" to limit the length of event keys, view names, segmentation keys and custom user property keys. Longer keys are truncated. The default stays 128, and the key length limit of the SDK Behavior Settings overrides it.
+
 ## 26.1.0
 
 * Initial release of the Countly HarmonyOS SDK (ArkTS).

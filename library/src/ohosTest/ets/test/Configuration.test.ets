@@ -141,6 +141,45 @@ export default function configurationTest() {
       expect(h.instance.config.limits.maxKeyLength).assertEqual(32);
     });
 
+    it('sdkInternalLimits_setMaxKeyLength_replacesDefault_belowBehaviorSettings', 0, async () => {
+      // Precedence: SDK default (128) < integrator setter < dev-supplied SBS.
+      const plain: Harness = await buildHarness();
+      expect(plain.instance.config.limits.maxKeyLength).assertEqual(128);
+
+      const devSet: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.sdkInternalLimits.setMaxKeyLength(20);
+      });
+      expect(devSet.instance.config.limits.maxKeyLength).assertEqual(20);
+
+      const inner: Record<string, Object> = { 'lkl': 32 };
+      const overridden: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.sdkInternalLimits.setMaxKeyLength(20);
+        cfg.setSDKBehaviorSettings(buildSbsBody(inner));
+      });
+      expect(overridden.instance.config.limits.maxKeyLength).assertEqual(32);
+    });
+
+    it('sdkInternalLimits_setMaxKeyLength_serverResponseOverrides', 0, async () => {
+      // A server response carrying lkl replaces the integrator value; one
+      // without lkl leaves it in place.
+      const withLkl: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.sdkInternalLimits.setMaxKeyLength(20);
+      }, (network: FakeNetwork) => {
+        network.nextBody = buildSbsBody({ 'lkl': 8 });
+      });
+      await flushTick(120);
+      expect(withLkl.instance.config.limits.maxKeyLength).assertEqual(8);
+
+      const withoutLkl: Harness = await buildHarness((cfg: TestableCountlyConfig) => {
+        cfg.sdkInternalLimits.setMaxKeyLength(20);
+      }, (network: FakeNetwork) => {
+        network.nextBody = buildSbsBody({ 'eqs': 12 });
+      });
+      await flushTick(120);
+      expect(withoutLkl.instance.config.serverConfig.eventQueueSize).assertEqual(12);
+      expect(withoutLkl.instance.config.limits.maxKeyLength).assertEqual(20);
+    });
+
     it('setSDKBehaviorSettings_invalidJSON_ignored', 0, async () => {
       // Malformed JSON must not throw and must leave defaults intact. The
       // module logs a warning, assertion is on the user-visible behavior.

@@ -233,6 +233,18 @@ export default function countlyConfigTest() {
       expect(cfg.network.maxRequestQueueSize).assertEqual(1);
     });
 
+    /** SdkInternalLimitsConfig.setMaxKeyLength is unset by default, stores the value, and clamps to at least 1. */
+    it('setMaxKeyLength_defaultUnset_minClampOne', 0, () => {
+      const cfg: TestableCountlyConfig = new TestableCountlyConfig(ctx(), 'https://x', 'k');
+      expect(cfg.sdkInternalLimits.maxKeyLength).assertNull();
+      cfg.sdkInternalLimits.setMaxKeyLength(40);
+      expect(cfg.sdkInternalLimits.maxKeyLength).assertEqual(40);
+      cfg.sdkInternalLimits.setMaxKeyLength(0);
+      expect(cfg.sdkInternalLimits.maxKeyLength).assertEqual(1);
+      cfg.sdkInternalLimits.setMaxKeyLength(-5);
+      expect(cfg.sdkInternalLimits.maxKeyLength).assertEqual(1);
+    });
+
     /** SessionsConfig.setUpdateIntervalSec clamps to at least 1. */
     it('setUpdateIntervalSec_minClampOne', 0, () => {
       const cfg: TestableCountlyConfig = new TestableCountlyConfig(ctx(), 'https://x', 'k');

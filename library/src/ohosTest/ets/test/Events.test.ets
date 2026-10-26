@@ -455,6 +455,23 @@ export default function eventsTest() {
       expect(calls[calls.length - 1].data.indexOf('%22key%22%3A%22Mo%22') !== -1).assertTrue();
     });
 
+    it('internalLimits_setMaxKeyLength_truncatesEventAndSegmentationKeys', 0, async () => {
+      // Android internalLimits_recordEvent, the limit set through
+      // CountlyConfig.sdkInternalLimits clamps the event key and the
+      // segmentation keys; values stay whole.
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.events.setQueueSizeToSend(1);
+        cfg.sdkInternalLimits.setMaxKeyLength(3);
+      });
+      const seg: SegmentationMap = { 'segment_key': 'segment_value' };
+      await h.instance.events.recordEvent('event_key', seg, 1, 0, 0);
+      await flushTick(60);
+      const call = h.network.findCallsWithParam('events=')[0];
+      expect(call !== undefined).assertTrue();
+      expect(call.data.indexOf('%22key%22%3A%22eve%22') !== -1).assertTrue();
+      expect(call.data.indexOf('%22seg%22%3A%22segment_value%22') !== -1).assertTrue();
+    });
+
     it('internalLimits_segmentation_truncatesKeys', 0, async () => {
       // Android internalLimits_recordEvent_segmentation, maxKeyLength clamps
       // segmentation keys too. Two originally-distinct keys that collapse to

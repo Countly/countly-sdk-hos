@@ -189,6 +189,8 @@ export class CountlyInstance implements SdkCore {
     this.config.requestDropAgeHours = countlyConfig.network.requestDropAgeHours;
     this.config.parameterTamperingSalt = countlyConfig.network.parameterTamperingSalt;
     this.config.backoffEnabled = !countlyConfig.network.backoffDisabled;
+    const devMaxKeyLength: number | null = countlyConfig.sdkInternalLimits.maxKeyLength;
+    if (devMaxKeyLength !== null) this.config.limits.maxKeyLength = devMaxKeyLength;
 
     this.config.manualSessionControl = countlyConfig.sessions.manualControl;
     this.config.manualSessionHybridMode = countlyConfig.sessions.manualHybridMode;
