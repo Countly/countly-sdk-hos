@@ -1,6 +1,11 @@
 ## XX.XX.XX
 
 * Added "CountlyConfig.sdkInternalLimits.setMaxKeyLength(maxKeyLength)" to limit the length of event keys, view names, segmentation keys and custom user property keys. Longer keys are truncated. The default stays 128, and the key length limit of the SDK Behavior Settings overrides it.
+* Added method usage and log codes to the SDK health check.
+* Log lines now use the levels of the SDK development guide.
+
+* Mitigated an issue where the health check counted the retry pauses after failed requests as backoffs.
+* Mitigated an issue where a delivered health check also cleared what was counted while it was on its way.
 
 ## 26.1.0
 

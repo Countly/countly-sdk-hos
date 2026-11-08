@@ -13,16 +13,19 @@ export class SessionsApi {
 
   public async beginSession(): Promise<void> {
     this.logger.i('[Sessions] Calling beginSession');
+    this.logger.healthUsage('sessions', 'begin');
     await this.module.beginSession();
   }
 
   public async updateSession(): Promise<void> {
     this.logger.i('[Sessions] Calling updateSession');
+    this.logger.healthUsage('sessions', 'update');
     await this.module.updateSession();
   }
 
   public async endSession(): Promise<void> {
     this.logger.i('[Sessions] Calling endSession');
+    this.logger.healthUsage('sessions', 'end');
     await this.module.endSession();
   }
 }

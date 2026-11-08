@@ -14,36 +14,43 @@ export class ViewsApi {
 
   public async startAutoStoppedView(name: string, segmentation: SegmentationMap | null = null): Promise<string | null> {
     this.logger.i(`[Views] Calling startAutoStoppedView, name=[${name}]`);
+    this.logger.healthUsage('views', 'startAuto');
     return this.module.startAutoStoppedView(name, segmentation);
   }
 
   public async startView(name: string, segmentation: SegmentationMap | null = null): Promise<string | null> {
     this.logger.i(`[Views] Calling startView, name=[${name}]`);
+    this.logger.healthUsage('views', 'start');
     return this.module.startView(name, segmentation);
   }
 
   public async stopViewWithName(name: string, segmentation: SegmentationMap | null = null): Promise<void> {
     this.logger.i(`[Views] Calling stopViewWithName, name=[${name}]`);
+    this.logger.healthUsage('views', 'stop');
     await this.module.stopViewWithName(name, segmentation);
   }
 
   public async stopViewWithID(id: string, segmentation: SegmentationMap | null = null): Promise<void> {
     this.logger.i(`[Views] Calling stopViewWithID, id=[${id}]`);
+    this.logger.healthUsage('views', 'stop');
     await this.module.stopViewWithID(id, segmentation);
   }
 
   public pauseViewWithID(id: string): void {
     this.logger.i(`[Views] Calling pauseViewWithID, id=[${id}]`);
+    this.logger.healthUsage('views', 'pause');
     this.module.pauseViewWithID(id);
   }
 
   public resumeViewWithID(id: string): void {
     this.logger.i(`[Views] Calling resumeViewWithID, id=[${id}]`);
+    this.logger.healthUsage('views', 'resume');
     this.module.resumeViewWithID(id);
   }
 
   public async stopAllViews(segmentation: SegmentationMap | null = null): Promise<void> {
     this.logger.i('[Views] Calling stopAllViews');
+    this.logger.healthUsage('views', 'stopAll');
     await this.module.stopAllViews(segmentation);
   }
 

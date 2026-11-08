@@ -112,6 +112,7 @@ export class ModuleDeviceId extends ModuleBase {
     if (this.rejectIfHalted('ModuleDeviceId', 'setID')) return;
     if (Utils.isNullOrEmpty(newId)) {
       this.config.logger.w('[ModuleDeviceId] setID, null/empty ignored');
+      this.config.logger.healthCode('w601');
       return;
     }
     if (newId === this.currentId) {

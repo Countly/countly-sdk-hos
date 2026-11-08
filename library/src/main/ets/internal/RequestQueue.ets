@@ -199,6 +199,7 @@ export class RequestQueue {
     while (this.queue.length >= this.config.maxRequestQueueSize) {
       this.queue.shift();
       this.config.logger.w('[RequestQueue] enqueue, dropped oldest request (queue full)');
+      this.config.logger.healthCode('w310');
     }
     this.queue.push(requestData);
     // INFO + URL-decoded request data so a "did this actually reach the
@@ -309,6 +310,7 @@ export class RequestQueue {
     const head: string = this.queue[0];
     if (this.config.requestDropAgeHours > 0 && this.isTooOld(head)) {
       this.config.logger.w('[RequestQueue] processHead, dropping request by age');
+      this.config.logger.healthCode('w330');
       this.queue.shift();
       await this.persist();
       return;
@@ -363,7 +365,7 @@ export class RequestQueue {
       // Log at WARNING so this isn't invisible on default levels; include
       // endpoint + redacted preview so integrators can diagnose without
       // spilling device_id / app_key into cloud log sinks.
-      this.config.logger.w(
+      this.config.logger.d(
         `[RequestQueue] processHead, network error endpoint=${endpoint} err=${err} data=${RequestQueue.redactPreview(requestData)}`
       );
       if (this.healthListener !== null) this.healthListener.onFailedRequest(-1, String(err));
@@ -373,7 +375,7 @@ export class RequestQueue {
 
     const decision: string = RequestQueue.classify(this.config.logger, endpoint, result);
     if (decision === 'drop') {
-      this.config.logger.e(`[RequestQueue] processHead, dropping head after unrecoverable response status=${result.statusCode} endpoint=${endpoint}`);
+      this.config.logger.d(`[RequestQueue] processHead, dropping head after unrecoverable response status=${result.statusCode} endpoint=${endpoint}`);
       if (this.healthListener !== null) this.healthListener.onFailedRequest(result.statusCode, result.body);
       this.queue.shift();
       this.consecutiveBackedOff = 0;
@@ -381,7 +383,7 @@ export class RequestQueue {
       return;
     }
     if (decision === 'retry') {
-      this.config.logger.w(`[RequestQueue] processHead, retrying after transient failure status=${result.statusCode} endpoint=${endpoint}`);
+      this.config.logger.d(`[RequestQueue] processHead, retrying after transient failure status=${result.statusCode} endpoint=${endpoint}`);
       if (this.healthListener !== null) this.healthListener.onFailedRequest(result.statusCode, result.body);
       this.enterBackoff();
       return;
@@ -398,11 +400,9 @@ export class RequestQueue {
     // matching REQUEST ENQUEUED log. Full body intentionally (no
     // truncation) for active debugging.
     this.config.logger.i(`[RequestQueue] REQUEST SENT endpoint=${endpoint} status=${result.statusCode} elapsedMs=${result.elapsedMs} remaining=${this.queue.length} data=${Utils.decodeQueryStringForLog(requestData)} response=${result.body}`);
-    if (this.healthListener !== null) this.healthListener.onSuccessfulSend();
-
-    if (this.config.backoffEnabled) {
-      this.evaluateBackoff(result, requestData);
-    }
+    const backedOff: boolean = this.config.backoffEnabled ? this.evaluateBackoff(result, requestData) : false;
+    // Only a request answered in time ends a run of backoffs.
+    if (!backedOff && this.healthListener !== null) this.healthListener.onSuccessfulSend();
   }
 
   /**
@@ -417,7 +417,6 @@ export class RequestQueue {
     const delay: number = Math.min(baseMs * Math.pow(2, exponent), BACKOFF_MAX_MS);
     this.backoffUntilMs = Date.now() + delay;
     this.consecutiveBackedOff++;
-    if (this.healthListener !== null) this.healthListener.onBackoff();
     this.config.logger.i(`[RequestQueue] enterBackoff, delay=${delay / 1000}s consecutive=${this.consecutiveBackedOff}`);
   }
 
@@ -430,22 +429,24 @@ export class RequestQueue {
    *   - request not older than `bom_ra` hours (slow response is "current",
    *     not just a stale request finally getting through)
    * On trigger, pause for `bom_d` seconds.
+   * Returns true when the pause started.
    */
-  private evaluateBackoff(result: HttpResult, requestData: string): void {
+  private evaluateBackoff(result: HttpResult, requestData: string): boolean {
     const sc: ServerConfig = this.config.serverConfig;
     const acceptedTimeoutMs: number = sc.bomAcceptedTimeoutSeconds * 1000;
-    if (result.elapsedMs < acceptedTimeoutMs) return;
+    if (result.elapsedMs < acceptedTimeoutMs) return false;
     const threshold: number = sc.bomRequestQueuePercentage;
     const queueRatio: number = this.queue.length / this.config.maxRequestQueueSize;
-    if (queueRatio > threshold) return;
+    if (queueRatio > threshold) return false;
     if (this.isOlderThanHours(requestData, sc.bomRequestAge)) {
       this.config.logger.d('[RequestQueue] evaluateBackoff, head request older than bom_ra, skip');
-      return;
+      return false;
     }
     const pauseMs: number = sc.bomDuration * 1000;
     this.backoffUntilMs = Date.now() + pauseMs;
+    this.config.logger.w(`[RequestQueue] evaluateBackoff, slow server, pausing ${sc.bomDuration}s`);
     if (this.healthListener !== null) this.healthListener.onBackoff();
-    this.config.logger.d(`[RequestQueue] evaluateBackoff, slow server, pausing ${sc.bomDuration}s`);
+    return true;
   }
 
   /** Used by both `dropOldRequestTime` (drop-by-age) and `bom_ra` (skip
@@ -490,16 +491,16 @@ export class RequestQueue {
       try {
         const parsed: Object = JSON.parse(result.body);
         if ((parsed as Record<string, Object>)['result'] !== undefined) return 'success';
-        logger.w(`[RequestQueue] classify, /i 2xx missing "result", dropping head (broken proxy?). body=${RequestQueue.bodyPreview(result.body)}`);
+        logger.d(`[RequestQueue] classify, /i 2xx missing "result", dropping head (broken proxy?). body=${RequestQueue.bodyPreview(result.body)}`);
         return 'drop';
       } catch (err) {
-        logger.w(`[RequestQueue] classify, /i 2xx unparseable (${err}), dropping head. body=${RequestQueue.bodyPreview(result.body)}`);
+        logger.d(`[RequestQueue] classify, /i 2xx unparseable (${err}), dropping head. body=${RequestQueue.bodyPreview(result.body)}`);
         return 'drop';
       }
     }
     if (code >= 400 && code < 500) {
       // 4xx is permanent, wrong app_key, bad salt, revoked credentials.
-      logger.w(`[RequestQueue] classify, ${code} permanent failure endpoint=${endpoint}, dropping head. body=${RequestQueue.bodyPreview(result.body)}`);
+      logger.d(`[RequestQueue] classify, ${code} permanent failure endpoint=${endpoint}, dropping head. body=${RequestQueue.bodyPreview(result.body)}`);
       return 'drop';
     }
     // 5xx or anomalous code, assume transient, retry with backoff.
@@ -531,6 +532,7 @@ export class RequestQueue {
       // Storage write failed, in-memory queue is still authoritative, but
       // the integrator should know requests will be lost on process restart.
       this.config.logger.e('[RequestQueue] persist, saveRequestQueue returned false, queue will be lost on restart');
+      this.config.logger.healthCode('e501');
     }
   }
 }

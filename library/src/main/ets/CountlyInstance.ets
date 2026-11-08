@@ -465,16 +465,20 @@ export class CountlyInstance implements SdkCore {
         );
         await Promise.all(promises);
       }
+      // The health check waits while a temporary device ID is used, and is sent once a real one replaces it.
+      if (!this.deviceIdModule.isTemporary()) this.healthCheckModule.triggerPostUcmSend();
     });
   }
 
   public async init(): Promise<void> {
     if (this.initialized) {
-      // Log at ERROR: a second init() against an already-initialized instance
-      // means the integrator expected a different config to take effect and
-      // it silently won't. Only `Countly.initShared` short-circuits by
-      // design; if you reach *this* path you almost certainly have a bug.
-      this.config.logger.e('init, already initialized, ignoring (check for duplicate init() calls)');
+      // Log at WARNING with health check log code w110: a second init() against
+      // an already-initialized instance means the integrator expected a
+      // different config to take effect and it silently won't. Only
+      // `Countly.initShared` short-circuits by design; if you reach *this* path
+      // you almost certainly have a bug.
+      this.config.logger.w('init, already initialized, ignoring (check for duplicate init() calls)');
+      this.config.logger.healthCode('w110');
       return;
     }
     this.initialized = true;
@@ -612,6 +616,10 @@ export class CountlyInstance implements SdkCore {
     }
   }
 
+  public async saveHealthCheckState(): Promise<void> {
+    await this.healthCheckModule.saveState();
+  }
+
   public async flushEvents(): Promise<void> {
     await this.eventsModule.flushEventQueue();
   }
@@ -705,6 +713,9 @@ export class CountlyInstance implements SdkCore {
     this.sessionsModule.onEnterBackground();
     this.eventsModule.onEnterBackground();
     this.viewsModule.onEnterBackground();
+    this.healthCheckModule.saveState().catch((err: Object): void => {
+      this.config.logger.d(`lifecycleBackground, health check saveState rejected: ${err}`);
+    });
   }
 
   /**
@@ -792,6 +803,7 @@ export class CountlyInstance implements SdkCore {
       this.config.logger.d(`auto-view, excluded: ${name}`);
       return;
     }
+    this.config.logger.healthUsage('views', 'start:a');
     this.viewsModule.startAutoStoppedView(name, this.config.globalViewSegmentation)
       .catch((err: Object): void => {
         this.config.logger.e(`auto-view startAutoStoppedView rejected: ${err}`);

@@ -7,6 +7,12 @@ import { LogLevel, LogListener } from '../types/Types';
  */
 export type HealthLogListener = (isError: boolean) => void;
 
+/** Internal callback for ModuleHealthCheck, fires for every health check log code (see `healthCode`). */
+export type HealthCodeListener = (code: string, area: string) => void;
+
+/** Internal callback for ModuleHealthCheck, fires for every counted method call (see `healthUsage`). */
+export type HealthUsageListener = (area: string, method: string) => void;
+
 /**
  * Log output. The "flag" enables console output; the "listener" enables a
  * side-channel callback. Both are independent so integrators can get logs
@@ -18,6 +24,14 @@ export class Logger {
   private minLevel: LogLevel = LogLevel.DEBUG;
   private listenerErrorReported: boolean = false;
   private healthListener: HealthLogListener | null = null;
+  private healthCodeListener: HealthCodeListener | null = null;
+  private healthUsageListener: HealthUsageListener | null = null;
+  /** True while an automatically detected crash is reported, see `setHealthPaused`. */
+  private healthPaused: boolean = false;
+  // Counted for the health check before ModuleHealthCheck listened, handed over when it does.
+  private pendingWarnings: number = 0;
+  private pendingErrors: number = 0;
+  private pendingCodes: string[] = [];
   /**
    * Optional named-instance suffix appended to the brand prefix:
    * `[Countly]` for the shared instance, `[Countly:foo]` for an
@@ -28,8 +42,67 @@ export class Logger {
    */
   private instanceName: string = '';
 
+  /**
+   * Hands every WARNING/ERROR log to ModuleHealthCheck. The ones logged
+   * before it listened are handed over now.
+   */
   public setHealthListener(listener: HealthLogListener | null): void {
     this.healthListener = listener;
+    if (listener === null) return;
+    for (let i = 0; i < this.pendingWarnings; i++) listener(false);
+    for (let i = 0; i < this.pendingErrors; i++) listener(true);
+    this.pendingWarnings = 0;
+    this.pendingErrors = 0;
+  }
+
+  /**
+   * Hands every health check log code to ModuleHealthCheck. The codes
+   * recorded before it listened are handed over now.
+   */
+  public setHealthCodeListener(listener: HealthCodeListener | null): void {
+    this.healthCodeListener = listener;
+    if (listener === null) return;
+    const pending: string[] = this.pendingCodes;
+    this.pendingCodes = [];
+    for (let i = 0; i < pending.length; i++) listener(pending[i], '');
+  }
+
+  /** Hands every counted method call to ModuleHealthCheck. */
+  public setHealthUsageListener(listener: HealthUsageListener | null): void {
+    this.healthUsageListener = listener;
+  }
+
+  /**
+   * Holds back method usage and log codes while an automatically detected
+   * crash is reported, so the crash report never calls into the health check.
+   */
+  public setHealthPaused(paused: boolean): void {
+    this.healthPaused = paused;
+  }
+
+  /**
+   * Counts a known problem for the health check, next to the log line that
+   * reports it (dev guide §Health Checks, log codes). A code that a method
+   * of a feature area records passes the area ('sessions', 'events', 'views'
+   * or 'crashes') and is counted only while that feature has consent.
+   */
+  public healthCode(code: string, area: string = ''): void {
+    if (this.healthPaused) return;
+    if (this.healthCodeListener !== null) {
+      this.healthCodeListener(code, area);
+    } else {
+      this.pendingCodes.push(code);
+    }
+  }
+
+  /**
+   * Counts a call of a session, event, view or crash method for the health
+   * check (dev guide §Health Checks, method usage), with ':a' for a call
+   * the SDK made by itself.
+   */
+  public healthUsage(area: string, method: string): void {
+    if (this.healthPaused || this.healthUsageListener === null) return;
+    this.healthUsageListener(area, method);
   }
 
   public setInstanceName(name: string): void {
@@ -62,6 +135,10 @@ export class Logger {
     if (this.healthListener !== null) {
       if (level === LogLevel.ERROR) this.healthListener(true);
       else if (level === LogLevel.WARNING) this.healthListener(false);
+    } else if (level === LogLevel.ERROR) {
+      this.pendingErrors++;
+    } else if (level === LogLevel.WARNING) {
+      this.pendingWarnings++;
     }
 
     // Both the console and the listener now honor minLevel. If the integrator

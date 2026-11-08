@@ -5,6 +5,7 @@ import { InternalConfig } from '../InternalConfig';
 import { DeviceInfo } from '../DeviceInfo';
 import { Utils } from '../Utils';
 import { CountlyFeature, CrashData, SegmentationMap, ThreadStackEntry, ThreadStackProvider } from '../../types/Types';
+import { HEALTH_CHECK_CRASH_COUNT_KEY } from './ModuleHealthCheck';
 
 const MAX_STACK_TRACE_CHARS: number = 20000;
 
@@ -121,6 +122,13 @@ export class ModuleCrashes extends ModuleBase {
    */
   public handleUnhandledException(errMsg: string): void {
     if (this.rejectIfHalted('ModuleCrashes', 'handleUnhandledException')) return;
+    // From here on the health check counts no method usage and no log codes,
+    // so the crash report never calls into it; the crash itself is counted
+    // in the stored crash count, which the next start reports.
+    this.config.logger.setHealthPaused(true);
+    this.countAutomaticCrash().catch((countErr: Object) => {
+      this.config.logger.d(`[ModuleCrashes] automatic crash count rejected: ${countErr}`);
+    });
     const err: Error = ModuleCrashes.errorFromMessage(errMsg);
     // Log a rejection from the auto-handler path rather than swallowing it,
     // if crash recording fails (e.g. enqueue during OOM), the crash this
@@ -131,10 +139,26 @@ export class ModuleCrashes extends ModuleBase {
     });
   }
 
+  /**
+   * Adds 1 to the stored count of automatically detected crashes, which the
+   * health check adds to "crashes" / "record:a" at the next start. Only a
+   * crash that is reported, with the crashes consent and crash reporting on,
+   * is counted.
+   */
+  private async countAutomaticCrash(): Promise<void> {
+    if (!this.config.storage) return;
+    if (!this.core.consentModule.hasConsent(CountlyFeature.CRASHES)) return;
+    if (!this.config.serverConfig.crashReportingEnabled) return;
+    const stored: number = parseInt(await this.config.storage.getString(HEALTH_CHECK_CRASH_COUNT_KEY, '0'), 10);
+    const count: number = Number.isFinite(stored) && stored > 0 ? stored : 0;
+    await this.config.storage.setString(HEALTH_CHECK_CRASH_COUNT_KEY, String(count + 1));
+  }
+
   public addBreadcrumb(record: string): void {
     if (this.rejectIfHalted('ModuleCrashes', 'addBreadcrumb')) return;
     if (Utils.isNullOrEmpty(record)) {
       this.config.logger.w('[ModuleCrashes] addBreadcrumb, null/empty, ignored');
+      this.config.logger.healthCode('w700', 'crashes');
       return;
     }
     const truncated: string = Utils.truncate(record, this.config.limits.maxValueSize);
@@ -166,6 +190,8 @@ export class ModuleCrashes extends ModuleBase {
     if (this.errorObserverId !== -1) return;
     try {
       this.errorObserverId = errorManager.on('error', createCountlyErrorObserver(this));
+      // crash reporting starts again, so the health check counts again
+      this.config.logger.setHealthPaused(false);
       this.config.logger.d(`[ModuleCrashes] installErrorHandler, registered observer id=${this.errorObserverId}`);
     } catch (e) {
       // Don't fail SDK init because the platform refused the registration,
@@ -217,6 +243,7 @@ export class ModuleCrashes extends ModuleBase {
     }
     if (!err) {
       this.config.logger.w('[ModuleCrashes] recordInternal, null error, ignored');
+      this.config.logger.healthCode('w700', 'crashes');
       return;
     }
 

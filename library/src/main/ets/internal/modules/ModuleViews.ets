@@ -101,7 +101,7 @@ export class ModuleViews extends ModuleBase {
   public async startAutoStoppedView(name: string, segmentation: SegmentationMap | null): Promise<string | null> {
     if (this.rejectIfHalted('ModuleViews', 'startAutoStoppedView')) return null;
     if (!this.core.consentModule.hasConsent(CountlyFeature.VIEWS)) {
-      this.config.logger.w(`[ModuleViews] startAutoStoppedView, dropped, no VIEWS consent (name=${name})`);
+      this.config.logger.v(`[ModuleViews] startAutoStoppedView, dropped, no VIEWS consent (name=${name})`);
       return null;
     }
     if (!this.config.serverConfig.viewTrackingEnabled) {
@@ -110,6 +110,7 @@ export class ModuleViews extends ModuleBase {
     }
     if (Utils.isNullOrEmpty(name)) {
       this.config.logger.w('[ModuleViews] startAutoStoppedView, empty name, omitted');
+      this.config.logger.healthCode('w710', 'views');
       return null;
     }
     if (this.currentAutoStoppedId.length > 0) {
@@ -138,7 +139,7 @@ export class ModuleViews extends ModuleBase {
   public async startView(name: string, segmentation: SegmentationMap | null): Promise<string | null> {
     if (this.rejectIfHalted('ModuleViews', 'startView')) return null;
     if (!this.core.consentModule.hasConsent(CountlyFeature.VIEWS)) {
-      this.config.logger.w(`[ModuleViews] startView, dropped, no VIEWS consent (name=${name})`);
+      this.config.logger.v(`[ModuleViews] startView, dropped, no VIEWS consent (name=${name})`);
       return null;
     }
     if (!this.config.serverConfig.viewTrackingEnabled) {
@@ -147,6 +148,7 @@ export class ModuleViews extends ModuleBase {
     }
     if (Utils.isNullOrEmpty(name)) {
       this.config.logger.w('[ModuleViews] startView, empty name, omitted');
+      this.config.logger.healthCode('w710', 'views');
       return null;
     }
     return this.startInternal(name, segmentation, false);
@@ -166,6 +168,7 @@ export class ModuleViews extends ModuleBase {
       }
     }
     this.config.logger.w(`[ModuleViews] stopViewWithName, no active view '${name}'`);
+    this.config.logger.healthCode('w730', 'views');
   }
 
   public async stopViewWithID(id: string, segmentation: SegmentationMap | null): Promise<void> {
@@ -175,6 +178,7 @@ export class ModuleViews extends ModuleBase {
     const view: ActiveView | undefined = this.activeViews.get(id);
     if (!view) {
       this.config.logger.w(`[ModuleViews] stopViewWithID, no active view id '${id}'`);
+      this.config.logger.healthCode('w730', 'views');
       return;
     }
     const durSec: number = view.startTsSec === 0 ? 0 : Math.round(Date.now() / 1000) - view.startTsSec;
@@ -195,16 +199,32 @@ export class ModuleViews extends ModuleBase {
   public pauseViewWithID(id: string): void {
     if (this.rejectIfHalted('ModuleViews', 'pauseViewWithID')) return;
     const view: ActiveView | undefined = this.activeViews.get(id);
-    if (!view) return;
-    if (view.startTsSec === 0) return;
+    if (!view) {
+      this.config.logger.w(`[ModuleViews] pauseViewWithID, no active view id '${id}'`);
+      this.config.logger.healthCode('w730', 'views');
+      return;
+    }
+    if (view.startTsSec === 0) {
+      this.config.logger.w(`[ModuleViews] pauseViewWithID, view id '${id}' is already paused`);
+      this.config.logger.healthCode('w731', 'views');
+      return;
+    }
     view.startTsSec = 0;
   }
 
   public resumeViewWithID(id: string): void {
     if (this.rejectIfHalted('ModuleViews', 'resumeViewWithID')) return;
     const view: ActiveView | undefined = this.activeViews.get(id);
-    if (!view) return;
-    if (view.startTsSec !== 0) return;
+    if (!view) {
+      this.config.logger.w(`[ModuleViews] resumeViewWithID, no active view id '${id}'`);
+      this.config.logger.healthCode('w730', 'views');
+      return;
+    }
+    if (view.startTsSec !== 0) {
+      this.config.logger.w(`[ModuleViews] resumeViewWithID, view id '${id}' is not paused`);
+      this.config.logger.healthCode('w731', 'views');
+      return;
+    }
     view.startTsSec = Math.round(Date.now() / 1000);
   }
 
@@ -286,6 +306,7 @@ export class ModuleViews extends ModuleBase {
     const normalized: string = mode === 'portrait' || mode === 'landscape' ? mode : '';
     if (normalized === '') {
       this.config.logger.w(`[ModuleViews] updateOrientation, unsupported mode '${mode}', expected 'portrait' or 'landscape'`);
+      this.config.logger.healthCode('w700');
       return;
     }
     if (!forceSend && normalized === this.lastOrientationMode) {

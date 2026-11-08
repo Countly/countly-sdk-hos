@@ -109,6 +109,33 @@ export default function healthCheckTest() {
       expect(body.indexOf('99.9.9') !== -1).assertTrue();
     });
 
+    it('payload_includesMethodUsageAndLogCodes', 0, async () => {
+      // The facade counts the call before its first await, and the timed
+      // event checks are synchronous, so everything lands before the deferred send.
+      const h: Harness = await buildHarness();
+      h.instance.events.startEvent('checkout');
+      h.instance.events.startEvent('checkout');
+      h.instance.events.cancelEvent('never_started');
+      await flushTick(80);
+      const hc: RecordedCall | undefined = h.network.calls.find((c: RecordedCall) => c.endpoint === '/i' && c.data.indexOf('hc=') !== -1);
+      const body: string = decodeURIComponent(hc!.data);
+      expect(body.indexOf('"fu":{') !== -1).assertTrue();
+      expect(body.indexOf('"lc":{') !== -1).assertTrue();
+      expect(body.indexOf('"start":2') !== -1).assertTrue();
+      expect(body.indexOf('"cancel":1') !== -1).assertTrue();
+      expect(body.indexOf('"w722":1') !== -1).assertTrue();
+      expect(body.indexOf('"w721":1') !== -1).assertTrue();
+    });
+
+    it('secondInit_isCountedWithLogCodeW110', 0, async () => {
+      const h: Harness = await buildHarness();
+      await h.instance.init();
+      await flushTick(80);
+      const hc: RecordedCall | undefined = h.network.calls.find((c: RecordedCall) => c.endpoint === '/i' && c.data.indexOf('hc=') !== -1);
+      const body: string = decodeURIComponent(hc!.data);
+      expect(body.indexOf('"w110":1') !== -1).assertTrue();
+    });
+
     it('networkFailure_duringSend_suppressesAckClear', 0, async () => {
       // If the send itself throws, the module must NOT clear state (it relies
       // on retaining for the next launch). We observe the log-warning path

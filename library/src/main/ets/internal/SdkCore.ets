@@ -30,6 +30,9 @@ export interface SdkCore {
   /** Save pending user-profile changes before a request that should include them. */
   saveUserProfileIfPending(): Promise<void>;
 
+  /** Stores the health check counters, on the session update timer and at the end of a session. */
+  saveHealthCheckState(): Promise<void>;
+
   /**
    * Flush in-memory event queue to the request queue. No-op when the queue
    * is empty. Used by ModuleUserProfile to drain events before each
