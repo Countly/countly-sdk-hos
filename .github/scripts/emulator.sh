@@ -14,7 +14,7 @@
 #
 # Settings (environment):
 #   HOS_EMULATOR              Emulator binary (exported by hos-ci.sh use-toolchain)
-#   HOS_EMULATOR_NAME         instance name (default ci-phone)
+#   HOS_EMULATOR_NAME         instance name (default ci_phone; letters, digits, spaces, _ and + only)
 #   HOS_EMULATOR_HOME         working folder for downloads, instances and logs (default $RUNNER_TEMP/hos-emulator)
 #   HOS_INSTANCE_ROOT         instance folder (default $HOS_EMULATOR_HOME/deployed when creating, else the
 #                             DevEco default for the OS)
@@ -40,7 +40,7 @@ if is_windows; then
 fi
 export QEMU_AUDIO_DRV="${QEMU_AUDIO_DRV:-none}"
 
-EMU_NAME="${HOS_EMULATOR_NAME:-ci-phone}"
+EMU_NAME="${HOS_EMULATOR_NAME:-ci_phone}"
 EMU_HOME="$(posix_path "${HOS_EMULATOR_HOME:-${RUNNER_TEMP:-$HOME}/hos-emulator}")"
 LOG_DIR="$EMU_HOME/logs"
 PID_FILE="$EMU_HOME/emulator.pid"

@@ -152,7 +152,8 @@ fetch() {
 http_status() {
   local code attempt
   for attempt in 1 2 3 4 5; do
-    code="$(curl -sIL --connect-timeout 30 -o /dev/null -w '%{http_code}' "$1" || true)"
+    # The code is read from the last line of stdout: native Windows curl can't open "-o /dev/null" when MSYS path conversion is off.
+    code="$(curl -sIL --connect-timeout 30 -w '\n%{http_code}' "$1" 2> /dev/null | tail -n 1 || true)"
     case "$code" in
       000 | 5??) sleep $((attempt * 3)) ;;
       *) break ;;
