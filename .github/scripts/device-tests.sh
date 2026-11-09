@@ -90,7 +90,8 @@ wait_for_test_ability() {
   for try in $(seq 1 "$tries"); do
     probe="$out_dir/aa-probe-$try.log"
     run_aa_test 60 "$probe" "$bundle" "$module" "$class" 60000 > /dev/null || true
-    if grep -q "OHOS_REPORT_RESULT" "$probe"; then
+    hdc_cmd shell "aa force-stop $bundle" > /dev/null 2>&1 || true
+    if grep -q -E "start ability successfully|OHOS_REPORT_RESULT" "$probe"; then
       log "The test ability started (try $try of $tries)"
       return 0
     fi

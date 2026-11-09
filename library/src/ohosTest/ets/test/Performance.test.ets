@@ -15,8 +15,10 @@ import common from '@ohos.app.ability.common';
  * Intel Xeon runner against an AMD EPYC 7763 one), so the bounds sit well
  * above the slowest host and catch order-of-magnitude regressions.
  *
- * Long loops yield to the event loop every YIELD_EVERY iterations: a main
- * thread kept busy for 6 s gets the test app killed (THREAD_BLOCK_6S).
+ * Long loops wait on a timer every YIELD_EVERY iterations so the main
+ * thread's event loop gets a turn: a main thread kept busy for 6 s gets the
+ * test app killed (THREAD_BLOCK_6S), and hypium chains one test into the next
+ * without giving the event loop a turn in between.
  *
  * What CI logs show, fastest to slowest host:
  *   - perf_eventThroughput_10k_events:       about 1.1 to 4.6 s total
@@ -26,7 +28,10 @@ import common from '@ohos.app.ability.common';
  */
 
 /** Iterations between two yields to the event loop in the long loops. */
-const YIELD_EVERY: number = 200;
+const YIELD_EVERY: number = 500;
+
+/** Milliseconds each yield waits; a 0 ms timer can fire in the same event loop turn and yield nothing. */
+const YIELD_MS: number = 10;
 
 export default function performanceTest(): void {
   describe('PerformanceTest', (): void => {
@@ -51,7 +56,7 @@ export default function performanceTest(): void {
       const start: number = Date.now();
       for (let i: number = 0; i < N; i++) {
         await h.instance.events.recordEvent(`evt_${i}`, { 'bucket': `b${i % 50}` }, 1, 0, 0);
-        if (i % YIELD_EVERY === YIELD_EVERY - 1) await flushTick(0);
+        if (i % YIELD_EVERY === YIELD_EVERY - 1) await flushTick(YIELD_MS);
       }
       const recordMs: number = Date.now() - start;
       // All N events sit in the in-memory queue (no flush triggered).
@@ -87,7 +92,7 @@ export default function performanceTest(): void {
       const start: number = Date.now();
       for (let i: number = 0; i < N; i++) {
         await h.instance.requestQueue.enqueue(`app_key=test&device_id=d&t=1&timestamp=${Date.now()}&sdk_name=arkts-native-harmonyos&dummy=${i}`);
-        if (i % YIELD_EVERY === YIELD_EVERY - 1) await flushTick(0);
+        if (i % YIELD_EVERY === YIELD_EVERY - 1) await flushTick(YIELD_MS);
       }
       const enqueueMs: number = Date.now() - start;
       h.logger.i(`[PerfTest] requestQueueEnqueue, N=${N} totalMs=${enqueueMs} perEnqueue=${(enqueueMs / N).toFixed(3)}ms queueSize=${h.instance.requestQueue.size()}`);
