@@ -14,16 +14,19 @@ export class CrashesApi {
 
   public addCrashBreadcrumb(record: string): void {
     this.logger.i('[Crashes] Calling addCrashBreadcrumb');
+    this.logger.healthUsage('crashes', 'log');
     this.module.addBreadcrumb(record);
   }
 
   public async recordHandledException(err: Error, customSegmentation: SegmentationMap | null = null): Promise<void> {
     this.logger.i('[Crashes] Calling recordHandledException');
+    this.logger.healthUsage('crashes', 'record');
     await this.module.recordHandledException(err, customSegmentation);
   }
 
   public async recordUnhandledException(err: Error, customSegmentation: SegmentationMap | null = null): Promise<void> {
     this.logger.i('[Crashes] Calling recordUnhandledException');
+    this.logger.healthUsage('crashes', 'record');
     await this.module.recordUnhandledException(err, customSegmentation);
   }
 

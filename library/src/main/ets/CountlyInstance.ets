@@ -465,16 +465,20 @@ export class CountlyInstance implements SdkCore {
         );
         await Promise.all(promises);
       }
+      // The health check waits while a temporary device ID is used, and is sent once a real one replaces it.
+      if (!this.deviceIdModule.isTemporary()) this.healthCheckModule.triggerPostUcmSend();
     });
   }
 
   public async init(): Promise<void> {
     if (this.initialized) {
-      // Log at ERROR: a second init() against an already-initialized instance
-      // means the integrator expected a different config to take effect and
-      // it silently won't. Only `Countly.initShared` short-circuits by
-      // design; if you reach *this* path you almost certainly have a bug.
-      this.config.logger.e('init, already initialized, ignoring (check for duplicate init() calls)');
+      // Log at WARNING with health check log code w110: a second init() against
+      // an already-initialized instance means the integrator expected a
+      // different config to take effect and it silently won't. Only
+      // `Countly.initShared` short-circuits by design; if you reach *this* path
+      // you almost certainly have a bug.
+      this.config.logger.w('init, already initialized, ignoring (check for duplicate init() calls)');
+      this.config.logger.healthCode('w110');
       return;
     }
     this.initialized = true;
@@ -514,6 +518,7 @@ export class CountlyInstance implements SdkCore {
       // calls `disableOfflineMode(...)`. Load persisted requests first so they
       // survive the pause.
       this.requestQueue.pause();
+      this.config.offlineMode = true;
       this.config.logger.i('init, starting in offline mode, no network traffic until disableOfflineMode()');
     }
     if (this.config.unknownConsentMode) {
@@ -612,6 +617,15 @@ export class CountlyInstance implements SdkCore {
     }
   }
 
+  public async saveHealthCheckState(): Promise<void> {
+    await this.healthCheckModule.saveState();
+  }
+
+  /** Sends the health check that offline mode held back, when offline mode ends. */
+  public sendDeferredHealthCheck(): void {
+    this.healthCheckModule.triggerPostUcmSend();
+  }
+
   public async flushEvents(): Promise<void> {
     await this.eventsModule.flushEventQueue();
   }
@@ -705,6 +719,9 @@ export class CountlyInstance implements SdkCore {
     this.sessionsModule.onEnterBackground();
     this.eventsModule.onEnterBackground();
     this.viewsModule.onEnterBackground();
+    this.healthCheckModule.saveState().catch((err: Object): void => {
+      this.config.logger.d(`lifecycleBackground, health check saveState rejected: ${err}`);
+    });
   }
 
   /**
@@ -792,6 +809,7 @@ export class CountlyInstance implements SdkCore {
       this.config.logger.d(`auto-view, excluded: ${name}`);
       return;
     }
+    this.config.logger.healthUsage('views', 'start:a');
     this.viewsModule.startAutoStoppedView(name, this.config.globalViewSegmentation)
       .catch((err: Object): void => {
         this.config.logger.e(`auto-view startAutoStoppedView rejected: ${err}`);
@@ -837,16 +855,17 @@ export class CountlyInstance implements SdkCore {
     // (revoke). The silencer is no longer needed.
     this.config.network.setSilenced(false);
 
-    // Fire deferred operational requests (HC + SBS) BEFORE the grant/
-    // revoke branch so they reach the wire on both paths. This matches
-    // Dart's `_getOutOfUnknownConsentState`, both modules check their
-    // own preconditions internally (HC sent flag, SBS disabled flag,
+    // Fire deferred operational requests (HC + SBS) on both paths. This
+    // matches Dart's `_getOutOfUnknownConsentState`, both modules check
+    // their own preconditions internally (HC sent flag, SBS disabled flag,
     // temp-id mode), the calls are fire-and-forget so they don't gate
-    // the rest of resolution on network round-trips.
+    // the rest of resolution on network round-trips. On the revoke path
+    // the health check waits for the consent flip below, so it is built
+    // with the consents the user refused.
     this.configurationModule.triggerPostUcmRefresh();
-    this.healthCheckModule.triggerPostUcmSend();
 
     if (givenAll) {
+      this.healthCheckModule.triggerPostUcmSend();
       this.config.logger.i('resolveUnknownConsent, givenAll=true, network calls enabled, buffered data will ship');
       // Resume the queue; the init-time consent snapshot + any buffered
       // events/sessions/views drain in arrival order. Internal consent
@@ -864,6 +883,7 @@ export class CountlyInstance implements SdkCore {
     this.config.logger.i('removeConsentAll, flipping all consents to false and notifying modules');
     await this.consentModule.applyRevokeFromUnknownMode_phase1();
     this.config.logger.i('removeConsentAll, consent flip complete');
+    this.healthCheckModule.triggerPostUcmSend();
     // Drop everything: buffered-during-UCM data PLUS the cleanup requests
     // modules just emitted. The server never observed the implicit "all
     // granted" state, so it must not see the cleanup either. The

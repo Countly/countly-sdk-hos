@@ -1,6 +1,18 @@
 ## XX.XX.XX
 
 * Added "CountlyConfig.sdkInternalLimits.setMaxKeyLength(maxKeyLength)" to limit the length of event keys, view names, segmentation keys and custom user property keys. Longer keys are truncated. The default stays 128, and the key length limit of the SDK Behavior Settings overrides it.
+* Added method usage and log codes to the SDK health check.
+* Log lines now use the levels of the SDK development guide.
+
+* Mitigated an issue where the health check counted the retry pauses after failed requests as backoffs.
+* Mitigated an issue where a delivered health check also cleared what was counted while it was on its way.
+* Mitigated an issue where the longest run of backoffs in the health check never went above 1.
+* Mitigated an issue where the health check was sent while the SDK Behavior Settings turned networking off.
+* Mitigated an issue where the health check carried the app version without the "metrics" consent.
+* Mitigated an issue where an SDK started with a temporary device ID sent no health check until its next start.
+* Mitigated an issue where the health check was sent while offline mode held the request queue. It is now sent when offline mode ends.
+* Mitigated an issue where an event could be sent with a negative duration, for example a timed event ended right after it started. A negative duration is now sent as 0.
+* Mitigated an issue where calling "Countly.initShared" or "Countly.createInstance" again ignored the new config without a warning.
 
 ## 26.1.0
 

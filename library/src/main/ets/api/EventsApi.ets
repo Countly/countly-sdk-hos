@@ -24,6 +24,7 @@ export class EventsApi {
     dur: number = 0
   ): Promise<void> {
     this.logger.i(`[Events] Calling recordEvent, key=[${key}]`);
+    this.logger.healthUsage('events', 'record');
     await this.module.recordEvent(key, segmentation, count, sum, dur);
   }
 
@@ -42,16 +43,19 @@ export class EventsApi {
     timestamp: number
   ): Promise<void> {
     this.logger.i(`[Events] Calling recordPastEvent, key=[${key}] timestamp=[${timestamp}]`);
+    this.logger.healthUsage('events', 'record');
     await this.module.recordPastEvent(key, segmentation, count, sum, dur, timestamp);
   }
 
   public startEvent(key: string): void {
     this.logger.i(`[Events] Calling startEvent, key=[${key}]`);
+    this.logger.healthUsage('events', 'start');
     this.module.startEvent(key);
   }
 
   public cancelEvent(key: string): void {
     this.logger.i(`[Events] Calling cancelEvent, key=[${key}]`);
+    this.logger.healthUsage('events', 'cancel');
     this.module.cancelEvent(key);
   }
 
@@ -62,6 +66,7 @@ export class EventsApi {
     sum: number = 0
   ): Promise<void> {
     this.logger.i(`[Events] Calling endEvent, key=[${key}]`);
+    this.logger.healthUsage('events', 'end');
     await this.module.endEvent(key, segmentation, count, sum);
   }
 }

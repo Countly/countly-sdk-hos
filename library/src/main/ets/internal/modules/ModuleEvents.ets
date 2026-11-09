@@ -134,6 +134,7 @@ export class ModuleEvents extends ModuleBase {
     let ts: number = timestamp;
     if (!Number.isFinite(ts) || ts <= 0) {
       this.config.logger.w(`[ModuleEvents] recordPastEvent, timestamp must be > 0 (got ${timestamp}), falling back to current time`);
+      this.config.logger.healthCode('w750', 'events');
       ts = this.config.clock.nowMs();
     }
     await this.recordEventAt(key, segmentation, count, sum, dur, ts);
@@ -170,6 +171,7 @@ export class ModuleEvents extends ModuleBase {
     if (this.rejectIfHalted('ModuleEvents', `recordEvent('${key}')`)) return;
     if (Utils.isNullOrEmpty(key)) {
       this.config.logger.w('[ModuleEvents] recordEvent, key is null/empty, omitted');
+      this.config.logger.healthCode('w701', 'events');
       return;
     }
     const isInternal: boolean = key.startsWith('[CLY]_');
@@ -190,7 +192,13 @@ export class ModuleEvents extends ModuleBase {
     }
     if (count < 1) {
       this.config.logger.w('[ModuleEvents] recordEvent, count < 1, clamped to 1');
+      this.config.logger.healthCode('w750', 'events');
       count = 1;
+    }
+    if (dur < 0) {
+      this.config.logger.w(`[ModuleEvents] recordEvent, duration < 0 (got ${dur}), using 0`);
+      this.config.logger.healthCode('w750', 'events');
+      dur = 0;
     }
 
     // Server-config filters apply to custom events only. Internal [CLY]_*
@@ -295,9 +303,14 @@ export class ModuleEvents extends ModuleBase {
 
   public startEvent(key: string): void {
     if (this.rejectIfHalted('ModuleEvents', 'startEvent')) return;
-    if (Utils.isNullOrEmpty(key)) return;
+    if (Utils.isNullOrEmpty(key)) {
+      this.config.logger.w('[ModuleEvents] startEvent, key is null/empty, ignored');
+      this.config.logger.healthCode('w700', 'events');
+      return;
+    }
     if (this.timed.has(key)) {
       this.config.logger.w(`[ModuleEvents] startEvent, '${key}' already started, ignored`);
+      this.config.logger.healthCode('w722', 'events');
       return;
     }
     const ts: number = this.config.clock.nowMs();
@@ -309,6 +322,7 @@ export class ModuleEvents extends ModuleBase {
     if (this.rejectIfHalted('ModuleEvents', 'cancelEvent')) return;
     if (!this.timed.has(key)) {
       this.config.logger.w(`[ModuleEvents] cancelEvent, no timed event '${key}'`);
+      this.config.logger.healthCode('w721', 'events');
       return;
     }
     this.timed.delete(key);
@@ -320,9 +334,11 @@ export class ModuleEvents extends ModuleBase {
     const timed: TimedEvent | undefined = this.timed.get(key);
     if (!timed) {
       this.config.logger.w(`[ModuleEvents] endEvent, no timed event '${key}'`);
+      this.config.logger.healthCode('w720', 'events');
       return;
     }
-    const durSec: number = (Date.now() - timed.startTs) / 1000;
+    // Same clock as the start: it runs ahead of Date.now() after a burst, so Date.now() could give a negative duration.
+    const durSec: number = (this.config.clock.nowMs() - timed.startTs) / 1000;
     this.timed.delete(key);
     // Delegate to the shared recording path with the ORIGINAL start
     // timestamp (per dev guide), so hour/dow bucket on the start of the

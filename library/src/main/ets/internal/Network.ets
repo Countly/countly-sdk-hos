@@ -172,7 +172,7 @@ export class Network {
         // `[object Object]`. Extract structured fields with a JSON
         // fallback so the log line tells you what actually broke.
         const errDesc: string = Network.describeError(err);
-        this.logger.w(`[Network] REQUEST FAILED endpoint=${endpoint} elapsedMs=${elapsed} err=${errDesc}`);
+        this.logger.d(`[Network] REQUEST FAILED endpoint=${endpoint} elapsedMs=${elapsed} err=${errDesc}`);
         throw new Error(`[Network] request failed: ${errDesc}`);
       }
       const body: string = typeof response.result === 'string'

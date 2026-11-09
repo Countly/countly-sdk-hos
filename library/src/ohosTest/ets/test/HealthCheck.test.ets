@@ -3,16 +3,16 @@ import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTes
 import { RecordedCall } from './doubles/FakeNetwork';
 
 /**
- * HealthCheck coverage. The module is wired at init via two listeners,
- * Logger (`setHealthListener`) for warn/error counts and RequestQueue
- * (`setHealthListener`) for failed-send + backoff counts. The send itself
- * fires once per lifecycle on onInit; a 2xx with a `result` field clears
- * state (both in-memory and persisted).
+ * HealthCheck coverage. The module wires its listeners when it is created:
+ * Logger (`setHealthListener`, `setHealthCodeListener`,
+ * `setHealthUsageListener`) for warn/error counts, log codes and method
+ * usage, and RequestQueue (`setHealthListener`) for refused requests and
+ * backoffs. The send itself fires once per lifecycle on onInit; a 2xx with a
+ * `result` field takes the reported amounts away.
  *
- * Storage-sharing across two harness lifecycles isn't trivial with the
- * default `buildHarness` (each call gets fresh in-memory storage). The
- * persistence tests therefore verify the save/clear paths indirectly,
- * via the clear-on-ack path, rather than across a full restart.
+ * `buildHarness` gives each test fresh in-memory storage, so the tests here
+ * stay within one lifecycle. HealthCheckCounters.test.ets covers restarts
+ * on shared storage.
  */
 
 export default function healthCheckTest() {
@@ -48,10 +48,9 @@ export default function healthCheckTest() {
     });
 
     it('countLogError_reflectedInSubsequentPayload', 0, async () => {
-      // The module is wired by onInit; the counter only captures logs
-      // emitted AFTER onInit. We send a pre-send error log to bump the counter
-      // BEFORE the send, which requires timing the log between init completion
-      // and the deferred sendHealthCheck() (fire-and-forget).
+      // The counters only reach this lifecycle's payload when they are
+      // logged before the deferred sendHealthCheck() (fire-and-forget)
+      // takes its snapshot.
       //
       // Because the send is not awaited inside onInit, we can synchronously
       // emit logs after buildHarness returns but BEFORE flushTick lets the
@@ -109,11 +108,38 @@ export default function healthCheckTest() {
       expect(body.indexOf('99.9.9') !== -1).assertTrue();
     });
 
+    it('payload_includesMethodUsageAndLogCodes', 0, async () => {
+      // The facade counts the call before its first await, and the timed
+      // event checks are synchronous, so everything lands before the deferred send.
+      const h: Harness = await buildHarness();
+      h.instance.events.startEvent('checkout');
+      h.instance.events.startEvent('checkout');
+      h.instance.events.cancelEvent('never_started');
+      await flushTick(80);
+      const hc: RecordedCall | undefined = h.network.calls.find((c: RecordedCall) => c.endpoint === '/i' && c.data.indexOf('hc=') !== -1);
+      const body: string = decodeURIComponent(hc!.data);
+      expect(body.indexOf('"fu":{') !== -1).assertTrue();
+      expect(body.indexOf('"lc":{') !== -1).assertTrue();
+      expect(body.indexOf('"start":2') !== -1).assertTrue();
+      expect(body.indexOf('"cancel":1') !== -1).assertTrue();
+      expect(body.indexOf('"w722":1') !== -1).assertTrue();
+      expect(body.indexOf('"w721":1') !== -1).assertTrue();
+    });
+
+    it('secondInit_isCountedWithLogCodeW110', 0, async () => {
+      const h: Harness = await buildHarness();
+      await h.instance.init();
+      await flushTick(80);
+      const hc: RecordedCall | undefined = h.network.calls.find((c: RecordedCall) => c.endpoint === '/i' && c.data.indexOf('hc=') !== -1);
+      const body: string = decodeURIComponent(hc!.data);
+      expect(body.indexOf('"w110":1') !== -1).assertTrue();
+    });
+
     it('networkFailure_duringSend_suppressesAckClear', 0, async () => {
       // If the send itself throws, the module must NOT clear state (it relies
-      // on retaining for the next launch). We observe the log-warning path
-      //, hard to assert directly, so we just verify the request was attempted
-      // and the module didn't crash.
+      // on retaining for the next launch). Here we only verify the request was
+      // attempted and the module didn't crash; HealthCheckCounters.test.ets
+      // checks the retained counts after a restart.
       const h: Harness = await buildHarness();
       h.network.shouldFail = true;
       await flushTick(80);

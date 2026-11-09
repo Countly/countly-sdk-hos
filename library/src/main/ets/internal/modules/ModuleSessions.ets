@@ -112,36 +112,54 @@ export class ModuleSessions extends ModuleBase {
     if (this.rejectIfHalted('ModuleSessions', 'beginSession')) return;
     if (!this.config.manualSessionControl) {
       this.config.logger.w('[ModuleSessions] beginSession, manual session control not enabled, ignored');
+      this.config.logger.healthCode('w740', 'sessions');
       return;
     }
-    await this.beginSessionInternal();
+    await this.beginSessionInternal(true);
   }
 
   public async updateSession(): Promise<void> {
     if (this.rejectIfHalted('ModuleSessions', 'updateSession')) return;
     if (!this.config.manualSessionControl) {
       this.config.logger.w('[ModuleSessions] updateSession, manual session control not enabled, ignored');
+      this.config.logger.healthCode('w740', 'sessions');
       return;
     }
     if (this.config.manualSessionHybridMode) {
-      this.config.logger.d('[ModuleSessions] updateSession, hybrid mode handles updates automatically, ignored');
+      this.config.logger.w('[ModuleSessions] updateSession, hybrid mode handles updates automatically, ignored');
+      this.config.logger.healthCode('w740', 'sessions');
       return;
     }
-    await this.sendUpdate();
+    if (!this.sessionActive) {
+      this.config.logger.w('[ModuleSessions] updateSession, no session is running, ignored');
+      this.config.logger.healthCode('w760', 'sessions');
+      return;
+    }
+    await this.sendUpdate(false);
   }
 
   public async endSession(): Promise<void> {
     if (this.rejectIfHalted('ModuleSessions', 'endSession')) return;
     if (!this.config.manualSessionControl) {
       this.config.logger.w('[ModuleSessions] endSession, manual session control not enabled, ignored');
+      this.config.logger.healthCode('w740', 'sessions');
       return;
     }
-    await this.endSessionInternal();
+    if (!this.sessionActive) {
+      this.config.logger.w('[ModuleSessions] endSession, no session is running, ignored');
+      this.config.logger.healthCode('w760', 'sessions');
+      return;
+    }
+    await this.endSessionInternal(true, true);
   }
 
   public isSessionActive(): boolean { return this.sessionActive; }
 
-  private async beginSessionInternal(): Promise<void> {
+  /**
+   * Begins a session, for the app's beginSession (fromApp) or for automatic
+   * session tracking. A begin the SDK makes by itself is counted as "begin:a".
+   */
+  private async beginSessionInternal(fromApp: boolean = false): Promise<void> {
     if (!this.core.consentModule.hasConsent(CountlyFeature.SESSIONS)) {
       this.config.logger.v('[ModuleSessions] beginSessionInternal, no sessions consent');
       return;
@@ -155,8 +173,10 @@ export class ModuleSessions extends ModuleBase {
     }
     if (this.sessionActive) {
       this.config.logger.w('[ModuleSessions] beginSessionInternal, session already active, ignored');
+      if (fromApp) this.config.logger.healthCode('w760', 'sessions');
       return;
     }
+    if (!fromApp) this.config.logger.healthUsage('sessions', 'begin:a');
     this.sessionActive = true;
     this.sessionStartMs = Date.now();
     this.lastUpdateMs = this.sessionStartMs;
@@ -186,7 +206,11 @@ export class ModuleSessions extends ModuleBase {
     this.scheduleUpdateTimer();
   }
 
-  private async sendUpdate(): Promise<void> {
+  /**
+   * Sends the duration since the last session request, for the app's
+   * updateSession or for the update timer (automatic, counted as "update:a").
+   */
+  private async sendUpdate(automatic: boolean): Promise<void> {
     if (!this.sessionActive) return;
     // Consent may have flipped between ticks, re-check here before hitting
     // the queue so revocation takes effect promptly.
@@ -206,10 +230,16 @@ export class ModuleSessions extends ModuleBase {
     // failure doesn't skip the duration window for the next tick.
     await this.core.requestQueue.enqueue(body);
     this.lastUpdateMs = now;
+    if (automatic) this.config.logger.healthUsage('sessions', 'update:a');
     this.config.logger.d(`[ModuleSessions] sendUpdate, duration=${elapsed}s`);
   }
 
-  private async endSessionInternal(emit: boolean = true): Promise<void> {
+  /**
+   * Ends the running session. With emit false it only stops, without a request.
+   * An end the SDK makes by itself (not fromApp) is counted as "end:a".
+   * The health check counters are stored at the end of every session.
+   */
+  private async endSessionInternal(emit: boolean = true, fromApp: boolean = false): Promise<void> {
     if (!this.sessionActive) return;
     if (this.updateTimer !== null) {
       clearInterval(this.updateTimer);
@@ -242,7 +272,9 @@ export class ModuleSessions extends ModuleBase {
     if (elapsed > 0) params['session_duration'] = String(elapsed);
     const body: string = Utils.buildQueryString(params);
     await this.core.requestQueue.enqueue(body);
+    if (!fromApp) this.config.logger.healthUsage('sessions', 'end:a');
     this.config.logger.i(`[ModuleSessions] endSessionInternal, session ended (duration=${elapsed}s)`);
+    await this.core.saveHealthCheckState();
   }
 
   private scheduleUpdateTimer(): void {
@@ -265,9 +297,10 @@ export class ModuleSessions extends ModuleBase {
    * update_session); only the timer tick reaches this fuller cascade.
    */
   private async heartbeatTick(): Promise<void> {
-    await this.sendUpdate();
+    await this.sendUpdate(true);
     await this.core.flushEvents();
     await this.core.saveUserProfileIfPending();
+    await this.core.saveHealthCheckState();
   }
 
   private attachLocation(params: Record<string, string>): void {
