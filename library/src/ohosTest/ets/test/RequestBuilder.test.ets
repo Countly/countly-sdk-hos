@@ -20,6 +20,15 @@ export default function requestBuilderTest() {
       expect(params['tz'].length > 0).assertTrue();
     });
 
+    it('baseParams_deviceIdTypeValuesFollowTheDevGuide', 0, async () => {
+      const developer: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('developer_id'); });
+      expect(developer.instance.requestBuilder.baseParams()['t']).assertEqual('0');
+      const generated: Harness = await buildHarness();
+      expect(generated.instance.requestBuilder.baseParams()['t']).assertEqual('1');
+      const offline: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
+      expect(offline.instance.requestBuilder.baseParams()['t']).assertEqual('2');
+    });
+
     it('toQueryString_producesUrlEncodedForm', 0, async () => {
       const h: Harness = await buildHarness();
       const qsParams: Record<string, string> = { 'a': 'hello world' };

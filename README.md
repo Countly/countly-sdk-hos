@@ -164,7 +164,7 @@ config.consent
 // Location
 config.location.set('US', 'New York', '40.7,-74.0', null);
 
-// Networking (custom headers, salt, queue limits, offline mode, health check)
+// Networking (custom headers, salt, queue limits, health check)
 config.network
   .setParameterTamperingProtectionSalt('your-salt')
   .addCustomNetworkRequestHeaders({ 'X-Custom-Header': 'value' });
@@ -374,8 +374,10 @@ await deviceId.changeWithMerge('new-user-id');
 // Treats as new user, clears consent
 await deviceId.changeWithoutMerge('fresh-user'); 
 
-// Enable Temporary ID mode (queues data locally until a real ID is provided)
-await deviceId.enableTemporaryIdMode();
+// Offline mode: records under a placeholder ID and sends nothing until a real ID is provided
+await deviceId.enableOfflineMode();
+// Leave it with a new ID, or without one to return to the previous ID
+await deviceId.disableOfflineMode('new-user-id');
 ```
 
 ### Multi-Instance Support

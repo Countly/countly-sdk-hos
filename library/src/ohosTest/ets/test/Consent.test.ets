@@ -738,7 +738,8 @@ export default function consentTest() {
         async (): Promise<void> => { await h.instance.deviceId.setID('post_halt_id'); },
         async (): Promise<void> => { await h.instance.deviceId.changeWithMerge('post_halt_merge'); },
         async (): Promise<void> => { await h.instance.deviceId.changeWithoutMerge('post_halt_no_merge'); },
-        async (): Promise<void> => { await h.instance.deviceId.enableTemporaryIdMode(); },
+        async (): Promise<void> => { await h.instance.deviceId.enableOfflineMode(); },
+        async (): Promise<void> => { await h.instance.deviceId.disableOfflineMode(null); },
         // LocationApi
         async (): Promise<void> => { await h.instance.location.setLocation('US', 'NYC', null, null); },
         async (): Promise<void> => { await h.instance.location.disableLocation(); },
@@ -752,8 +753,6 @@ export default function consentTest() {
         async (): Promise<void> => { await h.instance.remoteConfig.enrollIntoABTestsForKeys(['k']); },
         async (): Promise<void> => { await h.instance.remoteConfig.exitABTestsForKeys(['k']); },
         // RequestQueueApi
-        async (): Promise<void> => { h.instance.requests.enableOfflineMode(); },
-        async (): Promise<void> => { await h.instance.requests.disableOfflineMode(null); },
         async (): Promise<void> => { await h.instance.requests.flushQueues(); },
         async (): Promise<void> => { await h.instance.requests.replaceAllAppKeysInQueueWithCurrentAppKey(); },
         async (): Promise<void> => { await h.instance.requests.removeDifferentAppKeysFromQueue(); },

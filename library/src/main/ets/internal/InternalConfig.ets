@@ -40,7 +40,8 @@ export class InternalConfig {
 
   public customDeviceId: string | null = null;
   public clearStoredDeviceId: boolean = false;
-  public startInTemporaryIdMode: boolean = false;
+  /** Start in offline mode (placeholder device ID) unless a device ID is given or stored. */
+  public startInOfflineMode: boolean = false;
 
   public requiresConsent: boolean = false;
   public initialConsentAll: boolean = false;
@@ -135,9 +136,6 @@ export class InternalConfig {
   public remoteConfigValueCaching: boolean = false;
   public remoteConfigGlobalCallback: RCDownloadCallback | null = null;
 
-  public startInOfflineMode: boolean = false;
-  /** True while offline mode holds the request queue: from init or `enableOfflineMode` until `disableOfflineMode`. */
-  public offlineMode: boolean = false;
   public disableHealthCheck: boolean = false;
 
   /**

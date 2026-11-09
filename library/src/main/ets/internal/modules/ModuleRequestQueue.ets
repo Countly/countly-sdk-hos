@@ -3,7 +3,6 @@ import { SdkCore } from '../SdkCore';
 import { InternalConfig } from '../InternalConfig';
 import { ModuleConsent } from './ModuleConsent';
 import { ModuleEvents } from './ModuleEvents';
-import { ModuleDeviceId } from './ModuleDeviceId';
 import { DeviceInfo } from '../DeviceInfo';
 import { Utils } from '../Utils';
 
@@ -15,66 +14,29 @@ const DIRECT_REQUEST_RESERVED_KEYS: string[] = [
 ];
 
 /**
- * Owns the integration-wide queue operations: offline mode, queue flushing,
- * app-key rewrites, direct request injection, and the standalone metrics
- * request. The underlying RequestQueue infrastructure (FIFO + processor) is
- * still owned by CountlyInstance via SdkCore, this module is the policy
- * layer that decides when/how to mutate it.
- *
- * Surface includes integration-wide queue policy methods (offline mode,
- * flush, app-key rewrite, direct request) plus the standalone metrics
- * request.
+ * Owns the integration-wide queue operations: queue flushing, app-key
+ * rewrites, direct request injection, and the standalone metrics request.
+ * The underlying RequestQueue infrastructure (FIFO + processor) is still
+ * owned by CountlyInstance via SdkCore, this module is the policy layer that
+ * decides when/how to mutate it. Offline mode belongs to the device ID
+ * (ModuleDeviceId), as in the dev guide.
  */
 export class ModuleRequestQueue extends ModuleBase {
   private core: SdkCore;
   private consentModule: ModuleConsent;
   private eventsModule: ModuleEvents;
-  private deviceIdModule: ModuleDeviceId;
 
   constructor(
     config: InternalConfig,
     core: SdkCore,
     consentModule: ModuleConsent,
-    eventsModule: ModuleEvents,
-    deviceIdModule: ModuleDeviceId
+    eventsModule: ModuleEvents
   ) {
     super(config);
     this.config.logger.v('[ModuleRequestQueue] Initialising');
     this.core = core;
     this.consentModule = consentModule;
     this.eventsModule = eventsModule;
-    this.deviceIdModule = deviceIdModule;
-  }
-
-  /**
-   * Pause outbound traffic. `enqueue` still works and persists to storage, but
-   * nothing ships to the server until `disableOfflineMode(...)` is called.
-   */
-  public enableOfflineMode(): void {
-    if (this.rejectIfHalted('ModuleRequestQueue', 'enableOfflineMode')) return;
-    this.config.offlineMode = true;
-    if (this.core.requestQueue.isPaused()) {
-      this.config.logger.d('[ModuleRequestQueue] enableOfflineMode, already paused');
-      return;
-    }
-    this.core.requestQueue.pause();
-    this.config.logger.i('[ModuleRequestQueue] enableOfflineMode, request queue paused, no network traffic until disableOfflineMode()');
-  }
-
-  /**
-   * Resume outbound traffic. If `deviceId` is non-null, it's applied before
-   * the queue drains, matches the dev-guide pattern where integrators defer
-   * identity assignment until after a consent dialog while staying offline.
-   */
-  public async disableOfflineMode(deviceId: string | null = null): Promise<void> {
-    if (this.rejectIfHalted('ModuleRequestQueue', 'disableOfflineMode')) return;
-    if (deviceId !== null && deviceId.length > 0) {
-      await this.deviceIdModule.setID(deviceId);
-    }
-    this.core.requestQueue.resume();
-    this.config.offlineMode = false;
-    this.config.logger.i('[ModuleRequestQueue] disableOfflineMode, request queue resumed');
-    this.core.sendDeferredHealthCheck();
   }
 
   /**

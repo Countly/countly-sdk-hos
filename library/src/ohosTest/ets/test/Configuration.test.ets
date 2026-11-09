@@ -1,5 +1,5 @@
 import { afterEach, describe, it, expect } from '@ohos/hypium';
-import { buildHarness, flushTick, Harness, TestableCountlyConfig, assertAllRecordedCallsValid, clearTestHarnesses } from './TestHelpers';
+import { buildHarness, flushTick, Harness, TestableCountlyConfig, assertAllRecordedCallsValid, assertWireOrder, clearTestHarnesses } from './TestHelpers';
 import { FilterList } from '../../../main/ets/internal/ServerConfig';
 import { CountlyInstance } from '../../../main/ets/CountlyInstance';
 import { CountlyConfig } from '../../../main/ets/CountlyConfig';
@@ -7,7 +7,7 @@ import { Logger } from '../../../main/ets/internal/Logger';
 import { SegmentationMap } from '../../../main/ets/types/Types';
 import common from '@ohos.app.ability.common';
 import { InMemoryStorage } from './doubles/InMemoryStorage';
-import { FakeNetwork } from './doubles/FakeNetwork';
+import { FakeNetwork, RecordedCall } from './doubles/FakeNetwork';
 
 /**
  * Helpers to build well-formed and malformed SBS payloads. Centralised so
@@ -22,6 +22,11 @@ function buildSbsBody(inner: Record<string, Object>): string {
 }
 
 function fakeContext(): common.Context { return {} as common.Context; }
+
+/** The SDK Behavior Settings fetches the network recorded. */
+function sbsFetches(network: FakeNetwork): RecordedCall[] {
+  return network.calls.filter((c: RecordedCall) => c.endpoint === '/o/sdk' && c.data.indexOf('method=sc') !== -1);
+}
 
 /**
  * Pull the URL-encoded `user_details` JSON out of a recorded request body.
@@ -226,6 +231,77 @@ export default function configurationTest() {
       await flushTick(60);
       const sbsCalls = h.network.calls.filter((c) => c.endpoint === '/o/sdk' && c.data.indexOf('method=sc') !== -1);
       expect(sbsCalls.length).assertEqual(1);
+    });
+
+    it('offlineModeFromConfig_fetchWaitsAndRunsOnceWhenItEnds', 0, async () => {
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => { cfg.deviceId.enableOfflineMode(); });
+      await flushTick(60);
+      expect(sbsFetches(h.network).length).assertEqual(0);
+      await h.instance.deviceId.disableOfflineMode();
+      await flushTick(60);
+      expect(sbsFetches(h.network).length).assertEqual(1);
+    });
+
+    it('offlineModeAtRuntime_periodicFetchWaitsAndRunsOnceWhenItEnds', 0, async () => {
+      const logger: Logger = new Logger();
+      const network: FakeNetwork = new FakeNetwork(logger);
+      const cfg: CountlyConfig = new CountlyConfig(fakeContext(), 'https://try.count.ly', 'test_app_key');
+      const instance: CountlyInstance = new CountlyInstance(cfg, new InMemoryStorage(logger, 'test_app_key'), network);
+      // An interval of 0.18 seconds, so that the periodic fetch fires several times while offline.
+      instance.config.serverConfig.serverConfigUpdateInterval = 0.00005;
+      await instance.init();
+      expect(sbsFetches(network).length).assertEqual(1);
+      await instance.deviceId.enableOfflineMode();
+      await flushTick(500);
+      expect(sbsFetches(network).length).assertEqual(1);
+      await instance.deviceId.disableOfflineMode();
+      expect(sbsFetches(network).length).assertEqual(2);
+      await instance.stop();
+    });
+
+    it('disableOfflineMode_withoutOfflineMode_fetchesNothingMore', 0, async () => {
+      const h: Harness = await buildHarness();
+      await flushTick(60);
+      await h.instance.deviceId.disableOfflineMode();
+      await flushTick(60);
+      expect(sbsFetches(h.network).length).assertEqual(1);
+    });
+
+    it('offlineModeRestart_sendsNothingAtInit_thenFetchHealthCheckAndQueueInOrder', 0, async () => {
+      const first: Harness = await buildHarness((cfg: TestableCountlyConfig) => { cfg.deviceId.enableOfflineMode(); });
+      await first.instance.events.recordEvent('recorded_while_offline');
+      await first.instance.flushEvents();
+      await first.instance.stop();
+      expect(first.network.calls.length).assertEqual(0);
+
+      // Offline mode carries over to the next start without being asked for again.
+      const network: FakeNetwork = new FakeNetwork(new Logger());
+      const cfg: CountlyConfig = new CountlyConfig(fakeContext(), 'https://try.count.ly', 'test_app_key');
+      const second: CountlyInstance = new CountlyInstance(cfg, first.storage, network);
+      await second.init();
+      await flushTick(100);
+      expect(network.calls.length).assertEqual(0);
+      expect(second.requestQueue.peekAll().some((r: string) => r.indexOf('recorded_while_offline') !== -1)).assertTrue();
+
+      await second.deviceId.disableOfflineMode();
+      await flushTick(150);
+      expect(sbsFetches(network).length).assertEqual(1);
+      expect(network.calls.filter((c: RecordedCall) => c.endpoint === '/i' && c.data.indexOf('hc=') !== -1).length).assertEqual(1);
+      assertWireOrder(network.calls, ['method=sc', 'hc=', 'recorded_while_offline']);
+      const deviceId: string = encodeURIComponent(second.deviceId.getID());
+      expect(network.calls.every((c: RecordedCall) => c.data.indexOf(`device_id=${deviceId}`) !== -1)).assertTrue();
+      await second.stop();
+    });
+
+    it('offlineModeLeftWithSetId_fetchesUnderRealId', 0, async () => {
+      const h: Harness = await buildHarness((cfg: TestableCountlyConfig) => { cfg.deviceId.enableOfflineMode(); });
+      await flushTick(60);
+      expect(sbsFetches(h.network).length).assertEqual(0);
+      await h.instance.deviceId.setID('real_after_offline');
+      await flushTick(60);
+      const fetches: RecordedCall[] = sbsFetches(h.network);
+      expect(fetches.length).assertEqual(1);
+      expect(fetches[0].data.indexOf('device_id=real_after_offline') !== -1).assertTrue();
     });
 
     it('serverFetch_validResponse_appliesToServerConfig', 0, async () => {

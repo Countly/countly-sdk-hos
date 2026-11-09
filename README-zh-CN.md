@@ -164,7 +164,7 @@ config.consent
 // 位置信息
 config.location.set('CN', 'Beijing', '39.9,116.4', null);
 
-// 网络(自定义请求头、salt、队列上限、离线模式、健康检查)
+// 网络(自定义请求头、salt、队列上限、健康检查)
 config.network
   .setParameterTamperingProtectionSalt('your-salt')
   .addCustomNetworkRequestHeaders({ 'X-Custom-Header': 'value' });
@@ -369,8 +369,10 @@ await deviceId.changeWithMerge('new-user-id');
 // 视为新用户、清空授权
 await deviceId.changeWithoutMerge('fresh-user');
 
-// 启用临时 ID 模式(本地排队直到设置真正的 ID)
-await deviceId.enableTemporaryIdMode();
+// 离线模式:以占位 ID 记录数据,在设置真正的 ID 之前不发送任何请求
+await deviceId.enableOfflineMode();
+// 用新的 ID 退出离线模式;不传 ID 时恢复进入离线模式之前的 ID
+await deviceId.disableOfflineMode('new-user-id');
 ```
 
 ### 多实例支持

@@ -4,7 +4,7 @@ import { RCData, RequestResult } from '../../../main/ets/types/Types';
 import { CountlyConfig } from '../../../main/ets/CountlyConfig';
 import { CountlyInstance } from '../../../main/ets/CountlyInstance';
 import { InMemoryStorage } from './doubles/InMemoryStorage';
-import { FakeNetwork } from './doubles/FakeNetwork';
+import { FakeNetwork, RecordedCall } from './doubles/FakeNetwork';
 import { Logger } from '../../../main/ets/internal/Logger';
 import common from '@ohos.app.ability.common';
 
@@ -20,6 +20,11 @@ import common from '@ohos.app.ability.common';
  */
 
 const RC_BODY: string = JSON.stringify({ flag_a: true, count_n: 42, label_s: 'hello' });
+
+/** The remote config downloads the harness network recorded. */
+function rcDownloads(h: Harness): RecordedCall[] {
+  return h.network.calls.filter((c: RecordedCall) => c.endpoint === '/o/sdk' && c.data.indexOf('method=rc') !== -1);
+}
 
 export default function remoteConfigTest() {
   describe('RemoteConfigTest', () => {
@@ -288,7 +293,7 @@ export default function remoteConfigTest() {
       await flushTick(60);
       const before = h.network.calls.filter((c) => c.endpoint === '/o/sdk' && c.data.indexOf('method=rc') !== -1).length;
 
-      await h.instance.deviceId.enableTemporaryIdMode();
+      await h.instance.deviceId.enableOfflineMode();
       await flushTick(60);
       const after = h.network.calls.filter((c) => c.endpoint === '/o/sdk' && c.data.indexOf('method=rc') !== -1).length;
       expect(after).assertEqual(before);
@@ -298,12 +303,59 @@ export default function remoteConfigTest() {
       // HOS guarantees: a download in temp-ID mode short-circuits with
       // RequestResult.Error and does NOT hit the network.
       const h: Harness = await buildHarness((cfg) => {
-        cfg.deviceId.enableTemporaryMode();
+        cfg.deviceId.enableOfflineMode();
       });
       let result: RequestResult | null = null;
       await h.instance.remoteConfig.downloadAllKeys((r: RequestResult) => { result = r; });
       expect(result).assertEqual(RequestResult.Error);
       expect(h.network.calls.filter((c) => c.endpoint === '/o/sdk').length).assertEqual(0);
+    });
+
+    it('offlineMode_downloadsAndEnrollmentsWait_automaticDownloadWhenItEnds', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.deviceId.enableOfflineMode();
+        cfg.remoteConfig.enableAutomaticTriggers();
+      });
+      await flushTick(60);
+      expect(rcDownloads(h).length).assertEqual(0);
+      let result: RequestResult | null = null;
+      await h.instance.remoteConfig.downloadAllKeys((r: RequestResult) => { result = r; });
+      expect(result).assertEqual(RequestResult.Error);
+      await h.instance.remoteConfig.enrollIntoABTestsForKeys(['offline_key']);
+      await h.instance.remoteConfig.exitABTestsForKeys(['offline_key']);
+      expect(h.network.calls.filter((c) => c.endpoint === '/o/sdk').length).assertEqual(0);
+
+      await h.instance.deviceId.disableOfflineMode();
+      await flushTick(60);
+      expect(rcDownloads(h).length).assertEqual(1);
+    });
+
+    it('offlineModeAtRuntime_automaticDownloadOnConsentWaitsUntilItEnds', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.consent.setRequiresConsent(true);
+        cfg.remoteConfig.enableAutomaticTriggers();
+      });
+      await flushTick(60);
+      await h.instance.deviceId.enableOfflineMode();
+      h.instance.consentModule.giveConsent(['remote-config']);
+      await flushTick(60);
+      expect(rcDownloads(h).length).assertEqual(0);
+      await h.instance.deviceId.disableOfflineMode();
+      await flushTick(60);
+      expect(rcDownloads(h).length).assertEqual(1);
+    });
+
+    it('queueHoldsPlaceholderRequest_downloadAndEnrollmentWait', 0, async () => {
+      const h: Harness = await buildHarness();
+      await flushTick(60);
+      h.network.shouldFail = true;
+      await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=${encodeURIComponent('CLYTemporaryDeviceID')}&held=1`);
+      await flushTick(60);
+      let result: RequestResult | null = null;
+      await h.instance.remoteConfig.downloadAllKeys((r: RequestResult) => { result = r; });
+      expect(result).assertEqual(RequestResult.Error);
+      await h.instance.remoteConfig.enrollIntoABTestsForKeys(['held_key']);
+      expect(h.network.calls.filter((c) => c.endpoint === '/o/sdk' && c.data.indexOf('method=sc') === -1).length).assertEqual(0);
     });
 
     it('rcValueCaching_off_deviceIdChangeWipesEvenIfDownloaded', 0, async () => {

@@ -23,8 +23,12 @@ struct DeviceIdPage {
     await Countly.sharedInstance().deviceId.changeWithoutMerge(this.newId);
   });
 
-  private enableTemp = (): Promise<void> => DemoLog.safe('enableTemporaryIdMode', async () => {
-    await Countly.sharedInstance().deviceId.enableTemporaryIdMode();
+  private enableOffline = (): Promise<void> => DemoLog.safe('enableOfflineMode', async () => {
+    await Countly.sharedInstance().deviceId.enableOfflineMode();
+  });
+
+  private disableOffline = (): Promise<void> => DemoLog.safe('disableOfflineMode', async () => {
+    await Countly.sharedInstance().deviceId.disableOfflineMode();
   });
 
   private show = (): Promise<void> => DemoLog.safe('getID / getType', () => {
@@ -34,7 +38,7 @@ struct DeviceIdPage {
 
   build() {
     Column() {
-      PageFrame({ title: 'Device ID', subtitle: 'set · change (merge/no-merge) · temporary' }) {
+      PageFrame({ title: 'Device ID', subtitle: 'set · change (merge/no-merge) · offline' }) {
       SectionCard({ title: 'Current identity' }) {
         Flex({ wrap: FlexWrap.Wrap }) {
           ActionButton({ label: 'show current id', tone: ButtonTone.Neutral, onAction: this.show })
@@ -54,11 +58,12 @@ struct DeviceIdPage {
           .fontSize(12).fontColor(Theme.TEXT_MUTED).width('100%').margin({ top: 6 })
       }
 
-      SectionCard({ title: 'Temporary mode' }) {
+      SectionCard({ title: 'Offline mode' }) {
         Flex({ wrap: FlexWrap.Wrap }) {
-          ActionButton({ label: 'enableTemporaryIdMode', tone: ButtonTone.Warn, onAction: this.enableTemp })
+          ActionButton({ label: 'enableOfflineMode', tone: ButtonTone.Warn, onAction: this.enableOffline })
+          ActionButton({ label: 'disableOfflineMode', tone: ButtonTone.Neutral, onAction: this.disableOffline })
         }
-        Text('Queues all requests client-side until a real id is assigned via setID/changeWith*. Useful pre-login.')
+        Text('Records under a placeholder id and queues everything until a real id is set via setID/changeWith* or disableOfflineMode. Useful after logout.')
           .fontSize(12).fontColor(Theme.TEXT_MUTED).width('100%').margin({ top: 6 })
       }
     }

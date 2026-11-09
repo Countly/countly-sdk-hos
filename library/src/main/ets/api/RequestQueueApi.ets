@@ -17,16 +17,6 @@ export class RequestQueueApi {
     this.module = module;
   }
 
-  public enableOfflineMode(): void {
-    this.logger.i('[Countly] Calling enableOfflineMode');
-    this.module.enableOfflineMode();
-  }
-
-  public async disableOfflineMode(deviceId: string | null = null): Promise<void> {
-    this.logger.i(`[Countly] Calling disableOfflineMode, deviceId=[${deviceId !== null}]`);
-    await this.module.disableOfflineMode(deviceId);
-  }
-
   public async flushQueues(): Promise<void> {
     this.logger.i('[Countly] Calling flushQueues');
     await this.module.flushQueues();

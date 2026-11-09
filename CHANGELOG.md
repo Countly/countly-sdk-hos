@@ -3,14 +3,28 @@
 * Added "CountlyConfig.sdkInternalLimits.setMaxKeyLength(maxKeyLength)" to limit the length of event keys, view names, segmentation keys and custom user property keys. Longer keys are truncated. The default stays 128, and the key length limit of the SDK Behavior Settings overrides it.
 * Added method usage and log codes to the SDK health check.
 * Log lines now use the levels of the SDK development guide.
+* Offline mode now follows the SDK development guide: data is recorded under the placeholder device ID "CLYTemporaryDeviceID" and nothing is sent until offline mode ends. Start in it with "CountlyConfig.deviceId.enableOfflineMode()", and enter or leave it with "countly.deviceId.enableOfflineMode()" and "countly.deviceId.disableOfflineMode(deviceId)".
+* Renamed "CountlyConfig.deviceId.enableTemporaryMode()" to "enableOfflineMode()", "countly.deviceId.enableTemporaryIdMode()" to "enableOfflineMode()" and "countly.deviceId.isTemporaryIdMode()" to "isOfflineMode()".
+* Removed "CountlyConfig.network.enableOfflineMode()", "countly.requests.enableOfflineMode()" and "countly.requests.disableOfflineMode(deviceId)", which paused the request queue and kept the device ID.
+* Entering offline mode at runtime now works like "changeWithoutMerge" to the placeholder device ID: pending data is sent under the current device ID, the session ends and consent is removed.
+* Leaving offline mode with "setID", "changeWithoutMerge", "changeWithMerge" or "disableOfflineMode" now only switches to the new device ID: no merge request is sent, the session and consent stay, and the queued requests are sent under the new device ID. "disableOfflineMode()" without a device ID returns to the device ID used before offline mode, or generates one.
+* Offline mode now continues at the next start until a device ID is set, instead of a new device ID being generated.
+* Calling "disableOfflineMode" outside offline mode is now ignored with a warning.
+* Setting "CLYTemporaryDeviceID" as the device ID, in the config or with "setID", "changeWithoutMerge" or "changeWithMerge", now enters offline mode.
+* Requests recorded in offline mode now carry the device ID type "t=2", as the SDK development guide defines.
 
 * Mitigated an issue where the health check counted the retry pauses after failed requests as backoffs.
 * Mitigated an issue where a delivered health check also cleared what was counted while it was on its way.
 * Mitigated an issue where the longest run of backoffs in the health check never went above 1.
 * Mitigated an issue where the health check was sent while the SDK Behavior Settings turned networking off.
 * Mitigated an issue where the health check carried the app version without the "metrics" consent.
-* Mitigated an issue where an SDK started with a temporary device ID sent no health check until its next start.
-* Mitigated an issue where the health check was sent while offline mode held the request queue. It is now sent when offline mode ends.
+* Mitigated an issue where an SDK started in offline mode sent no health check until its next start.
+* Mitigated an issue where the SDK Behavior Settings were not fetched after offline mode ended.
+* Mitigated an issue where "changeWithMerge" in offline mode sent a merge request for the placeholder device ID and sent the queued requests under the placeholder.
+* Mitigated an issue where requests recorded in offline mode were deleted when the SDK started again in offline mode.
+* Mitigated an issue where requests that still carried the placeholder device ID at init were deleted. They are now sent under the current device ID.
+* Mitigated an issue where a request recorded in offline mode could be sent under the placeholder device ID, at the next start before the stored device ID was read, or while a real device ID was replacing the placeholder.
+* Mitigated an issue where remote config could be downloaded, and A/B test requests sent, while requests queued under the placeholder device ID were still waiting to be sent.
 * Mitigated an issue where an event could be sent with a negative duration, for example a timed event ended right after it started. A negative duration is now sent as 0.
 * Mitigated an issue where calling "Countly.initShared" or "Countly.createInstance" again ignored the new config without a warning.
 

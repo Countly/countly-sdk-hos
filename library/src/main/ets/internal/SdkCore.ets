@@ -33,9 +33,6 @@ export interface SdkCore {
   /** Stores the health check counters, on the session update timer and at the end of a session. */
   saveHealthCheckState(): Promise<void>;
 
-  /** Sends the health check that offline mode held back, when offline mode ends. */
-  sendDeferredHealthCheck(): void;
-
   /**
    * Flush in-memory event queue to the request queue. No-op when the queue
    * is empty. Used by ModuleUserProfile to drain events before each

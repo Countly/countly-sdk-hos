@@ -84,32 +84,42 @@ export default function requestQueueTest() {
 
     it('replaceTempDeviceId_swapsPlaceholder', 0, async () => {
       const h: Harness = await buildHarness();
-      // Pause processing via offline mode so the placeholder stays in the
-      // queue without triggering a fail-then-backoff cycle (which would push
-      // the next tick out by ~1s and the 80ms flushTick wouldn't observe it).
-      h.instance.requests.enableOfflineMode();
+      // Pause processing so the placeholder stays in the queue without
+      // triggering a fail-then-backoff cycle (which would push the next tick
+      // out by ~1s and the 80ms flushTick wouldn't observe it).
+      h.instance.requestQueue.pause();
       const tempEnc: string = encodeURIComponent('CLYTemporaryDeviceID');
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=${tempEnc}&foo=bar`);
       await flushTick(40);
       await h.instance.requestQueue.replaceTempDeviceId('REAL_ID');
-      await h.instance.requests.disableOfflineMode();
+      h.instance.requestQueue.resume();
       await flushTick(120);
       const hasReal: boolean = h.network.calls.some((c: RecordedCall) => c.data.indexOf('device_id=REAL_ID') !== -1);
       expect(hasReal).assertTrue();
     });
 
-    it('cleanupOrphanedTempRequests_removesPlaceholders', 0, async () => {
+    it('hasTempDeviceIdRequests_matchesOnlyTheDeviceIdParameter', 0, async () => {
       const h: Harness = await buildHarness();
-      h.network.shouldFail = true;
+      h.instance.requestQueue.pause();
       const tempEnc: string = encodeURIComponent('CLYTemporaryDeviceID');
+      await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=real&note=${tempEnc}`);
+      expect(h.instance.requestQueue.hasTempDeviceIdRequests()).assertFalse();
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=${tempEnc}&foo=bar`);
+      expect(h.instance.requestQueue.hasTempDeviceIdRequests()).assertTrue();
+      await h.instance.requestQueue.replaceTempDeviceId('real');
+      expect(h.instance.requestQueue.hasTempDeviceIdRequests()).assertFalse();
+    });
+
+    it('headCarryingTempDeviceId_isHeldOutsideTemporaryIdMode', 0, async () => {
+      const h: Harness = await buildHarness();
+      await flushTick(60);
+      const tempEnc: string = encodeURIComponent('CLYTemporaryDeviceID');
+      await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=${tempEnc}&held=1`);
       await flushTick(80);
-      const before: number = h.instance.requestQueue.size();
-      expect(before >= 1).assertTrue();
-      await h.instance.requestQueue.cleanupOrphanedTempRequests();
-      // Filter-based cleanup removes entries that contain the placeholder.
-      const after: number = h.instance.requestQueue.size();
-      expect(after < before).assertTrue();
+      expect(h.network.findCallsWithParam('held=1').length).assertEqual(0);
+      await h.instance.requestQueue.replaceTempDeviceId('real');
+      await flushTick(80);
+      expect(h.network.calls.filter((c: RecordedCall) => c.data.indexOf('held=1') !== -1 && c.data.indexOf('device_id=real') !== -1).length).assertEqual(1);
     });
 
     it('dropByAge_removesStaleRequestsBeforeSend', 0, async () => {
@@ -224,12 +234,12 @@ export default function requestQueueTest() {
       await flushTick(5);
       h.network.reset();
       // Pause first, enqueue two, then resume to observe draining order.
-      h.instance.requests.enableOfflineMode();
+      h.instance.requestQueue.pause();
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=first`);
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now() + 1}&foo=second`);
       await flushTick(40);
       expect(h.network.calls.length).assertEqual(0);
-      await h.instance.requests.disableOfflineMode();
+      h.instance.requestQueue.resume();
       await flushTick(120);
       expect(h.network.calls.length >= 2).assertTrue();
       const firstIdx: number = h.network.calls.findIndex(c => c.data.indexOf('foo=first') !== -1);
@@ -242,11 +252,11 @@ export default function requestQueueTest() {
       // Parity with Android ConnectionProcessorTests.testRun_storeHasTwoConnections,
       // rr=<remaining>, so first-of-two has rr=1 and the tail has rr=0.
       const h: Harness = await buildHarness();
-      h.instance.requests.enableOfflineMode();
+      h.instance.requestQueue.pause();
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=r1`);
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now() + 1}&foo=r2`);
       await flushTick(20);
-      await h.instance.requests.disableOfflineMode();
+      h.instance.requestQueue.resume();
       await flushTick(120);
       const first = h.network.calls.find(c => c.data.indexOf('foo=r1') !== -1);
       const last = h.network.calls.find(c => c.data.indexOf('foo=r2') !== -1);
@@ -291,47 +301,46 @@ export default function requestQueueTest() {
     });
 
     // -----------------------------------------------------------------------
-    // Offline-mode + temp-id pauses
+    // Offline mode holds the queue
     // -----------------------------------------------------------------------
 
-    it('offlineMode_pausesQueue_resumeFlushes', 0, async () => {
+    it('offlineMode_holdsQueue_disableSendsIt', 0, async () => {
       const h: Harness = await buildHarness();
       await flushTick(5);
       h.network.reset();
-      h.instance.requests.enableOfflineMode();
+      await h.instance.deviceId.enableOfflineMode();
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=offline`);
       await flushTick(60);
       expect(h.network.calls.length).assertEqual(0);
-      expect(h.instance.requestQueue.size()).assertEqual(1);
-      await h.instance.requests.disableOfflineMode();
+      expect(h.instance.requestQueue.peekAll().some((r: string) => r.indexOf('foo=offline') !== -1)).assertTrue();
+      await h.instance.deviceId.disableOfflineMode();
       await flushTick(100);
       expect(h.network.calls.some(c => c.data.indexOf('foo=offline') !== -1)).assertTrue();
     });
 
-    it('offlineMode_resumeWithNewDeviceId_changesIdBeforeFlush', 0, async () => {
+    it('offlineMode_disableWithDeviceId_placeholderGetsThatId', 0, async () => {
       const h: Harness = await buildHarness();
-      h.instance.requests.enableOfflineMode();
-      // Enqueue directly so no device_id is baked into the body; the
-      // ensuing drain will rely on the new id being set by disableOfflineMode.
-      await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=idswap`);
+      await h.instance.deviceId.enableOfflineMode();
+      const tempEnc: string = encodeURIComponent('CLYTemporaryDeviceID');
+      await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=${tempEnc}&foo=idswap`);
       await flushTick(30);
-      await h.instance.requests.disableOfflineMode('device_after_offline');
+      await h.instance.deviceId.disableOfflineMode('device_after_offline');
       await flushTick(120);
       expect(h.instance.deviceId.getID()).assertEqual('device_after_offline');
-      expect(h.network.calls.some(c => c.data.indexOf('foo=idswap') !== -1)).assertTrue();
+      expect(h.network.calls.some(c => c.data.indexOf('foo=idswap') !== -1 && c.data.indexOf('device_id=device_after_offline') !== -1)).assertTrue();
     });
 
-    it('tempIdMode_blocksSend_realIdFlushes', 0, async () => {
-      // Start in temp mode via deviceId config; queued requests should stay
-      // local until setID swaps the placeholder for a real id.
-      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+    it('offlineModeFromConfig_blocksSend_realIdFlushes', 0, async () => {
+      // Start in offline mode via the deviceId config; queued requests should
+      // stay local until setID swaps the placeholder for a real id.
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=tempheld`);
       await flushTick(80);
       expect(h.network.calls.length).assertEqual(0);
-      expect(h.instance.deviceId.isTemporaryIdMode()).assertTrue();
+      expect(h.instance.deviceId.isOfflineMode()).assertTrue();
       await h.instance.deviceId.setID('real_after_temp');
       await flushTick(120);
-      expect(h.instance.deviceId.isTemporaryIdMode()).assertFalse();
+      expect(h.instance.deviceId.isOfflineMode()).assertFalse();
       expect(h.network.calls.some(c => c.data.indexOf('foo=tempheld') !== -1)).assertTrue();
     });
 
@@ -394,15 +403,15 @@ export default function requestQueueTest() {
       expect(h.network.findCallsWithParam('metrics=').length).assertEqual(before);
     });
 
-    it('enableOfflineMode_idempotent_secondCallIsNoOp', 0, async () => {
-      const h: Harness = await buildHarness();
-      h.instance.requests.enableOfflineMode();
-      h.instance.requests.enableOfflineMode();
-      // Subsequent enqueues should remain paused, exercises the
-      // already-paused early-return branch.
+    it('enableOfflineMode_idempotent_secondCallKeepsTheIdBefore', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('id_before_offline'); });
+      await h.instance.deviceId.enableOfflineMode();
+      await h.instance.deviceId.enableOfflineMode();
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=offlineidem`);
       await flushTick(80);
       expect(h.network.calls.filter(c => c.data.indexOf('foo=offlineidem') !== -1).length).assertEqual(0);
+      await h.instance.deviceId.disableOfflineMode();
+      expect(h.instance.deviceId.getID()).assertEqual('id_before_offline');
     });
 
     // -----------------------------------------------------------------------
@@ -489,14 +498,14 @@ export default function requestQueueTest() {
       });
       h.network.reset();
       h.network.nextElapsedMs = 1500;
-      h.instance.requests.enableOfflineMode();
+      h.instance.requestQueue.pause();
       const now: number = Date.now();
       await h.instance.requestQueue.enqueue(`timestamp=${now}&foo=q1`);
       await h.instance.requestQueue.enqueue(`timestamp=${now + 1}&foo=q2`);
       await h.instance.requestQueue.enqueue(`timestamp=${now + 2}&foo=q3`);
       await h.instance.requestQueue.enqueue(`timestamp=${now + 3}&foo=q4`);
       h.network.calls = [];
-      await h.instance.requests.disableOfflineMode();
+      h.instance.requestQueue.resume();
       await flushTick(200);
       // All four drain, backoff would have pinned the queue at the
       // first slow drain if `bom_rqp` weren't being consulted.

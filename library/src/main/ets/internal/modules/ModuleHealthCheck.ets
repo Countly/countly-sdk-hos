@@ -128,7 +128,7 @@ export class ModuleHealthCheck extends ModuleBase {
       return;
     }
     if (this.core.deviceIdModule.isTemporary()) {
-      this.config.logger.d('[ModuleHealthCheck] onInit, temporary device ID mode, the report is sent when it ends');
+      this.config.logger.d('[ModuleHealthCheck] onInit, offline mode, the report is sent when it ends');
       return;
     }
 
@@ -159,10 +159,9 @@ export class ModuleHealthCheck extends ModuleBase {
 
   /**
    * Called by `CountlyInstance.resolveUnknownConsent` on UCM exit (both
-   * grant and revoke paths), when a temporary device ID is replaced by a
-   * real one, and when offline mode ends, to fire the health check that
-   * `onInit` deferred. No-op if HC is disabled, still in temp-id mode or
-   * offline mode, or already sent this lifecycle.
+   * grant and revoke paths), and when offline mode ends, to fire the health
+   * check that `onInit` deferred. No-op if HC is disabled, still in offline
+   * mode, or already sent this lifecycle.
    * Fire-and-forget per the Dart parity protocol.
    */
   public triggerPostUcmSend(): void {
@@ -352,8 +351,8 @@ export class ModuleHealthCheck extends ModuleBase {
 
   private async sendHealthCheck(): Promise<void> {
     if (this.sent) return;
-    // Not marked as sent: `disableOfflineMode` sends it.
-    if (this.config.offlineMode) {
+    // Not marked as sent: it goes out when offline mode ends.
+    if (this.core.deviceIdModule.isTemporary()) {
       this.config.logger.d('[ModuleHealthCheck] sendHealthCheck, offline mode, the report is sent when it ends');
       return;
     }
