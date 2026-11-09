@@ -159,9 +159,10 @@ export class ModuleHealthCheck extends ModuleBase {
 
   /**
    * Called by `CountlyInstance.resolveUnknownConsent` on UCM exit (both
-   * grant and revoke paths), and when a temporary device ID is replaced by a
-   * real one, to fire the health check that `onInit` deferred. No-op if HC is
-   * disabled, still in temp-id mode, or already sent this lifecycle.
+   * grant and revoke paths), when a temporary device ID is replaced by a
+   * real one, and when offline mode ends, to fire the health check that
+   * `onInit` deferred. No-op if HC is disabled, still in temp-id mode or
+   * offline mode, or already sent this lifecycle.
    * Fire-and-forget per the Dart parity protocol.
    */
   public triggerPostUcmSend(): void {
@@ -237,7 +238,7 @@ export class ModuleHealthCheck extends ModuleBase {
    */
   public recordUsage(area: string, method: string): void {
     if (area.length === 0 || method.length === 0) return;
-    if (AREAS.indexOf(area) === -1 || !this.core.consentModule.hasConsent(area)) return;
+    if (AREAS.indexOf(area) === -1 || !this.areaHasConsent(area)) return;
     let methods: Map<string, number> | undefined = this.methodUsage.get(area);
     if (methods === undefined) {
       methods = new Map<string, number>();
@@ -253,8 +254,18 @@ export class ModuleHealthCheck extends ModuleBase {
    */
   public recordLogCode(code: string, area: string): void {
     if (code.length === 0) return;
-    if (area.length > 0 && AREAS.indexOf(area) !== -1 && !this.core.consentModule.hasConsent(area)) return;
+    if (area.length > 0 && AREAS.indexOf(area) !== -1 && !this.areaHasConsent(area)) return;
     ModuleHealthCheck.addCount(this.logCodes, code, 1);
+  }
+
+  /**
+   * Whether the user gave the consent of a feature area. Unknown consent mode
+   * grants every feature only so data can wait locally for the answer, so
+   * nothing is counted until that answer comes.
+   */
+  private areaHasConsent(area: string): boolean {
+    if (this.config.unknownConsentMode) return false;
+    return this.core.consentModule.hasConsent(area);
   }
 
   private static addCount(counts: Map<string, number>, name: string, amount: number): void {
@@ -341,6 +352,11 @@ export class ModuleHealthCheck extends ModuleBase {
 
   private async sendHealthCheck(): Promise<void> {
     if (this.sent) return;
+    // Not marked as sent: `disableOfflineMode` sends it.
+    if (this.config.offlineMode) {
+      this.config.logger.d('[ModuleHealthCheck] sendHealthCheck, offline mode, the report is sent when it ends');
+      return;
+    }
     this.sent = true;
     // Aborted while networking is turned off by the SDK Behavior Settings;
     // the counters wait for the next SDK initialization.
@@ -444,10 +460,13 @@ export class ModuleHealthCheck extends ModuleBase {
   private addStored(s: Record<string, Object>): void {
     this.countLogError += this.safeCount(s['LErr']);
     this.countLogWarning += this.safeCount(s['LWar']);
-    const storedStatus: Object = s['RStatC'];
-    if (typeof storedStatus === 'number' && Number.isFinite(storedStatus as number)) this.statusCode = storedStatus as number;
-    const storedMessage: Object = s['REMsg'];
-    if (typeof storedMessage === 'string') this.errorMessage = storedMessage as string;
+    // A request refused before the stored state was read is the most recent failure, so it stays.
+    if (this.statusCode === -1) {
+      const storedStatus: Object = s['RStatC'];
+      if (typeof storedStatus === 'number' && Number.isFinite(storedStatus as number)) this.statusCode = storedStatus as number;
+      const storedMessage: Object = s['REMsg'];
+      if (typeof storedMessage === 'string') this.errorMessage = storedMessage as string;
+    }
     this.countBackoffRequest += this.safeCount(s['BReq']);
     this.maxConsecutiveBackoff = Math.max(this.maxConsecutiveBackoff, this.safeCount(s['CBReq']));
 

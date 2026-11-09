@@ -45,6 +45,8 @@ export class ModuleCrashes extends ModuleBase {
   private breadcrumbs: string[] = [];
   private appStartMs: number;
   private threadStackProvider: ThreadStackProvider | null = null;
+  /** Automatically detected crashes whose report is still being recorded. */
+  private automaticReportsInFlight: number = 0;
   // One-time guard so the "flag on but no provider" warning fires when the
   // integrator is actually trying to record a crash, not on every breadcrumb
   // or module init. `true` = we've already warned this session.
@@ -122,9 +124,10 @@ export class ModuleCrashes extends ModuleBase {
    */
   public handleUnhandledException(errMsg: string): void {
     if (this.rejectIfHalted('ModuleCrashes', 'handleUnhandledException')) return;
-    // From here on the health check counts no method usage and no log codes,
-    // so the crash report never calls into it; the crash itself is counted
-    // in the stored crash count, which the next start reports.
+    // While the crash is reported the health check counts no method usage and
+    // no log codes, so the crash report never calls into it; the crash itself
+    // is counted in the stored crash count, which the next start reports.
+    this.automaticReportsInFlight++;
     this.config.logger.setHealthPaused(true);
     this.countAutomaticCrash().catch((countErr: Object) => {
       this.config.logger.d(`[ModuleCrashes] automatic crash count rejected: ${countErr}`);
@@ -136,7 +139,18 @@ export class ModuleCrashes extends ModuleBase {
     // know why.
     this.recordInternal(err, null, true).catch((recErr: Object) => {
       this.config.logger.e(`[ModuleCrashes] auto-record rejected: ${recErr}`);
-    });
+    }).then((): void => this.automaticReportDone());
+  }
+
+  /**
+   * Lifts the health check pause once no automatically detected crash is being
+   * reported anymore. HOS: an errorManager observer keeps the app running after
+   * an uncaught exception and stays registered, so waiting for crash reporting
+   * to start again would stop the counting for the rest of the process.
+   */
+  private automaticReportDone(): void {
+    this.automaticReportsInFlight = Math.max(0, this.automaticReportsInFlight - 1);
+    if (this.automaticReportsInFlight === 0) this.config.logger.setHealthPaused(false);
   }
 
   /**

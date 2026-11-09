@@ -24,7 +24,9 @@ export class Countly {
    * If a shared instance already exists AND is still usable (not stopped,
    * not halted, not locked post-UCM-revoke), returns it unchanged, this
    * keeps initShared idempotent in the common case where an integrator
-   * calls it from multiple entry points without keeping a reference.
+   * calls it from multiple entry points without keeping a reference. The
+   * repeated call logs a warning and is counted in the health check (log
+   * code w110), because its config is ignored.
    *
    * If the existing shared instance has been **stopped** / **halted** /
    * **locked by a UCM-revoke**, this method **replaces** it: stops the
@@ -43,7 +45,11 @@ export class Countly {
     if (Countly.shared) {
       const existing: CountlyInstance = Countly.shared;
       const needsReplace: boolean = existing.config.halted || existing.config.consentLockedPostUnknown;
-      if (!needsReplace) return existing;
+      if (!needsReplace) {
+        existing.config.logger.w('initShared, already initialized, returning the running instance, the new config is ignored');
+        existing.config.logger.healthCode('w110');
+        return existing;
+      }
       // The existing shared is unusable for further work. Stop it (preserving
       // any persisted storage) and clear the static handle so the next block
       // builds a fresh instance. stop() is idempotent, safe if the instance
@@ -65,7 +71,11 @@ export class Countly {
     return Countly.shared;
   }
 
-  /** Creates (or returns) a named instance. Instance name is separate from app key. */
+  /**
+   * Creates (or returns) a named instance. Instance name is separate from app
+   * key. Returning an existing instance logs a warning and counts health check
+   * log code w110, because the new config is ignored.
+   */
   public static async createInstance(
     name: string,
     config: CountlyConfig,
@@ -73,7 +83,11 @@ export class Countly {
     networkOverride?: Network
   ): Promise<CountlyInstance> {
     const existing: CountlyInstance | undefined = Countly.namedInstances.get(name);
-    if (existing) return existing;
+    if (existing) {
+      existing.config.logger.w(`createInstance, '${name}' already exists, returning it, the new config is ignored`);
+      existing.config.logger.healthCode('w110');
+      return existing;
+    }
     const instance: CountlyInstance = new CountlyInstance(config, storageOverride, networkOverride);
     // Tag every log line from this instance with `[Countly:<name>]` so a
     // concurrent shared + named instance pair is distinguishable in the

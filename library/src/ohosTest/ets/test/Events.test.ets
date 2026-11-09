@@ -3,6 +3,19 @@ import { buildHarness, flushTick, Harness, assertAllRecordedCallsValid, clearTes
 import { FilterList } from '../../../main/ets/internal/ServerConfig';
 import { SegmentationMap } from '../../../main/ets/types/Types';
 
+/** The sent event object with the given key, up to its first closing brace, or '' when none was sent. */
+function sentEvent(h: Harness, key: string): string {
+  let found: string = '';
+  h.network.findCallsWithParam('events=').forEach((c) => {
+    const body: string = decodeURIComponent(c.data);
+    const start: number = body.indexOf(`"key":"${key}"`);
+    if (start === -1) return;
+    const end: number = body.indexOf('}', start);
+    found = body.substring(start, end === -1 ? body.length : end);
+  });
+  return found;
+}
+
 export default function eventsTest() {
   describe('EventsTest', () => {
     afterEach((): void => { try { assertAllRecordedCallsValid(); } finally { clearTestHarnesses(); } });
@@ -671,6 +684,33 @@ export default function eventsTest() {
       await h.instance.events.recordEvent('wire_order_event');
       await flushTick(60);
       assertWireOrder(h.network.calls, ['consent=', 'begin_session=1', 'events=']);
+    });
+
+    it('timedEventEndedRightAway_neverHasANegativeDuration', 0, async () => {
+      // A burst pushes the strictly increasing event clock ahead of Date.now().
+      const h: Harness = await buildHarness();
+      await flushTick(60);
+      for (let i = 0; i < 30; i++) {
+        await h.instance.events.recordEvent('burst');
+      }
+      h.instance.events.startEvent('quick');
+      await h.instance.events.endEvent('quick');
+      await h.instance.flushEvents();
+      await flushTick(60);
+      const sent: string = sentEvent(h, 'quick');
+      expect(sent.length > 0).assertTrue();
+      expect(sent.indexOf('"dur":-') === -1).assertTrue();
+    });
+
+    it('negativeDuration_isSentAsZero', 0, async () => {
+      const h: Harness = await buildHarness();
+      await flushTick(60);
+      await h.instance.events.recordEvent('negative_duration', null, 1, 0, -5);
+      await h.instance.flushEvents();
+      await flushTick(60);
+      const sent: string = sentEvent(h, 'negative_duration');
+      expect(sent.length > 0).assertTrue();
+      expect(sent.indexOf('"dur"') === -1).assertTrue();
     });
   });
 }

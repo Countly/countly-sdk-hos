@@ -52,6 +52,7 @@ export class ModuleRequestQueue extends ModuleBase {
    */
   public enableOfflineMode(): void {
     if (this.rejectIfHalted('ModuleRequestQueue', 'enableOfflineMode')) return;
+    this.config.offlineMode = true;
     if (this.core.requestQueue.isPaused()) {
       this.config.logger.d('[ModuleRequestQueue] enableOfflineMode, already paused');
       return;
@@ -71,7 +72,9 @@ export class ModuleRequestQueue extends ModuleBase {
       await this.deviceIdModule.setID(deviceId);
     }
     this.core.requestQueue.resume();
+    this.config.offlineMode = false;
     this.config.logger.i('[ModuleRequestQueue] disableOfflineMode, request queue resumed');
+    this.core.sendDeferredHealthCheck();
   }
 
   /**

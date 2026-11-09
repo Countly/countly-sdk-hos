@@ -16,6 +16,7 @@ import locationTest from './Location.test';
 // test files stay on disk for a clean re-enable path.
 import remoteConfigTest from './RemoteConfig.test';
 import healthCheckTest from './HealthCheck.test';
+import healthCheckCountersTest from './HealthCheckCounters.test';
 import configurationTest from './Configuration.test';
 import countlyFacadeTest from './Countly.test';
 import countlyConfigTest from './CountlyConfig.test';
@@ -37,6 +38,7 @@ export default function testsuite() {
   locationTest();
   remoteConfigTest();
   healthCheckTest();
+  healthCheckCountersTest();
   configurationTest();
   countlyFacadeTest();
   countlyConfigTest();

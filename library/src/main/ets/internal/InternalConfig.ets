@@ -136,6 +136,8 @@ export class InternalConfig {
   public remoteConfigGlobalCallback: RCDownloadCallback | null = null;
 
   public startInOfflineMode: boolean = false;
+  /** True while offline mode holds the request queue: from init or `enableOfflineMode` until `disableOfflineMode`. */
+  public offlineMode: boolean = false;
   public disableHealthCheck: boolean = false;
 
   /**

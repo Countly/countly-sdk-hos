@@ -195,6 +195,11 @@ export class ModuleEvents extends ModuleBase {
       this.config.logger.healthCode('w750', 'events');
       count = 1;
     }
+    if (dur < 0) {
+      this.config.logger.w(`[ModuleEvents] recordEvent, duration < 0 (got ${dur}), using 0`);
+      this.config.logger.healthCode('w750', 'events');
+      dur = 0;
+    }
 
     // Server-config filters apply to custom events only. Internal [CLY]_*
     // events are part of the SDK's own data model, killswitching them via
@@ -332,7 +337,8 @@ export class ModuleEvents extends ModuleBase {
       this.config.logger.healthCode('w720', 'events');
       return;
     }
-    const durSec: number = (Date.now() - timed.startTs) / 1000;
+    // Same clock as the start: it runs ahead of Date.now() after a burst, so Date.now() could give a negative duration.
+    const durSec: number = (this.config.clock.nowMs() - timed.startTs) / 1000;
     this.timed.delete(key);
     // Delegate to the shared recording path with the ORIGINAL start
     // timestamp (per dev guide), so hour/dow bucket on the start of the
