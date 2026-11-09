@@ -4,24 +4,12 @@ name: Device tests (HarmonyOS)
 #
 # Every pull request and every push to staging or master runs it on a GitHub-hosted ubuntu-24.04 runner
 # with KVM: the emulator comes from the Command Line Tools and the x86_64 phone image from Huawei's CDN.
-# A manual run can use a self-hosted runner labelled hos-emulator instead, with DevEco Studio and an
-# emulator instance on it.
-#
-# Optional repository variables for the self-hosted runner:
-#   HOS_SELF_HOSTED_DEVECO_HOME    DevEco Studio on the runner (default: DEVECO_HOME on the runner)
-#   HOS_SELF_HOSTED_EMULATOR       emulator instance to boot there when none is running
 
 on:
   pull_request:
   push:
     branches: [staging, master]
   workflow_dispatch:
-    inputs:
-      runner:
-        description: Where to run the suite
-        type: choice
-        options: [hosted, self-hosted]
-        default: hosted
 
 permissions:
   contents: read
@@ -29,7 +17,6 @@ permissions:
 jobs:
   emulator:
     name: HarmonyOS emulator test
-    if: github.event_name != 'workflow_dispatch' || inputs.runner == 'hosted'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     concurrency:
@@ -42,7 +29,6 @@ jobs:
       HOS_CLT_VERSION: ${{ vars.HOS_CLT_VERSION }}
       HOS_CLT_URL_LINUX_X64: ${{ vars.HOS_CLT_URL_LINUX_X64 }}
       HOS_CLT_SHA256_LINUX_X64: ${{ vars.HOS_CLT_SHA256_LINUX_X64 }}
-      HOS_EMULATOR_CREATE: 'true'
       HOS_EMULATOR_HEADLESS: 'true'
       HOS_BOOT_TIMEOUT: '1200'
     steps:
@@ -105,53 +91,6 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: device-tests
-          path: ci-out/device-tests/
-          if-no-files-found: warn
-          retention-days: 14
-
-  self-hosted:
-    name: HarmonyOS emulator test (self-hosted)
-    if: github.event_name == 'workflow_dispatch' && inputs.runner == 'self-hosted'
-    runs-on: [self-hosted, hos-emulator]
-    timeout-minutes: 45
-    # One emulator per machine: queue runs instead of letting two jobs drive it at once.
-    concurrency:
-      group: hos-self-hosted-emulator
-      cancel-in-progress: false
-    defaults:
-      run:
-        shell: bash
-    env:
-      HOS_DEVECO_HOME_VAR: ${{ vars.HOS_SELF_HOSTED_DEVECO_HOME }}
-      HOS_EMULATOR_NAME: ${{ vars.HOS_SELF_HOSTED_EMULATOR }}
-      HOS_EMULATOR_REUSE: 'true'
-      HOS_BOOT_TIMEOUT: '600'
-    steps:
-      - name: Check out
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
-      - name: Use the local DevEco Studio
-        run: bash .github/scripts/hos-ci.sh use-toolchain "${HOS_DEVECO_HOME_VAR:-${DEVECO_HOME:-}}"
-
-      - name: Align the hvigor plugin with the toolchain
-        run: bash .github/scripts/hos-ci.sh align-plugin
-
-      - name: Install ohpm dependencies
-        run: ohpm install --all
-
-      - name: Compile ohosTest HAP
-        run: hvigorw --mode module -p module=library@ohosTest -p isOhosTest=true -p product=default -p buildMode=test genOnDeviceTestHap --no-daemon --stacktrace
-
-      - name: Run the tests on the emulator
-        run: bash .github/scripts/emulator.sh run-tests library/build/default/outputs/ohosTest/library-ohosTest-unsigned.hap ci-out/device-tests
-
-      - name: Upload test logs
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: device-tests-self-hosted
           path: ci-out/device-tests/
           if-no-files-found: warn
           retention-days: 14

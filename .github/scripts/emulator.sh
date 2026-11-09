@@ -10,18 +10,14 @@
 #   wait-boot                  Wait until hdc sees the device and boot has completed.
 #   stop                       Stop the instance.
 #   collect-logs OUT_DIR       Copy the emulator logs into OUT_DIR.
-#   run-tests [HAP] [OUT_DIR]  Boot (or reuse) the emulator, run device-tests.sh run, collect logs and stop.
+#   run-tests [HAP] [OUT_DIR]  Create and boot the emulator, run device-tests.sh run, collect logs and stop.
 #
 # Settings (environment):
-#   HOS_EMULATOR              Emulator binary (exported by hos-ci.sh use-toolchain)
+#   HOS_EMULATOR              Emulator binary (exported by hos-ci.sh install-toolchain)
 #   HOS_EMULATOR_NAME         instance name (default ci_phone; letters, digits, spaces, _ and + only)
 #   HOS_EMULATOR_HOME         working folder for downloads, instances and logs (default $RUNNER_TEMP/hos-emulator)
-#   HOS_INSTANCE_ROOT         instance folder (default $HOS_EMULATOR_HOME/deployed when creating, else the
-#                             DevEco default for the OS)
-#   HOS_IMAGE_ROOT            folder holding system-image/... (default $HOS_EMULATOR_HOME/sdk when creating,
-#                             else the DevEco default for the OS)
-#   HOS_EMULATOR_CREATE       true: create a fresh instance before booting (hosted runners)
-#   HOS_EMULATOR_REUSE        true: use a device that is already booted and leave it running
+#   HOS_INSTANCE_ROOT         instance folder (default $HOS_EMULATOR_HOME/deployed)
+#   HOS_IMAGE_ROOT            folder holding system-image/... (default $HOS_EMULATOR_HOME/sdk)
 #   HOS_EMULATOR_HEADLESS     true: always pass -noWindow; false: never; auto (default): when the help lists it
 #   HOS_EMULATOR_MEMORY_GB    instance RAM in GB (default 4)
 #   HOS_EMULATOR_STORAGE_GB   instance storage in GB (default 8)
@@ -41,28 +37,14 @@ EMU_HOME="${HOS_EMULATOR_HOME:-${RUNNER_TEMP:-$HOME}/hos-emulator}"
 LOG_DIR="$EMU_HOME/logs"
 PID_FILE="$EMU_HOME/emulator.pid"
 
-# Prints the default instance folder: the job's own folder when creating, else where DevEco keeps them.
+# Prints the folder the emulator instances live in.
 instance_root() {
-  if [ -n "${HOS_INSTANCE_ROOT:-}" ]; then
-    printf '%s\n' "$HOS_INSTANCE_ROOT"
-  elif [ "${HOS_EMULATOR_CREATE:-false}" = "true" ]; then
-    printf '%s\n' "$EMU_HOME/deployed"
-  else
-    printf '%s\n' "$HOME/.Huawei/Emulator/deployed"
-  fi
+  printf '%s\n' "${HOS_INSTANCE_ROOT:-$EMU_HOME/deployed}"
 }
 
-# Prints the default image root: the job's own folder when creating, else where DevEco keeps images.
+# Prints the folder the system image is unpacked under.
 image_root() {
-  if [ -n "${HOS_IMAGE_ROOT:-}" ]; then
-    printf '%s\n' "$HOS_IMAGE_ROOT"
-  elif [ "${HOS_EMULATOR_CREATE:-false}" = "true" ]; then
-    printf '%s\n' "$EMU_HOME/sdk"
-  elif is_macos; then
-    printf '%s\n' "$HOME/Library/Huawei/Sdk"
-  else
-    printf '%s\n' "$HOME/Huawei/Sdk"
-  fi
+  printf '%s\n' "${HOS_IMAGE_ROOT:-$EMU_HOME/sdk}"
 }
 
 # Runs the Emulator binary with stdin closed, so a confirmation prompt fails instead of hanging the job.
@@ -224,7 +206,7 @@ cmd_start() {
   root="$(image_root)"
   mkdir -p "$LOG_DIR"
   if [ ! -d "$inst/$EMU_NAME" ]; then
-    die "no emulator instance '$EMU_NAME' in $inst (found: $(ls "$inst" 2> /dev/null | tr '\n' ' ')); set HOS_EMULATOR_NAME or, for the self-hosted job, the HOS_SELF_HOSTED_EMULATOR variable"
+    die "no emulator instance '$EMU_NAME' in $inst (found: $(ls "$inst" 2> /dev/null | tr '\n' ' ')); run create first"
   fi
   if supports_option -start; then
     args=(-start "$EMU_NAME" -instancePath "$inst" -imageRoot "$root")
@@ -312,35 +294,19 @@ cmd_collect_logs() {
   log "Emulator logs copied to $out"
 }
 
-# Boots or reuses an emulator, runs the device tests and always collects logs and stops what it started.
+# Creates and boots an emulator, runs the device tests, then always collects the logs and stops it.
 cmd_run_tests() {
-  local hap="${1:-library/build/default/outputs/ohosTest/library-ohosTest-unsigned.hap}" out="${2:-device-test-results}" started=0 status=0 target="" reuse=""
+  local hap="${1:-library/build/default/outputs/ohosTest/library-ohosTest-unsigned.hap}" out="${2:-device-test-results}" status=0
   mkdir -p "$out"
-  if [ "${HOS_EMULATOR_REUSE:-false}" = "true" ]; then
-    target="$(hdc_targets | head -1)"
-    if [ -n "$target" ] && boot_completed "$target"; then
-      reuse="$target"
-    fi
-  fi
-  if [ -n "$reuse" ]; then
-    log "Reusing the booted device $reuse"
-    export HOS_HDC_TARGET="$reuse"
-  else
-    unset HOS_HDC_TARGET
-    if [ "${HOS_EMULATOR_CREATE:-false}" = "true" ]; then
-      cmd_create
-    fi
-    cmd_start
-    started=1
-    trap 'cmd_collect_logs "$out/emulator"; cmd_stop' EXIT
-    cmd_wait_boot
-  fi
+  unset HOS_HDC_TARGET
+  cmd_create
+  cmd_start
+  trap 'cmd_collect_logs "$out/emulator"; cmd_stop' EXIT
+  cmd_wait_boot
   bash "$SCRIPT_DIR/device-tests.sh" run "$hap" "$out" || status=$?
-  if [ "$started" = 1 ]; then
-    trap - EXIT
-    cmd_collect_logs "$out/emulator"
-    cmd_stop
-  fi
+  trap - EXIT
+  cmd_collect_logs "$out/emulator"
+  cmd_stop
   return "$status"
 }
 

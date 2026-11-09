@@ -65,11 +65,6 @@ endgroup() {
   return 0
 }
 
-# Succeeds when the host is macOS.
-is_macos() {
-  [ "$(uname -s)" = "Darwin" ]
-}
-
 # Exports a variable in this shell and, under GitHub Actions, for the following steps.
 export_var() {
   export "$1=$2"
