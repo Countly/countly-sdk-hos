@@ -4,7 +4,8 @@
 #
 # Usage: device-tests.sh <command> [args]
 #   classes [LIST_FILE]     Print the describe() names registered in List.test.ets, comma separated.
-#   run [HAP] [OUT_DIR]     Install HAP, run every registered suite, write OUT_DIR/aa-test.log and parse it.
+#   run [HAP] [OUT_DIR]     Install HAP, wait until the test ability starts, run every registered suite,
+#                           write OUT_DIR/aa-test.log and parse it.
 #   parse LOG               Summarise an aa test log; exits 1 on any failure, error, crash or empty run.
 #
 # Settings (environment):
@@ -15,6 +16,7 @@
 #   HOS_TEST_CLASSES      suites to run (default: output of the classes command)
 #   HOS_TEST_TIMEOUT_MS   per-test timeout passed to aa test (default 60000)
 #   HOS_TEST_RUN_LIMIT_S  seconds the whole aa test run may take before it is stopped (default 900)
+#   HOS_TEST_START_TRIES  tries to start the test ability with the first suite before giving up (default 4)
 #   HOS_TEST_MIN_COUNT    fail when fewer tests run than this (default 1)
 #
 # Run from the repository root.
@@ -65,10 +67,44 @@ connected_targets() {
   "${HOS_HDC:-hdc}" list targets 2>/dev/null | tr -d '\r' | grep -vE '^[[:space:]]*$|\[Empty\]' || true
 }
 
-# Installs the HAP, runs aa test for every registered suite and parses the log.
+# Runs aa test for the suites in CLASSES ($5), writing its output to LOG ($2) and stdout, and stops it
+# after LIMIT ($1) seconds. Returns the status of hdc, 124 when the run was stopped.
+run_aa_test() {
+  local limit="$1" log_file="$2" bundle="$3" module="$4" classes="$5" timeout_ms="$6" status
+  local target=()
+  if [ -n "${HOS_HDC_TARGET:-}" ]; then
+    target=(-t "$HOS_HDC_TARGET")
+  fi
+  set +e
+  with_time_limit "$limit" "${HOS_HDC:-hdc}" ${target[@]+"${target[@]}"} shell aa test -b "$bundle" -m "$module" \
+    -s unittest "$TEST_RUNNER" -s class "$classes" -s timeout "$timeout_ms" 2>&1 | tr -d '\r' | tee "$log_file"
+  status="${PIPESTATUS[0]}"
+  set -e
+  return "$status"
+}
+
+# Runs the quick suite CLASS ($3) until the test ability starts. Right after the first boot the lock
+# screen can still be closing; aa test then fails to start the ability and never exits.
+wait_for_test_ability() {
+  local bundle="$1" module="$2" class="$3" out_dir="$4" tries="${HOS_TEST_START_TRIES:-4}" try probe
+  for try in $(seq 1 "$tries"); do
+    probe="$out_dir/aa-probe-$try.log"
+    run_aa_test 60 "$probe" "$bundle" "$module" "$class" 60000 > /dev/null || true
+    if grep -q "OHOS_REPORT_RESULT" "$probe"; then
+      log "The test ability started (try $try of $tries)"
+      return 0
+    fi
+    warn "the test ability did not start (try $try of $tries): $(tr '\n' ' ' < "$probe" | cut -c1-200)"
+    hdc_cmd shell "power-shell wakeup" > /dev/null 2>&1 || true
+    sleep 10
+  done
+  return 1
+}
+
+# Installs the HAP, waits until the test ability starts, runs aa test for every registered suite and parses the log.
 cmd_run() {
-  local hap="${1:-$DEFAULT_HAP}" out_dir="${2:-device-test-results}" bundle module classes timeout_ms run_limit remote install_out targets status
-  local hdc_target=()
+  local hap="${1:-$DEFAULT_HAP}" out_dir="${2:-device-test-results}" bundle module classes timeout_ms run_limit remote install_out targets
+  local started=1 status=0
   [ -s "$hap" ] || die "test HAP not found: $hap"
   mkdir -p "$out_dir"
   bundle="${HOS_TEST_BUNDLE:-$(json_string_value bundleName AppScope/app.json5)}"
@@ -76,9 +112,6 @@ cmd_run() {
   classes="${HOS_TEST_CLASSES:-$(cmd_classes)}"
   timeout_ms="${HOS_TEST_TIMEOUT_MS:-60000}"
   run_limit="${HOS_TEST_RUN_LIMIT_S:-900}"
-  if [ -n "${HOS_HDC_TARGET:-}" ]; then
-    hdc_target=(-t "$HOS_HDC_TARGET")
-  fi
   [ -n "$bundle" ] && [ -n "$module" ] || die "could not read the bundle or test module name"
 
   targets="$(connected_targets)"
@@ -101,19 +134,21 @@ cmd_run() {
   endgroup
 
   log "Suites: $classes"
-  group "aa test"
-  set +e
-  with_time_limit "$run_limit" "${HOS_HDC:-hdc}" ${hdc_target[@]+"${hdc_target[@]}"} shell aa test -b "$bundle" -m "$module" \
-    -s unittest "$TEST_RUNNER" -s class "$classes" -s timeout "$timeout_ms" 2>&1 | tr -d '\r' | tee "$out_dir/aa-test.log"
-  status="${PIPESTATUS[0]}"
-  set -e
+  group "Start the test ability"
+  wait_for_test_ability "$bundle" "$module" "${classes%%,*}" "$out_dir" || started=0
   endgroup
 
-  if [ "$status" = 124 ]; then
-    warn "aa test was stopped after ${run_limit}s (HOS_TEST_RUN_LIMIT_S)"
+  if [ "$started" = 1 ]; then
+    group "aa test"
+    run_aa_test "$run_limit" "$out_dir/aa-test.log" "$bundle" "$module" "$classes" "$timeout_ms" || status=$?
+    endgroup
+    [ "$status" != 124 ] || warn "aa test was stopped after ${run_limit}s (HOS_TEST_RUN_LIMIT_S)"
+  fi
+  if [ "$started" = 0 ] || [ "$status" != 0 ]; then
     hdc_cmd shell "aa dump -a" > "$out_dir/aa-dump.txt" 2>&1 || true
   fi
   hdc_cmd shell "hilog -x" > "$out_dir/hilog.txt" 2>/dev/null || true
+  [ "$started" = 1 ] || die "the test ability did not start; see aa-probe-*.log, aa-dump.txt and hilog.txt"
   cmd_parse "$out_dir/aa-test.log"
 }
 
