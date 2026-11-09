@@ -1,0 +1,131 @@
+name: PR checks
+
+# Builds the release HAR, the demo app and the ohosTest HAP with the HarmonyOS Command Line Tools and
+# runs codelinter. Needs no secrets by default. Toolchain versions and checksums live in
+# .github/hos-toolchain.env.
+#
+# Optional repository settings:
+#   HOS_LINT_FAIL_ON           variable: error (default), warn or none; which codelinter findings fail the job
+#   HOS_CLT_URL_LINUX_X64      variable: another copy of the Command Line Tools archive to download instead of
+#                              the ErBWs/ohos-sdk mirror; set HOS_CLT_SHA256_LINUX_X64 and HOS_CLT_VERSION with it
+#   HOS_CLT_AUTH_HEADER        secret: a request header (for example "Authorization: Bearer ...") for that URL
+
+on:
+  pull_request:
+  push:
+    branches: [staging, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pr-checks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build, lint and package
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      HOS_CLT_VERSION: ${{ vars.HOS_CLT_VERSION }}
+      HOS_CLT_URL_LINUX_X64: ${{ vars.HOS_CLT_URL_LINUX_X64 }}
+      HOS_CLT_SHA256_LINUX_X64: ${{ vars.HOS_CLT_SHA256_LINUX_X64 }}
+      HOS_LINT_FAIL_ON: ${{ vars.HOS_LINT_FAIL_ON || 'error' }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # hvigor needs libGL for texture compression on Linux (Huawei's pipeline guide).
+      - name: Install libGL
+        run: ldconfig -p | grep 'libGL\.so\.1' > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libgl1; }
+
+      - name: Resolve toolchain settings
+        id: config
+        run: bash .github/scripts/hos-ci.sh config
+
+      - name: Restore Command Line Tools
+        id: clt-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.config.outputs.clt_home }}
+          key: ${{ steps.config.outputs.clt_cache_key }}
+
+      - name: Set up Command Line Tools
+        env:
+          HOS_CLT_AUTH_HEADER: ${{ secrets.HOS_CLT_AUTH_HEADER }}
+        run: bash .github/scripts/hos-ci.sh install-toolchain
+
+      # Saved right away: the combined action only saves when the whole job passes, and a lint failure
+      # would otherwise throw away the multi-gigabyte download.
+      - name: Save Command Line Tools
+        if: steps.clt-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.config.outputs.clt_home }}
+          key: ${{ steps.config.outputs.clt_cache_key }}
+
+      - name: Align the hvigor plugin with the toolchain
+        run: bash .github/scripts/hos-ci.sh align-plugin
+
+      - name: Restore ohpm and hvigor caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.ohpm/cache
+            ~/.hvigor/wrapper
+            ~/.hvigor/caches
+          key: hos-deps-${{ runner.os }}-${{ steps.config.outputs.clt_version }}-${{ hashFiles('**/oh-package.json5', '**/oh-package-lock.json5', 'hvigor/hvigor-config.json5') }}
+          restore-keys: |
+            hos-deps-${{ runner.os }}-${{ steps.config.outputs.clt_version }}-
+
+      - name: Install ohpm dependencies
+        id: deps
+        run: ohpm install --all
+
+      - name: Build release HAR
+        run: hvigorw --mode module -p module=library@default -p product=default -p buildMode=release assembleHar --no-daemon --stacktrace
+
+      - name: Check HAR
+        run: bash .github/scripts/hos-ci.sh check-har library/build/default/outputs/default/library.har ci-out/har
+
+      - name: Upload HAR
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: countly-sdk-hos-har
+          path: ci-out/har/
+          if-no-files-found: error
+
+      - name: Build demo app
+        run: hvigorw --mode module -p module=entry@default -p product=default -p buildMode=debug assembleHap --no-daemon --stacktrace
+
+      - name: Compile ohosTest HAP
+        run: hvigorw --mode module -p module=library@ohosTest -p isOhosTest=true -p product=default -p buildMode=test genOnDeviceTestHap --no-daemon --stacktrace
+
+      - name: Upload ohosTest HAP
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ohos-test-hap
+          path: library/build/default/outputs/ohosTest/library-ohosTest-unsigned.hap
+          if-no-files-found: error
+          retention-days: 14
+
+      # Runs after a failed build too, so one push reports both build and lint problems.
+      - name: Lint
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        run: bash .github/scripts/hos-ci.sh lint ci-out/lint
+
+      - name: Upload lint report
+        if: ${{ !cancelled() && steps.deps.outcome == 'success' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: codelinter-report
+          path: ci-out/lint/
+          if-no-files-found: ignore
+          retention-days: 14
