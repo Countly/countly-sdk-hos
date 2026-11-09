@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Shared helpers for the scripts in .github/scripts. Source this file; it runs nothing on its own.
-# Works under bash 3.2 and later on Linux, macOS and Git Bash on Windows. Messages, annotations and log
+# Works under bash 3.2 and later on Linux and macOS. Messages, annotations and log
 # groups go to stderr (the runner reads workflow commands there too) so stdout stays free for values.
 
 HOS_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -65,35 +65,9 @@ endgroup() {
   return 0
 }
 
-# Succeeds when the shell is an MSYS shell on Windows, such as Git Bash.
-is_windows() {
-  case "$(uname -s)" in
-    MINGW* | MSYS* | CYGWIN*) return 0 ;;
-    *) return 1 ;;
-  esac
-}
-
 # Succeeds when the host is macOS.
 is_macos() {
   [ "$(uname -s)" = "Darwin" ]
-}
-
-# Prints a path in the form native Windows programs accept (C:/x/y) under Git Bash, unchanged elsewhere.
-native_path() {
-  if is_windows; then
-    cygpath -m "$1"
-  else
-    printf '%s\n' "$1"
-  fi
-}
-
-# Prints a path in POSIX form, converting a Windows path under Git Bash, unchanged elsewhere.
-posix_path() {
-  if is_windows; then
-    cygpath -u "$1"
-  else
-    printf '%s\n' "$1"
-  fi
 }
 
 # Exports a variable in this shell and, under GitHub Actions, for the following steps.
@@ -108,11 +82,7 @@ export_var() {
 prepend_path() {
   export PATH="$1:$PATH"
   if [ -n "${GITHUB_PATH:-}" ]; then
-    if is_windows; then
-      cygpath -w "$1" >> "$GITHUB_PATH"
-    else
-      printf '%s\n' "$1" >> "$GITHUB_PATH"
-    fi
+    printf '%s\n' "$1" >> "$GITHUB_PATH"
   fi
 }
 
@@ -152,8 +122,7 @@ fetch() {
 http_status() {
   local code attempt
   for attempt in 1 2 3 4 5; do
-    # The code is read from the last line of stdout: native Windows curl can't open "-o /dev/null" when MSYS path conversion is off.
-    code="$(curl -sIL --connect-timeout 30 -w '\n%{http_code}' "$1" 2> /dev/null | tail -n 1 || true)"
+    code="$(curl -sIL --connect-timeout 30 -o /dev/null -w '%{http_code}' "$1" || true)"
     case "$code" in
       000 | 5??) sleep $((attempt * 3)) ;;
       *) break ;;

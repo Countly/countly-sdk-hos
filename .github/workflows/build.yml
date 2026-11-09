@@ -1,4 +1,4 @@
-name: PR checks
+name: Build the SDK
 
 # Builds the release HAR, the demo app and the ohosTest HAP with the HarmonyOS Command Line Tools and
 # runs codelinter. Needs no secrets by default. Toolchain versions and checksums live in
@@ -20,12 +20,12 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-checks-${{ github.event.pull_request.number || github.ref }}
+  group: build-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build:
-    name: Build, lint and package
+    name: Build, lint and package the SDK
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     defaults:

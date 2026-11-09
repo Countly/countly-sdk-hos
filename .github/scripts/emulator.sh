@@ -2,8 +2,8 @@
 # Prepares, creates, boots and stops a HarmonyOS emulator for the device test jobs.
 #
 # Usage: emulator.sh <command> [args]
-#   prepare-host               Check and enable what the emulator needs on this runner: KVM, render node and
-#                              libraries on Linux; the hypervisor probe and Mesa software OpenGL on Windows.
+#   prepare-host               Check and enable what the emulator needs on a Linux runner: KVM, a render
+#                              node and libraries.
 #   fetch-image                Download HOS_IMAGE_URL, check HOS_IMAGE_SHA256 and unpack it under the image root.
 #   create                     Create the instance HOS_EMULATOR_NAME from the unpacked image.
 #   start                      Boot the instance in the background, headless when the emulator supports it.
@@ -27,7 +27,6 @@
 #   HOS_EMULATOR_STORAGE_GB   instance storage in GB (default 8)
 #   HOS_HDC_PORT              port to hdc tconn when the emulator does not register itself (default 5555)
 #   HOS_BOOT_TIMEOUT          seconds to wait for boot (default 900)
-#   HOS_SOFTWARE_GL           false: skip the Mesa software OpenGL setup on Windows
 
 set -euo pipefail
 
@@ -35,24 +34,19 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=lib.sh
 . "$SCRIPT_DIR/lib.sh"
 
-if is_windows; then
-  export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
-fi
 export QEMU_AUDIO_DRV="${QEMU_AUDIO_DRV:-none}"
 
 EMU_NAME="${HOS_EMULATOR_NAME:-ci_phone}"
-EMU_HOME="$(posix_path "${HOS_EMULATOR_HOME:-${RUNNER_TEMP:-$HOME}/hos-emulator}")"
+EMU_HOME="${HOS_EMULATOR_HOME:-${RUNNER_TEMP:-$HOME}/hos-emulator}"
 LOG_DIR="$EMU_HOME/logs"
 PID_FILE="$EMU_HOME/emulator.pid"
 
 # Prints the default instance folder: the job's own folder when creating, else where DevEco keeps them.
 instance_root() {
   if [ -n "${HOS_INSTANCE_ROOT:-}" ]; then
-    posix_path "$HOS_INSTANCE_ROOT"
+    printf '%s\n' "$HOS_INSTANCE_ROOT"
   elif [ "${HOS_EMULATOR_CREATE:-false}" = "true" ]; then
     printf '%s\n' "$EMU_HOME/deployed"
-  elif is_windows; then
-    posix_path "$LOCALAPPDATA/Huawei/Emulator/deployed"
   else
     printf '%s\n' "$HOME/.Huawei/Emulator/deployed"
   fi
@@ -61,11 +55,9 @@ instance_root() {
 # Prints the default image root: the job's own folder when creating, else where DevEco keeps images.
 image_root() {
   if [ -n "${HOS_IMAGE_ROOT:-}" ]; then
-    posix_path "$HOS_IMAGE_ROOT"
+    printf '%s\n' "$HOS_IMAGE_ROOT"
   elif [ "${HOS_EMULATOR_CREATE:-false}" = "true" ]; then
     printf '%s\n' "$EMU_HOME/sdk"
-  elif is_windows; then
-    posix_path "$LOCALAPPDATA/Huawei/Sdk"
   elif is_macos; then
     printf '%s\n' "$HOME/Library/Huawei/Sdk"
   else
@@ -76,7 +68,7 @@ image_root() {
 # Runs the Emulator binary with stdin closed, so a confirmation prompt fails instead of hanging the job.
 emu() {
   local bin="${HOS_EMULATOR:-Emulator}"
-  "$(posix_path "$bin")" "$@" < /dev/null
+  "$bin" "$@" < /dev/null
 }
 
 # Prints the emulator's help text, which differs between emulator versions; cached for the job.
@@ -96,7 +88,7 @@ supports_option() {
 
 # Runs hdc with the given arguments.
 hdc_run() {
-  "$(posix_path "${HOS_HDC:-hdc}")" "$@"
+  "${HOS_HDC:-hdc}" "$@"
 }
 
 # Prints the connect keys hdc can see, one per line.
@@ -145,54 +137,10 @@ prepare_linux() {
   endgroup
 }
 
-# Reports whether a hypervisor is running and puts Mesa's software OpenGL next to Emulator.exe (Windows runners).
-prepare_windows() {
-  group "Hypervisor"
-  powershell.exe -NoProfile -Command '
-    $cs = Get-CimInstance Win32_ComputerSystem
-    "HypervisorPresent: " + $cs.HypervisorPresent
-    foreach ($f in "Microsoft-Hyper-V", "HypervisorPlatform", "VirtualMachinePlatform") {
-      $s = Get-WindowsOptionalFeature -Online -FeatureName $f -ErrorAction SilentlyContinue
-      "{0}: {1}" -f $f, $(if ($s) { $s.State } else { "unknown" })
-    }
-    (Get-CimInstance Win32_Processor | Select-Object -First 1).Name
-    "VirtualizationFirmwareEnabled: " + (Get-CimInstance Win32_Processor | Select-Object -First 1).VirtualizationFirmwareEnabled
-  ' 2>&1 | tr -d '\r' >&2 || true
-  if ! powershell.exe -NoProfile -Command '(Get-CimInstance Win32_ComputerSystem).HypervisorPresent' 2>/dev/null | tr -d '\r' | grep -qi true; then
-    warn "No hypervisor is running on this runner; the emulator will most likely stop with 00801001 (Hyper-V not enabled)."
-  fi
-  endgroup
-
-  if [ "${HOS_SOFTWARE_GL:-true}" = "false" ]; then
-    return 0
-  fi
-  load_config
-  [ -n "${HOS_EMULATOR:-}" ] || die "HOS_EMULATOR is not set; run hos-ci.sh install-toolchain first"
-  group "Mesa llvmpipe (software OpenGL)"
-  local dir="$EMU_HOME/mesa" archive emu_dir actual
-  mkdir -p "$dir"
-  archive="$dir/mesa.7z"
-  fetch "$HOS_MESA_URL" "$archive" || die "download failed: $HOS_MESA_URL"
-  actual="$(sha256_of "$archive")"
-  [ "$actual" = "$HOS_MESA_SHA256" ] || die "Mesa checksum mismatch: expected $HOS_MESA_SHA256, got $actual"
-  7z x -y -bd -o"$(native_path "$dir")" "$(native_path "$archive")" > /dev/null
-  emu_dir="$(dirname "$(posix_path "$HOS_EMULATOR")")"
-  [ -d "$emu_dir" ] || die "emulator folder not found: $emu_dir"
-  # An opengl32.dll beside the executable wins over the system one, so only the emulator sees llvmpipe.
-  cp "$dir/x64/opengl32.dll" "$dir/x64/libgallium_wgl.dll" "$emu_dir/"
-  export_var GALLIUM_DRIVER llvmpipe
-  export_var VK_DRIVER_FILES "$(native_path "$dir/x64/lvp_icd.x86_64.json")"
-  export_var VK_ICD_FILENAMES "$(native_path "$dir/x64/lvp_icd.x86_64.json")"
-  log "Mesa llvmpipe deployed to $emu_dir"
-  endgroup
-}
-
 # Runs the host preparation for this OS.
 cmd_prepare_host() {
   mkdir -p "$EMU_HOME"
-  if is_windows; then
-    prepare_windows
-  elif [ "$(uname -s)" = "Linux" ]; then
+  if [ "$(uname -s)" = "Linux" ]; then
     prepare_linux
   else
     log "No host preparation needed on $(uname -s)"
@@ -219,7 +167,7 @@ cmd_fetch_image() {
     log "SHA-256 $actual ($(file_size "$archive") bytes)"
     [ "$actual" = "$HOS_IMAGE_SHA256" ] || die "image checksum mismatch: expected $HOS_IMAGE_SHA256, got $actual"
     if command -v 7z > /dev/null 2>&1; then
-      7z x -y -bd -o"$(native_path "$tmp/unpacked")" "$(native_path "$archive")" > /dev/null
+      7z x -y -bd -o"$tmp/unpacked" "$archive" > /dev/null
     else
       unzip -q "$archive" -d "$tmp/unpacked"
     fi
@@ -259,10 +207,10 @@ cmd_create() {
   group "Create emulator $EMU_NAME"
   emu -license accept >&2 || warn "Emulator -license accept failed (emulators before 6.1.0 have no -license)"
   if [ -d "$inst/$EMU_NAME" ]; then
-    emu -delete "$EMU_NAME" -instancePath "$(native_path "$inst")" -force >&2 || rm -rf "${inst:?}/$EMU_NAME"
+    emu -delete "$EMU_NAME" -instancePath "$inst" -force >&2 || rm -rf "${inst:?}/$EMU_NAME"
   fi
   emu -create "$EMU_NAME" -deviceType "${HOS_IMAGE_DEVICE_TYPE:-phone}" -osVersion "$HOS_IMAGE_OS_VERSION" \
-    -instancePath "$(native_path "$inst")" -imageRoot "$(native_path "$root")" \
+    -instancePath "$inst" -imageRoot "$root" \
     -memory "${HOS_EMULATOR_MEMORY_GB:-4}" -storage "${HOS_EMULATOR_STORAGE_GB:-8}" >&2 \
     || die "Emulator -create failed"
   emu -list -details >&2 || true
@@ -279,9 +227,9 @@ cmd_start() {
     die "no emulator instance '$EMU_NAME' in $inst (found: $(ls "$inst" 2> /dev/null | tr '\n' ' ')); set HOS_EMULATOR_NAME or, for the self-hosted job, the HOS_SELF_HOSTED_EMULATOR variable"
   fi
   if supports_option -start; then
-    args=(-start "$EMU_NAME" -instancePath "$(native_path "$inst")" -imageRoot "$(native_path "$root")")
+    args=(-start "$EMU_NAME" -instancePath "$inst" -imageRoot "$root")
   else
-    args=(-hvd "$EMU_NAME" -path "$(native_path "$inst")" -imageRoot "$(native_path "$root")")
+    args=(-hvd "$EMU_NAME" -path "$inst" -imageRoot "$root")
   fi
   case "${HOS_EMULATOR_HEADLESS:-auto}" in
     true) args+=(-noWindow) ;;
@@ -289,7 +237,7 @@ cmd_start() {
   esac
   log "Starting: Emulator ${args[*]}"
   local bin
-  bin="$(posix_path "${HOS_EMULATOR:-Emulator}")"
+  bin="${HOS_EMULATOR:-Emulator}"
   (exec "$bin" "${args[@]}" < /dev/null > "$LOG_DIR/emulator-console.log" 2>&1) &
   echo $! > "$PID_FILE"
 }
@@ -357,8 +305,8 @@ cmd_collect_logs() {
     cp "$inst/$EMU_NAME/config.ini" "$out/" 2> /dev/null || true
     cp -R "$inst/$EMU_NAME/Log" "$out/instance-Log" 2> /dev/null || true
     log_path="$(sed -nE 's/^logPath=(.*)$/\1/p' "$inst/$EMU_NAME/config.ini" 2> /dev/null | tr -d '\r' | head -1)"
-    if [ -n "$log_path" ] && [ -d "$(posix_path "$log_path")" ]; then
-      cp -R "$(posix_path "$log_path")" "$out/emulator-logPath" 2> /dev/null || true
+    if [ -n "$log_path" ] && [ -d "$log_path" ]; then
+      cp -R "$log_path" "$out/emulator-logPath" 2> /dev/null || true
     fi
   fi
   log "Emulator logs copied to $out"

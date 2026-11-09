@@ -26,7 +26,6 @@ platform_key() {
   arch="${RUNNER_ARCH:-$(uname -m)}"
   case "$os" in
     Linux) os=LINUX ;;
-    Windows | MINGW* | MSYS* | CYGWIN*) os=WINDOWS ;;
     macOS | Darwin) os=MACOS ;;
     *) die "unsupported OS: $os" ;;
   esac
@@ -42,7 +41,6 @@ platform_key() {
 mirror_archive_name() {
   case "$1" in
     LINUX_X64) echo "ohos-sdk-linux-amd64.tar.gz" ;;
-    WINDOWS_X64) echo "ohos-sdk-windows-amd64.zip" ;;
     MACOS_ARM64) echo "ohos-sdk-mac-arm64.zip" ;;
     MACOS_X64) echo "ohos-sdk-mac-amd64.zip" ;;
     *) die "no Command Line Tools archive for $1" ;;
@@ -127,7 +125,7 @@ unpack_archive() {
     *.tar.gz | *.tgz) tar -xzf "$archive" -C "$dest" ;;
     *.zip)
       if command -v 7z >/dev/null 2>&1; then
-        7z x -y -bd -o"$(native_path "$dest")" "$(native_path "$archive")" > /dev/null
+        7z x -y -bd -o"$dest" "$archive" > /dev/null
       else
         unzip -q "$archive" -d "$dest"
       fi
@@ -214,10 +212,8 @@ configure_registries() {
 # Activates a Command Line Tools folder or a DevEco Studio install for this and later steps.
 cmd_use_toolchain() {
   load_config
-  local root="${1:-${DEVECO_HOME:-}}" base kind node node_dir hvigor_js ohpm_js lint_js sdk emulator_dir plugin_pkg exe=""
+  local root="${1:-${DEVECO_HOME:-}}" base kind node node_dir hvigor_js ohpm_js lint_js sdk emulator_dir plugin_pkg
   [ -n "$root" ] || die "use-toolchain needs a folder argument or DEVECO_HOME"
-  root="$(posix_path "$root")"
-  is_windows && exe=".exe"
   if [ -f "$root/Contents/tools/hvigor/bin/hvigorw.js" ]; then
     kind="deveco"
     base="$root/Contents"
@@ -251,16 +247,16 @@ cmd_use_toolchain() {
   fi
   sdk="$base/sdk"
   [ -d "$node_dir/bin" ] && node_dir="$node_dir/bin"
-  node="$node_dir/node$exe"
+  node="$node_dir/node"
   [ -x "$node" ] || die "node not found at $node"
   [ -d "$sdk" ] || die "SDK folder not found at $sdk"
 
   local bin_dir="${HOS_BIN_DIR:-${RUNNER_TEMP:-${TMPDIR:-/tmp}}/hos-bin}"
   mkdir -p "$bin_dir"
-  write_wrapper "$bin_dir" hvigorw "$node" "$(native_path "$hvigor_js")"
-  write_wrapper "$bin_dir" ohpm "$node" --no-deprecation "$(native_path "$ohpm_js")"
+  write_wrapper "$bin_dir" hvigorw "$node" "$hvigor_js"
+  write_wrapper "$bin_dir" ohpm "$node" --no-deprecation "$ohpm_js"
   if [ -n "$lint_js" ] && [ -f "$lint_js" ]; then
-    write_wrapper "$bin_dir" codelinter "$node" "$(native_path "$lint_js")" "$(native_path "$sdk")"
+    write_wrapper "$bin_dir" codelinter "$node" "$lint_js" "$sdk"
   fi
 
   local toolchains="$sdk/default/openharmony/toolchains"
@@ -269,11 +265,11 @@ cmd_use_toolchain() {
   prepend_path "$node_dir"
   prepend_path "$bin_dir"
 
-  export_var DEVECO_SDK_HOME "$(native_path "$sdk")"
+  export_var DEVECO_SDK_HOME "$sdk"
   export_var HOS_TOOLCHAIN_KIND "$kind"
   export_var HOS_TOOLCHAIN_DIR "$base"
-  export_var HOS_HDC "$toolchains/hdc$exe"
-  export_var HOS_EMULATOR "$emulator_dir/Emulator$exe"
+  export_var HOS_HDC "$toolchains/hdc"
+  export_var HOS_EMULATOR "$emulator_dir/Emulator"
   export_var HOS_HVIGOR_PLUGIN_PKG "$plugin_pkg"
 
   configure_registries
@@ -303,7 +299,7 @@ cmd_align_plugin() {
   [ -f "$cfg" ] || die "run from the repository root ($cfg not found)"
   [ -n "${HOS_HVIGOR_PLUGIN_PKG:-}" ] || die "run use-toolchain or install-toolchain first"
   pinned="$(grep -F '"@ohos/hvigor-ohos-plugin"' "$cfg" | head -1 | sed -E 's|.*"@ohos/hvigor-ohos-plugin"[[:space:]]*:[[:space:]]*"([^"]*)".*|\1|' || true)"
-  bundled="$(json_string_value version "$(posix_path "$HOS_HVIGOR_PLUGIN_PKG")")"
+  bundled="$(json_string_value version "$HOS_HVIGOR_PLUGIN_PKG")"
   if [ -z "$pinned" ]; then
     log "hvigor-config.json5 does not pin @ohos/hvigor-ohos-plugin; hvigor uses its bundled $bundled"
     return 0
@@ -331,7 +327,7 @@ cmd_lint() {
   report="$(cd "$out_dir" && pwd)/codelinter.json"
   rm -f "$report"
   set +e
-  codelinter -c "$(native_path "$PWD/code-linter.json5")" -f json -o "$(native_path "$report")" --exit-on error,warn "$(native_path "$PWD")" > "$out_dir/codelinter.log" 2>&1
+  codelinter -c "$PWD/code-linter.json5" -f json -o "$report" --exit-on error,warn "$PWD" > "$out_dir/codelinter.log" 2>&1
   status=$?
   set -e
   # codelinter exits with a bitmask of the severities found (4 error, 2 warn); anything else is a tool failure.

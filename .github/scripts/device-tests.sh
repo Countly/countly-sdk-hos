@@ -67,9 +67,6 @@ connected_targets() {
 # Installs the HAP, runs aa test for every registered suite and parses the log.
 cmd_run() {
   local hap="${1:-$DEFAULT_HAP}" out_dir="${2:-device-test-results}" bundle module classes timeout_ms remote install_out targets
-  if is_windows; then
-    export MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL='*'
-  fi
   [ -s "$hap" ] || die "test HAP not found: $hap"
   mkdir -p "$out_dir"
   bundle="${HOS_TEST_BUNDLE:-$(json_string_value bundleName AppScope/app.json5)}"
@@ -89,7 +86,7 @@ cmd_run() {
   remote="data/local/tmp/countly-ci-$$"
   hdc_cmd uninstall "$bundle" > /dev/null 2>&1 || true
   hdc_cmd shell "mkdir -p $remote"
-  hdc_cmd file send "$(native_path "$hap")" "$remote/" 2>&1 | tr -d '\r' >&2 || die "hdc file send failed"
+  hdc_cmd file send "$hap" "$remote/" 2>&1 | tr -d '\r' >&2 || die "hdc file send failed"
   install_out="$(hdc_cmd shell "bm install -p $remote" 2>&1 | tr -d '\r')"
   hdc_cmd shell "rm -rf $remote" || true
   log "$install_out"
