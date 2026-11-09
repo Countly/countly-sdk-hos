@@ -34,11 +34,18 @@ export class LoggingConfig {
  */
 export class DeviceIdConfig {
   public id: string | null = null;
-  public temporaryMode: boolean = false;
+  public offlineMode: boolean = false;
   public clearStored: boolean = false;
 
   public setId(id: string | null): DeviceIdConfig { this.id = id; return this; }
-  public enableTemporaryMode(): DeviceIdConfig { this.temporaryMode = true; return this; }
+
+  /**
+   * Start the SDK in offline mode: data is recorded under the placeholder
+   * device ID and nothing is sent until a real device ID is set or
+   * `deviceId.disableOfflineMode(deviceId?)` is called. A device ID given
+   * with `setId`, or one stored from an earlier run, takes precedence.
+   */
+  public enableOfflineMode(): DeviceIdConfig { this.offlineMode = true; return this; }
   public enableClearStoredDeviceId(): DeviceIdConfig { this.clearStored = true; return this; }
 }
 
@@ -75,8 +82,8 @@ export class ConsentConfig {
 }
 
 /**
- * Networking / request queue sub-config. Includes the offline-mode and
- * health-check toggles since they affect the request pipeline.
+ * Networking / request queue sub-config. Includes the health-check toggle
+ * since it affects the request pipeline.
  */
 export class NetworkConfig {
   public maxRequestQueueSize: number = 1000;
@@ -88,7 +95,6 @@ export class NetworkConfig {
   public parameterTamperingSalt: string | null = null;
   public customHeaders: Record<string, string> = {};
   public backoffDisabled: boolean = false;
-  public startInOfflineMode: boolean = false;
   public healthCheckDisabled: boolean = false;
 
   public setMaxRequestQueueSize(maxSize: number): NetworkConfig {
@@ -118,15 +124,6 @@ export class NetworkConfig {
   }
   public disableBackoffMechanism(): NetworkConfig {
     this.backoffDisabled = true;
-    return this;
-  }
-
-  /**
-   * Start the SDK in offline mode. The queue accepts enqueues but nothing is
-   * sent until `disableOfflineMode(deviceId?)` is called on the instance.
-   */
-  public enableOfflineMode(): NetworkConfig {
-    this.startInOfflineMode = true;
     return this;
   }
 

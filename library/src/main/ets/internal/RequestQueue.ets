@@ -211,20 +211,16 @@ export class RequestQueue {
   }
 
   /**
-   * After temp-device-id mode ends, replace the placeholder `device_id=` value
-   * in queued requests with the new real ID so they can be sent. Uses an
-   * anchored regex so a user-set custom property value that happens to
-   * contain the literal `CLYTemporaryDeviceID` is NOT rewritten, only the
-   * query param itself is matched.
+   * When temp-device-id mode ends, and at every init outside it, replace the
+   * placeholder `device_id=` value in queued requests with the real ID, and
+   * let the processor send what offline mode held, also the requests that
+   * carry their own ID. Uses an anchored regex so a user-set custom property
+   * value that happens to contain the literal `CLYTemporaryDeviceID` is NOT
+   * rewritten, only the query param itself is matched.
    */
   public async replaceTempDeviceId(realId: string): Promise<void> {
-    const encodedPlaceholder: string = encodeURIComponent(TEMP_DEVICE_ID);
     const encodedReal: string = encodeURIComponent(realId);
-    // Anchored: match `device_id=VALUE` only at start-of-string or after `&`,
-    // and only up to the next `&` (or end). This is the param-position match
-    // we actually want; plain `.replace` would also rewrite a field whose
-    // VALUE contains the placeholder string.
-    const rx: RegExp = new RegExp(`(^|&)device_id=${escapeForRegex(encodedPlaceholder)}(?=&|$)`, 'g');
+    const rx: RegExp = RequestQueue.tempDeviceIdParam('g');
     let changed: boolean = false;
     for (let i = 0; i < this.queue.length; i++) {
       const next: string = this.queue[i].replace(rx, `$1device_id=${encodedReal}`);
@@ -233,28 +229,24 @@ export class RequestQueue {
         changed = true;
       }
     }
-    if (changed) {
-      await this.persist();
-      this.scheduleTick();
-    }
+    if (changed) await this.persist();
+    this.scheduleTick();
+  }
+
+  /** Whether a queued request still carries the temporary device ID placeholder. */
+  public hasTempDeviceIdRequests(): boolean {
+    const rx: RegExp = RequestQueue.tempDeviceIdParam('');
+    return this.queue.some((r: string) => rx.test(r));
   }
 
   /**
-   * At init we may have orphaned temp-ID requests from a previous session. If
-   * we're not in temp mode anymore and no real ID can claim them, drop them.
-   * Uses the same anchored regex as replaceTempDeviceId so a request whose
-   * user-property VALUE merely contains the placeholder string isn't falsely
-   * orphaned.
+   * Matches the `device_id=<placeholder>` parameter. Anchored: only at
+   * start-of-string or after `&`, and only up to the next `&` (or end), so a
+   * request whose user-property VALUE merely contains the placeholder string
+   * doesn't match.
    */
-  public async cleanupOrphanedTempRequests(): Promise<void> {
-    const encodedPlaceholder: string = encodeURIComponent(TEMP_DEVICE_ID);
-    const rx: RegExp = new RegExp(`(^|&)device_id=${escapeForRegex(encodedPlaceholder)}(?=&|$)`);
-    const before: number = this.queue.length;
-    this.queue = this.queue.filter((r: string) => !rx.test(r));
-    if (this.queue.length !== before) {
-      this.config.logger.d(`[RequestQueue] cleanupOrphanedTempRequests, dropped ${before - this.queue.length} orphaned entries`);
-      await this.persist();
-    }
+  private static tempDeviceIdParam(flags: string): RegExp {
+    return new RegExp(`(^|&)device_id=${escapeForRegex(encodeURIComponent(TEMP_DEVICE_ID))}(?=&|$)`, flags);
   }
 
   private scheduleTick(): void {
@@ -295,6 +287,11 @@ export class RequestQueue {
       return;
     }
     if (this.queue.length === 0) return;
+    // The device ID type can already be real while the placeholder is still being replaced, or not yet read at init.
+    if (RequestQueue.tempDeviceIdParam('').test(this.queue[0])) {
+      this.config.logger.v('[RequestQueue] tick, head request still carries the temp device id, not sending');
+      return;
+    }
 
     this.processing = true;
     try {

@@ -14,6 +14,9 @@ import { Logger } from './Logger';
  * Keys used:
  *   cly_device_id       , stored device ID (survives app restart)
  *   cly_device_id_type  , "DEVELOPER_SUPPLIED" | "SDK_GENERATED" | "TEMPORARY_ID"
+ *   cly_device_id_before_offline, cly_device_id_type_before_offline
+ *                        , the device ID and type in use before offline mode
+ *                          began at runtime, for disableOfflineMode()
  *   cly_request_queue   , delimiter-joined serialized query strings
  *   cly_sbs             , SDK Behavior Settings JSON
  *   cly_remote_config   , Remote Config cache JSON

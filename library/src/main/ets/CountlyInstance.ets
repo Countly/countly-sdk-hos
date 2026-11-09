@@ -4,7 +4,7 @@ import { Storage } from './internal/Storage';
 import { Network } from './internal/Network';
 import { SdkCore } from './internal/SdkCore';
 import { RequestBuilder } from './internal/RequestBuilder';
-import { RequestQueue } from './internal/RequestQueue';
+import { RequestQueue, TEMP_DEVICE_ID } from './internal/RequestQueue';
 import { ModuleConsent } from './internal/modules/ModuleConsent';
 import { ModuleDeviceId } from './internal/modules/ModuleDeviceId';
 import { ModuleEvents, ViewIds } from './internal/modules/ModuleEvents';
@@ -165,7 +165,7 @@ export class CountlyInstance implements SdkCore {
     this.config.logger.setMinLevel(countlyConfig.logging.minLevel);
 
     this.config.customDeviceId = countlyConfig.deviceId.id;
-    this.config.startInTemporaryIdMode = countlyConfig.deviceId.temporaryMode;
+    this.config.startInOfflineMode = countlyConfig.deviceId.offlineMode;
     this.config.clearStoredDeviceId = countlyConfig.deviceId.clearStored;
 
     this.config.requiresConsent = countlyConfig.consent.requires;
@@ -205,7 +205,6 @@ export class CountlyInstance implements SdkCore {
     this.config.remoteConfigAutomaticTriggers = countlyConfig.remoteConfig.automaticTriggers;
     this.config.remoteConfigValueCaching = countlyConfig.remoteConfig.valueCaching;
     this.config.remoteConfigGlobalCallback = countlyConfig.remoteConfig.globalCallback;
-    this.config.startInOfflineMode = countlyConfig.network.startInOfflineMode;
 
     this.config.initialLocationCountry = countlyConfig.location.country;
     this.config.initialLocationCity = countlyConfig.location.city;
@@ -374,8 +373,7 @@ export class CountlyInstance implements SdkCore {
       this.config,
       this,
       this.consentModule,
-      this.eventsModule,
-      this.deviceIdModule
+      this.eventsModule
     );
 
     // -- Build user-facing API facades.  Each takes only the module(s) it
@@ -465,7 +463,9 @@ export class CountlyInstance implements SdkCore {
         );
         await Promise.all(promises);
       }
-      // The health check waits while a temporary device ID is used, and is sent once a real one replaces it.
+      // The behavior settings fetch waits while offline mode is on, and goes out once it ends.
+      if (oldId === TEMP_DEVICE_ID && !this.deviceIdModule.isTemporary()) this.configurationModule.triggerPostUcmRefresh();
+      // The health check waits while offline mode is on, and is sent once it ends.
       if (!this.deviceIdModule.isTemporary()) this.healthCheckModule.triggerPostUcmSend();
     });
   }
@@ -513,19 +513,11 @@ export class CountlyInstance implements SdkCore {
     // with the dev guide §SDK Behavior Settings precedence table.
     await this.configurationModule.loadFromStorage();
     await this.requestQueue.load();
-    if (this.config.startInOfflineMode) {
-      // Pause the processor so queued requests stay local until the integrator
-      // calls `disableOfflineMode(...)`. Load persisted requests first so they
-      // survive the pause.
-      this.requestQueue.pause();
-      this.config.offlineMode = true;
-      this.config.logger.i('init, starting in offline mode, no network traffic until disableOfflineMode()');
-    }
     if (this.config.unknownConsentMode) {
-      // Same pause primitive as offline mode, collected telemetry queues
-      // locally until `giveConsentAll` / `removeConsentAll` resolves the
-      // unknown state. The instance keeps running through resolution; the
-      // queue is resumed (and the Network unsilenced) by `resolveUnknownConsent`.
+      // Pause the processor: collected telemetry queues locally until
+      // `giveConsentAll` / `removeConsentAll` resolves the unknown state.
+      // The instance keeps running through resolution; the queue is resumed
+      // (and the Network unsilenced) by `resolveUnknownConsent`.
       // Loaded queue contents from a previous unknown-mode session also stay
       // paused so a re-launch into unknown mode preserves "nothing leaves the
       // device".
@@ -619,11 +611,6 @@ export class CountlyInstance implements SdkCore {
 
   public async saveHealthCheckState(): Promise<void> {
     await this.healthCheckModule.saveState();
-  }
-
-  /** Sends the health check that offline mode held back, when offline mode ends. */
-  public sendDeferredHealthCheck(): void {
-    this.healthCheckModule.triggerPostUcmSend();
   }
 
   public async flushEvents(): Promise<void> {

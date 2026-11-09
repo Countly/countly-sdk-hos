@@ -24,7 +24,7 @@ export default function countlyConfigTest() {
         .setMinLevel(LogLevel.WARNING);
       cfg.deviceId
         .setId('abc')
-        .enableTemporaryMode()
+        .enableOfflineMode()
         .enableClearStoredDeviceId();
       cfg.network
         .setHttpPostForced(true)
@@ -48,7 +48,7 @@ export default function countlyConfigTest() {
       expect(cfg.deviceId.id).assertEqual('abc');
       expect(cfg.logging.enabled).assertTrue();
       expect(cfg.logging.minLevel).assertEqual(LogLevel.WARNING);
-      expect(cfg.deviceId.temporaryMode).assertTrue();
+      expect(cfg.deviceId.offlineMode).assertTrue();
       expect(cfg.deviceId.clearStored).assertTrue();
       expect(cfg.network.forcePost).assertTrue();
       expect(cfg.network.requestDropAgeHours).assertEqual(5);
@@ -136,7 +136,7 @@ export default function countlyConfigTest() {
       expect(cfg.logging.minLevel).assertEqual(LogLevel.DEBUG);
 
       expect(cfg.deviceId.id === null).assertTrue();
-      expect(cfg.deviceId.temporaryMode).assertFalse();
+      expect(cfg.deviceId.offlineMode).assertFalse();
       expect(cfg.deviceId.clearStored).assertFalse();
 
       expect(cfg.consent.requires).assertFalse();
@@ -149,7 +149,6 @@ export default function countlyConfigTest() {
       expect(cfg.network.forcePost).assertTrue();
       expect(cfg.network.parameterTamperingSalt === null).assertTrue();
       expect(cfg.network.backoffDisabled).assertFalse();
-      expect(cfg.network.startInOfflineMode).assertFalse();
       expect(cfg.network.healthCheckDisabled).assertFalse();
 
       expect(cfg.sessions.manualControl).assertFalse();
@@ -267,11 +266,11 @@ export default function countlyConfigTest() {
       expect(cfg.sessions.manualHybridMode).assertTrue();
     });
 
-    /** NetworkConfig.enableOfflineMode sets startInOfflineMode flag. */
-    it('networkEnableOfflineMode_setsFlag', 0, () => {
+    /** DeviceIdConfig.enableOfflineMode sets the offline mode flag. */
+    it('deviceIdEnableOfflineMode_setsFlag', 0, () => {
       const cfg: TestableCountlyConfig = new TestableCountlyConfig(ctx(), 'https://x', 'k');
-      cfg.network.enableOfflineMode();
-      expect(cfg.network.startInOfflineMode).assertTrue();
+      cfg.deviceId.enableOfflineMode();
+      expect(cfg.deviceId.offlineMode).assertTrue();
     });
 
     /** disableHealthCheck sets flag. */

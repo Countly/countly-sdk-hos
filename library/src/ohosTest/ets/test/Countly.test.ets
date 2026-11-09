@@ -212,40 +212,42 @@ export default function countlyFacadeTest() {
       expect(h.instance.config.serverUrl).assertEqual(before);
     });
 
-    /** enableOfflineMode pauses the queue so enqueued traffic does NOT reach
-     *  the network until disableOfflineMode flushes. */
-    it('enableOfflineMode_pausesQueue', 0, async () => {
-      const h: Harness = await buildHarness();
+    /** enableOfflineMode holds what is recorded under the placeholder until
+     *  disableOfflineMode sends it under the device ID used before. */
+    it('enableOfflineMode_holdsRequestsUntilDisableOfflineMode', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('before_offline'); });
       // Wait one task tick so the deferred init-time healthcheck (scheduled
       // via setTimeout(0) in ModuleHealthCheck.onInit) has fired and landed
       // in network.calls, only THEN can we discard init-time noise.
       await flushTick(5);
       h.network.reset();
-      h.instance.requests.enableOfflineMode();
+      await h.instance.deviceId.enableOfflineMode();
       await h.instance.events.recordEvent('evt_off');
+      await h.instance.flushEvents();
       await flushTick(60);
       // No network calls while offline.
       expect(h.network.calls.length).assertEqual(0);
-      expect(h.instance.requestQueue.isPaused()).assertTrue();
-      await h.instance.requests.disableOfflineMode();
+      expect(h.instance.deviceId.isOfflineMode()).assertTrue();
+      await h.instance.deviceId.disableOfflineMode();
       await flushTick(80);
-      expect(h.instance.requestQueue.isPaused()).assertFalse();
+      expect(h.instance.deviceId.getID()).assertEqual('before_offline');
+      expect(h.network.calls.some((c) => c.data.indexOf('evt_off') !== -1 && c.data.indexOf('device_id=before_offline') !== -1)).assertTrue();
     });
 
-    /** disableOfflineMode('new_id') switches device id before the queue resumes. */
-    it('disableOfflineMode_withDeviceId_switchesIdThenResumes', 0, async () => {
+    /** disableOfflineMode('new_id') leaves offline mode with that ID. */
+    it('disableOfflineMode_withDeviceId_leavesWithThatId', 0, async () => {
       const h: Harness = await buildHarness();
-      h.instance.requests.enableOfflineMode();
-      await h.instance.requests.disableOfflineMode('new_id_123');
+      await h.instance.deviceId.enableOfflineMode();
+      await h.instance.deviceId.disableOfflineMode('new_id_123');
       await flushTick(60);
       expect(h.instance.deviceId.getID()).assertEqual('new_id_123');
-      expect(h.instance.requestQueue.isPaused()).assertFalse();
+      expect(h.instance.deviceId.isOfflineMode()).assertFalse();
     });
 
     /** flushQueues clears both request queue and event queue. */
     it('flushQueues_clearsEverythingPending', 0, async () => {
       const h: Harness = await buildHarness();
-      h.instance.requests.enableOfflineMode(); // keep data local so we can observe the clear
+      h.instance.requestQueue.pause(); // keep data local so we can observe the clear
       await h.instance.events.recordEvent('evt_a');
       await h.instance.events.recordEvent('evt_b');
       await flushTick(60);
@@ -256,7 +258,7 @@ export default function countlyFacadeTest() {
     /** replaceAllAppKeysInQueueWithCurrentAppKey rewrites old app_key values. */
     it('replaceAllAppKeys_rewritesToCurrent', 0, async () => {
       const h: Harness = await buildHarness();
-      h.instance.requests.enableOfflineMode();
+      h.instance.requestQueue.pause();
       // Enqueue a fake request carrying a foreign app_key directly.
       await h.instance.requestQueue.enqueue('app_key=stale_key&foo=bar');
       await h.instance.requests.replaceAllAppKeysInQueueWithCurrentAppKey();
@@ -268,7 +270,7 @@ export default function countlyFacadeTest() {
     /** removeDifferentAppKeysFromQueue drops requests with foreign app keys. */
     it('removeDifferentAppKeys_dropsForeign', 0, async () => {
       const h: Harness = await buildHarness();
-      h.instance.requests.enableOfflineMode();
+      h.instance.requestQueue.pause();
       await h.instance.requestQueue.enqueue('app_key=other_key&foo=1');
       await h.instance.requestQueue.enqueue('app_key=test_app_key&foo=2');
       await h.instance.requests.removeDifferentAppKeysFromQueue();
@@ -302,7 +304,7 @@ export default function countlyFacadeTest() {
      *  checksum, checksum256. `timestamp` is NOT reserved. */
     it('addDirectRequest_reservedKeysStripped', 0, async () => {
       const h: Harness = await buildHarness();
-      h.instance.requests.enableOfflineMode();
+      h.instance.requestQueue.pause();
       const hijack: Record<string, string> = {
         // All 10 reserved keys per Android parity:
         'device_id': 'HIJACKED',
@@ -338,7 +340,7 @@ export default function countlyFacadeTest() {
      *  timestamps. */
     it('addDirectRequest_timestampOverrideAllowed', 0, async () => {
       const h: Harness = await buildHarness();
-      h.instance.requests.enableOfflineMode();
+      h.instance.requestQueue.pause();
       await h.instance.requests.addDirectRequest({ 'timestamp': '111', 'k': 'v' });
       const pending: string[] = h.instance.requestQueue.peekAll();
       const last: string = pending[pending.length - 1];
@@ -349,7 +351,7 @@ export default function countlyFacadeTest() {
      *  Android sdk/ConnectionQueue.java:553. */
     it('addDirectRequest_wireCarriesDrMarker', 0, async () => {
       const h: Harness = await buildHarness();
-      h.instance.requests.enableOfflineMode();
+      h.instance.requestQueue.pause();
       await h.instance.requests.addDirectRequest({ 'k': 'v' });
       const pending: string[] = h.instance.requestQueue.peekAll();
       const last: string = pending[pending.length - 1];
@@ -361,7 +363,7 @@ export default function countlyFacadeTest() {
       const h: Harness = await buildHarness((cfg) => {
         cfg.consent.setRequiresConsent(true).giveAll();
       });
-      h.instance.requests.enableOfflineMode();
+      h.instance.requestQueue.pause();
       const directC: Record<string, string> = { 'my_key': 'my_val' };
       await h.instance.requests.addDirectRequest(directC);
       const pending: string[] = h.instance.requestQueue.peekAll();
@@ -635,10 +637,10 @@ export default function countlyFacadeTest() {
       const storage: InMemoryStorage = new InMemoryStorage(logger, 'reinit-persist');
       const network: FakeNetwork = new FakeNetwork(logger);
 
-      // 1) Start in offline mode so we can enqueue without auto-shipping.
+      // 1) Hold the queue so we can enqueue without auto-shipping.
       const cfg1: CountlyConfig = new CountlyConfig(ctx(), 'https://try.count.ly', 'reinit-persist');
-      cfg1.network.enableOfflineMode();
       const inst1: CountlyInstance = await Countly.initShared(cfg1, storage, network);
+      inst1.requestQueue.pause();
 
       // 2) Enqueue a marker request, it persists to storage but doesn't ship.
       const marker: Record<string, string> = { 'reinit_persist_marker': 'value' };
@@ -649,7 +651,7 @@ export default function countlyFacadeTest() {
       const persistedBefore: string = storage.dump()['cly_request_queue'];
       expect(persistedBefore !== undefined && persistedBefore.indexOf('reinit_persist_marker') !== -1).assertTrue();
 
-      // 3) Stop + re-init (smart initShared) with a non-offline config.
+      // 3) Stop + re-init (smart initShared); the new queue is not held.
       await inst1.stop();
       const cfg2: CountlyConfig = new CountlyConfig(ctx(), 'https://try.count.ly', 'reinit-persist');
       await Countly.initShared(cfg2, storage, network);
@@ -680,10 +682,10 @@ export default function countlyFacadeTest() {
       const storage: InMemoryStorage = new InMemoryStorage(logger, 'stop-preserve');
       const network: FakeNetwork = new FakeNetwork(logger);
       const cfg: CountlyConfig = new CountlyConfig(ctx(), 'https://try.count.ly', 'stop-preserve');
-      cfg.network.enableOfflineMode();
       const inst: CountlyInstance = await Countly.initShared(cfg, storage, network);
+      inst.requestQueue.pause();
 
-      // Enqueue a marker that the offline queue holds locally + on disk.
+      // Enqueue a marker that the held queue keeps locally + on disk.
       const marker: Record<string, string> = { 'stop_preserve_marker': 'value' };
       await inst.requests.addDirectRequest(marker);
       await flushTick(60);
@@ -707,8 +709,8 @@ export default function countlyFacadeTest() {
       const storage: InMemoryStorage = new InMemoryStorage(logger, 'halt-wipe');
       const network: FakeNetwork = new FakeNetwork(logger);
       const cfg: CountlyConfig = new CountlyConfig(ctx(), 'https://try.count.ly', 'halt-wipe');
-      cfg.network.enableOfflineMode();
       const inst: CountlyInstance = await Countly.initShared(cfg, storage, network);
+      inst.requestQueue.pause();
 
       const marker: Record<string, string> = { 'halt_wipe_marker': 'value' };
       await inst.requests.addDirectRequest(marker);
@@ -815,8 +817,8 @@ export default function countlyFacadeTest() {
       const storage: InMemoryStorage = new InMemoryStorage(logger, 'stop-resume');
       const network: FakeNetwork = new FakeNetwork(logger);
       const cfg1: CountlyConfig = new CountlyConfig(ctx(), 'https://try.count.ly', 'stop-resume');
-      cfg1.network.enableOfflineMode();
       const inst1: CountlyInstance = await Countly.initShared(cfg1, storage, network);
+      inst1.requestQueue.pause();
       const did1: string = inst1.deviceId.getID();
       expect(did1.length > 0).assertTrue();
 
@@ -833,7 +835,7 @@ export default function countlyFacadeTest() {
       await Countly.stopAll();
 
       // Re-init with the same storage. Device ID matches; persisted queue
-      // ships once the new (non-offline) instance ticks.
+      // ships once the new instance's queue ticks.
       const cfg2: CountlyConfig = new CountlyConfig(ctx(), 'https://try.count.ly', 'stop-resume');
       const inst2: CountlyInstance = await Countly.initShared(cfg2, storage, network);
       expect(inst2.deviceId.getID()).assertEqual(did1);
@@ -850,8 +852,8 @@ export default function countlyFacadeTest() {
       const storage: InMemoryStorage = new InMemoryStorage(logger, 'halt-fresh');
       const network: FakeNetwork = new FakeNetwork(logger);
       const cfg1: CountlyConfig = new CountlyConfig(ctx(), 'https://try.count.ly', 'halt-fresh');
-      cfg1.network.enableOfflineMode();
       const inst1: CountlyInstance = await Countly.initShared(cfg1, storage, network);
+      inst1.requestQueue.pause();
       const did1: string = inst1.deviceId.getID();
       const marker: Record<string, string> = { 'halt_fresh_marker': 'value' };
       await inst1.requests.addDirectRequest(marker);

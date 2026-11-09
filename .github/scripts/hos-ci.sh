@@ -3,9 +3,8 @@
 #
 # Usage: hos-ci.sh <command> [args]
 #   config                 Print the effective toolchain settings and write them as step outputs.
-#   install-toolchain      Download, verify and unpack the Command Line Tools, then run use-toolchain.
-#   use-toolchain [DIR]    Put hvigorw, ohpm, codelinter, hdc and Emulator from DIR on PATH. DIR is a
-#                          command-line-tools folder or a DevEco Studio install (DEVECO_HOME by default).
+#   install-toolchain      Download, verify and unpack the Command Line Tools, then put hvigorw, ohpm,
+#                          codelinter, hdc and Emulator on PATH.
 #   align-plugin           Drop the hvigor-ohos-plugin pin from hvigor/hvigor-config.json5 when it differs
 #                          from the plugin bundled with the active hvigor.
 #   lint [OUT_DIR]         Run codelinter with code-linter.json5 and fail per HOS_LINT_FAIL_ON.
@@ -176,7 +175,7 @@ cmd_install_toolchain() {
     endgroup
     clt_is_installed "$dir" || warn "version.txt in $dir does not mention $HOS_CLT_VERSION"
   fi
-  cmd_use_toolchain "$dir"
+  activate_toolchain "$dir"
 }
 
 # Writes an executable bash wrapper NAME into BIN_DIR that runs the given command line with its arguments.
@@ -209,42 +208,16 @@ configure_registries() {
   fi
 }
 
-# Activates a Command Line Tools folder or a DevEco Studio install for this and later steps.
-cmd_use_toolchain() {
-  load_config
-  local root="${1:-${DEVECO_HOME:-}}" base kind node node_dir hvigor_js ohpm_js lint_js sdk emulator_dir plugin_pkg
-  [ -n "$root" ] || die "use-toolchain needs a folder argument or DEVECO_HOME"
-  if [ -f "$root/Contents/tools/hvigor/bin/hvigorw.js" ]; then
-    kind="deveco"
-    base="$root/Contents"
-  elif [ -f "$root/tools/hvigor/bin/hvigorw.js" ]; then
-    kind="deveco"
-    base="$root"
-  elif [ -f "$root/hvigor/bin/hvigorw.js" ]; then
-    kind="clt"
-    base="$root"
-  elif [ -f "$root/command-line-tools/hvigor/bin/hvigorw.js" ]; then
-    kind="clt"
-    base="$root/command-line-tools"
-  else
-    die "no hvigor found under $root"
-  fi
-
-  if [ "$kind" = "clt" ]; then
-    node_dir="$base/tool/node"
-    hvigor_js="$base/hvigor/bin/hvigorw.js"
-    ohpm_js="$base/ohpm/bin/pm-cli.js"
-    lint_js="$base/codelinter/index.js"
-    emulator_dir="$base/emulator"
-    plugin_pkg="$base/hvigor/hvigor-ohos-plugin/package.json"
-  else
-    node_dir="$base/tools/node"
-    hvigor_js="$base/tools/hvigor/bin/hvigorw.js"
-    ohpm_js="$base/tools/ohpm/bin/pm-cli.js"
-    lint_js=""
-    emulator_dir="$base/tools/emulator"
-    plugin_pkg="$base/tools/hvigor/hvigor-ohos-plugin/package.json"
-  fi
+# Puts hvigorw, ohpm, codelinter, hdc and Emulator from a Command Line Tools folder on PATH for this and later steps.
+activate_toolchain() {
+  local base="$1" node node_dir hvigor_js ohpm_js lint_js sdk emulator_dir plugin_pkg
+  hvigor_js="$base/hvigor/bin/hvigorw.js"
+  [ -f "$hvigor_js" ] || die "no hvigor found under $base"
+  node_dir="$base/tool/node"
+  ohpm_js="$base/ohpm/bin/pm-cli.js"
+  lint_js="$base/codelinter/index.js"
+  emulator_dir="$base/emulator"
+  plugin_pkg="$base/hvigor/hvigor-ohos-plugin/package.json"
   sdk="$base/sdk"
   [ -d "$node_dir/bin" ] && node_dir="$node_dir/bin"
   node="$node_dir/node"
@@ -255,7 +228,7 @@ cmd_use_toolchain() {
   mkdir -p "$bin_dir"
   write_wrapper "$bin_dir" hvigorw "$node" "$hvigor_js"
   write_wrapper "$bin_dir" ohpm "$node" --no-deprecation "$ohpm_js"
-  if [ -n "$lint_js" ] && [ -f "$lint_js" ]; then
+  if [ -f "$lint_js" ]; then
     write_wrapper "$bin_dir" codelinter "$node" "$lint_js" "$sdk"
   fi
 
@@ -266,7 +239,6 @@ cmd_use_toolchain() {
   prepend_path "$bin_dir"
 
   export_var DEVECO_SDK_HOME "$sdk"
-  export_var HOS_TOOLCHAIN_KIND "$kind"
   export_var HOS_TOOLCHAIN_DIR "$base"
   export_var HOS_HDC "$toolchains/hdc"
   export_var HOS_EMULATOR "$emulator_dir/Emulator"
@@ -275,7 +247,7 @@ cmd_use_toolchain() {
   configure_registries
 
   group "Toolchain versions"
-  log "kind:        $kind ($base)"
+  log "tools:       $base"
   [ -f "$base/version.txt" ] && cat "$base/version.txt" >&2
   log "node:        $("$node" -v)"
   log "hvigor:      $(json_string_value version "$plugin_pkg")"
@@ -297,7 +269,7 @@ cmd_use_toolchain() {
 cmd_align_plugin() {
   local cfg="hvigor/hvigor-config.json5" pinned bundled
   [ -f "$cfg" ] || die "run from the repository root ($cfg not found)"
-  [ -n "${HOS_HVIGOR_PLUGIN_PKG:-}" ] || die "run use-toolchain or install-toolchain first"
+  [ -n "${HOS_HVIGOR_PLUGIN_PKG:-}" ] || die "run install-toolchain first"
   pinned="$(grep -F '"@ohos/hvigor-ohos-plugin"' "$cfg" | head -1 | sed -E 's|.*"@ohos/hvigor-ohos-plugin"[[:space:]]*:[[:space:]]*"([^"]*)".*|\1|' || true)"
   bundled="$(json_string_value version "$HOS_HVIGOR_PLUGIN_PKG")"
   if [ -z "$pinned" ]; then
@@ -377,11 +349,10 @@ main() {
   case "$cmd" in
     config) cmd_config "$@" ;;
     install-toolchain) cmd_install_toolchain "$@" ;;
-    use-toolchain) cmd_use_toolchain "$@" ;;
     align-plugin) cmd_align_plugin "$@" ;;
     lint) cmd_lint "$@" ;;
     check-har) cmd_check_har "$@" ;;
-    *) die "usage: hos-ci.sh config|install-toolchain|use-toolchain [DIR]|align-plugin|lint [OUT_DIR]|check-har HAR OUT_DIR" ;;
+    *) die "usage: hos-ci.sh config|install-toolchain|align-plugin|lint [OUT_DIR]|check-har HAR OUT_DIR" ;;
   esac
 }
 

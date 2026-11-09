@@ -1,11 +1,45 @@
 import { afterEach, describe, it, expect } from '@ohos/hypium';
 import common from '@ohos.app.ability.common';
 import { buildHarness, flushTick, Harness, TestableCountlyConfig, assertAllRecordedCallsValid, clearTestHarnesses, assertWireOrder } from './TestHelpers';
-import { DeviceIdType } from '../../../main/ets/types/Types';
+import { DeviceIdType, LogLevel } from '../../../main/ets/types/Types';
 import { TEMP_DEVICE_ID } from '../../../main/ets/internal/RequestQueue';
 import { CountlyInstance } from '../../../main/ets/CountlyInstance';
-import { FakeNetwork } from './doubles/FakeNetwork';
+import { FakeNetwork, RecordedCall } from './doubles/FakeNetwork';
+import { InMemoryStorage } from './doubles/InMemoryStorage';
 import { Logger } from '../../../main/ets/internal/Logger';
+
+/** In-memory storage whose reads and writes take a moment, as the platform preferences do. */
+class SlowStorage extends InMemoryStorage {
+  constructor(logger: Logger, appKey: string) {
+    super(logger, appKey);
+  }
+
+  /** Reads the value after a short wait. */
+  public override async getString(key: string, fallback: string): Promise<string> {
+    await flushTick(5);
+    return super.getString(key, fallback);
+  }
+
+  /** Writes the value after a short wait. */
+  public override async setString(key: string, value: string): Promise<boolean> {
+    await flushTick(5);
+    return super.setString(key, value);
+  }
+}
+
+/** Starts an instance on the given storage and network, as one launch of the app. */
+async function launchOn(
+  storage: InMemoryStorage,
+  network: FakeNetwork,
+  configure?: (cfg: TestableCountlyConfig) => void
+): Promise<CountlyInstance> {
+  const cfg: TestableCountlyConfig = new TestableCountlyConfig({} as common.Context, 'https://try.count.ly', 'test_app_key');
+  cfg.logging.enableLogging();
+  if (configure) configure(cfg);
+  const instance: CountlyInstance = new CountlyInstance(cfg, storage, network);
+  await instance.init();
+  return instance;
+}
 
 export default function deviceIdTest() {
   describe('DeviceIdTest', () => {
@@ -24,7 +58,7 @@ export default function deviceIdTest() {
     });
 
     it('temporaryIdMode_usesPlaceholder', 0, async () => {
-      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
       expect(h.instance.deviceId.getID()).assertEqual('CLYTemporaryDeviceID');
     });
@@ -54,9 +88,9 @@ export default function deviceIdTest() {
       expect(h.network.findCallsWithParam('old_device_id=').length).assertEqual(0);
     });
 
-    it('enableTemporaryIdMode_switchesAtRuntime', 0, async () => {
+    it('enableOfflineMode_switchesAtRuntime', 0, async () => {
       const h: Harness = await buildHarness();
-      await h.instance.deviceId.enableTemporaryIdMode();
+      await h.instance.deviceId.enableOfflineMode();
       expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
     });
 
@@ -145,36 +179,36 @@ export default function deviceIdTest() {
 
     // --- Ports of Android DeviceIdTests.java ---
 
-    // temporaryIdModeEnabled_1: state machine toggling of temporary mode.
-    it('temporaryIdMode_toggleSequence', 0, async () => {
+    // temporaryIdModeEnabled_1: state machine toggling of offline mode.
+    it('offlineMode_toggleSequence', 0, async () => {
       const h: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('dsd'); });
       expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.DEVELOPER_SUPPLIED);
-      expect(h.instance.deviceId.isTemporaryIdMode()).assertFalse();
+      expect(h.instance.deviceId.isOfflineMode()).assertFalse();
 
-      await h.instance.deviceId.enableTemporaryIdMode();
-      expect(h.instance.deviceId.isTemporaryIdMode()).assertTrue();
+      await h.instance.deviceId.enableOfflineMode();
+      expect(h.instance.deviceId.isOfflineMode()).assertTrue();
       expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
 
       await h.instance.deviceId.setID('ff');
       expect(h.instance.deviceId.getID()).assertEqual('ff');
-      expect(h.instance.deviceId.isTemporaryIdMode()).assertFalse();
+      expect(h.instance.deviceId.isOfflineMode()).assertFalse();
 
-      await h.instance.deviceId.enableTemporaryIdMode();
-      expect(h.instance.deviceId.isTemporaryIdMode()).assertTrue();
+      await h.instance.deviceId.enableOfflineMode();
+      expect(h.instance.deviceId.isOfflineMode()).assertTrue();
 
       await h.instance.deviceId.setID('12');
       expect(h.instance.deviceId.getID()).assertEqual('12');
-      expect(h.instance.deviceId.isTemporaryIdMode()).assertFalse();
+      expect(h.instance.deviceId.isOfflineMode()).assertFalse();
 
       await h.instance.deviceId.setID('34');
       expect(h.instance.deviceId.getID()).assertEqual('34');
-      expect(h.instance.deviceId.isTemporaryIdMode()).assertFalse();
+      expect(h.instance.deviceId.isOfflineMode()).assertFalse();
     });
 
-    // temporaryIdModeEnabled_2: init directly in temp mode via config flag.
-    it('temporaryIdMode_initInTempMode', 0, async () => {
-      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
-      expect(h.instance.deviceId.isTemporaryIdMode()).assertTrue();
+    // temporaryIdModeEnabled_2: init directly in offline mode via config flag.
+    it('offlineMode_initInOfflineMode', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
+      expect(h.instance.deviceId.isOfflineMode()).assertTrue();
       expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
       expect(h.instance.deviceId.getID()).assertEqual(TEMP_DEVICE_ID);
     });
@@ -184,7 +218,7 @@ export default function deviceIdTest() {
       const a: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('dsd'); });
       expect(a.instance.deviceId.getType()).assertEqual(DeviceIdType.DEVELOPER_SUPPLIED);
 
-      const b: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const b: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       expect(b.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
 
       const c: Harness = await buildHarness();
@@ -197,7 +231,7 @@ export default function deviceIdTest() {
       const a: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('abc'); });
       expect(a.instance.deviceId.getID()).assertEqual('abc');
 
-      const b: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const b: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       expect(b.instance.deviceId.getID()).assertEqual(TEMP_DEVICE_ID);
 
       const c: Harness = await buildHarness();
@@ -214,7 +248,7 @@ export default function deviceIdTest() {
       expect(h.instance.deviceId.getID()).assertEqual('123');
       expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.DEVELOPER_SUPPLIED);
 
-      await h.instance.deviceId.enableTemporaryIdMode();
+      await h.instance.deviceId.enableOfflineMode();
       expect(h.instance.deviceId.getID()).assertEqual(TEMP_DEVICE_ID);
       expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
 
@@ -315,7 +349,7 @@ export default function deviceIdTest() {
     // followupInitPrevCustomProvidedTempId: custom stored, temp requested next → stored wins.
     it('followup_prevCustom_providedTempMode_keepsStored', 0, async () => {
       const first: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('hjk'); });
-      const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.enableOfflineMode(); });
       expect(second.instance.deviceId.getID()).assertEqual('hjk');
       expect(second.instance.deviceId.getType()).assertEqual(DeviceIdType.DEVELOPER_SUPPLIED);
     });
@@ -342,25 +376,24 @@ export default function deviceIdTest() {
     it('followup_prevGenerated_providedTempMode_keepsStored', 0, async () => {
       const first: Harness = await buildHarness();
       const initial: string = first.instance.deviceId.getID();
-      const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.enableOfflineMode(); });
       expect(second.instance.deviceId.getID()).assertEqual(initial);
       expect(second.instance.deviceId.getType()).assertEqual(DeviceIdType.SDK_GENERATED);
     });
 
-    // followupInitPrevTempIdProvidedNothing: temp stored, nothing supplied → remain temp or regen.
-    // HOS behavior: storedIsTemp path regenerates (no custom, no requestTemp) → SDK_GENERATED.
-    it('followup_prevTemp_providedNothing_regenerates', 0, async () => {
-      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+    // followupInitPrevTempIdProvidedNothing: offline mode stored, nothing supplied, stays offline.
+    it('followup_prevOffline_providedNothing_staysOffline', 0, async () => {
+      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       expect(first.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
       const second: Harness = await rehydrateWith(first);
-      // No custom, no requestTemp → SDK generates a fresh UUID (exits temp mode).
-      expect(second.instance.deviceId.getType()).assertEqual(DeviceIdType.SDK_GENERATED);
-      expect(second.instance.deviceId.getID().length > 0).assertTrue();
+      // Offline mode carries over from the previous run until a device ID is set.
+      expect(second.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
+      expect(second.instance.deviceId.getID()).assertEqual(TEMP_DEVICE_ID);
     });
 
     // followupInitPrevTempIdProvidedCustomId: temp stored, custom supplied → custom wins.
     it('followup_prevTemp_providedCustom_usesCustom', 0, async () => {
-      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.setId('uio'); });
       expect(second.instance.deviceId.getID()).assertEqual('uio');
       expect(second.instance.deviceId.getType()).assertEqual(DeviceIdType.DEVELOPER_SUPPLIED);
@@ -368,17 +401,17 @@ export default function deviceIdTest() {
 
     // followupInitPrevTempIdProvidedTempId: temp stored, temp requested again → remains temp.
     it('followup_prevTemp_providedTempMode_staysTemp', 0, async () => {
-      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
-      const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
+      const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.enableOfflineMode(); });
       expect(second.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
       expect(second.instance.deviceId.getID()).assertEqual(TEMP_DEVICE_ID);
     });
 
     // followupInitPrevTempIdProvidedCustomIdTempId: both supplied → custom wins over temp flag.
     it('followup_prevTemp_providedCustomAndTemp_customWins', 0, async () => {
-      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       const second: Harness = await rehydrateWith(first, (cfg) => {
-        cfg.deviceId.enableTemporaryMode();
+        cfg.deviceId.enableOfflineMode();
         cfg.deviceId.setId('frt');
       });
       expect(second.instance.deviceId.getID()).assertEqual('frt');
@@ -404,7 +437,7 @@ export default function deviceIdTest() {
     // at init (because stored type was temp and a custom id is picked), queued
     // requests that carry the temp placeholder are rewritten to the new id.
     it('tempExitOnInit_rewritesQueuedTempRequests_custom', 0, async () => {
-      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       first.network.shouldFail = true; // keep queued, don't drain
       const tempEnc: string = encodeURIComponent(TEMP_DEVICE_ID);
       await first.instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=${tempEnc}&aa=45`);
@@ -430,7 +463,7 @@ export default function deviceIdTest() {
 
     // rqWithTempInitWithTemp: if we re-enter temp mode, queued temp placeholders stay.
     it('tempExitOnInit_preservesPlaceholder_whenReenteringTemp', 0, async () => {
-      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       h.network.shouldFail = true;
       const tempEnc: string = encodeURIComponent(TEMP_DEVICE_ID);
       await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=${tempEnc}&aa=45`);
@@ -442,7 +475,7 @@ export default function deviceIdTest() {
 
     // --- Queue flush on exit from temp mode at runtime (setID replays queue) ---
     it('setID_fromTempMode_flushesQueuedRequests', 0, async () => {
-      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       // In temp mode, requests are queued but NOT sent.
       await h.instance.events.recordEvent('queued-event', null, 1, 0, 0);
       // Force the event batch into the request queue.
@@ -475,7 +508,7 @@ export default function deviceIdTest() {
     });
 
     it('persistence_tempIdWrittenToStorage', 0, async () => {
-      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableTemporaryMode(); });
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
       const dump: Record<string, string> = h.storage.dump();
       expect(dump['cly_device_id']).assertEqual(TEMP_DEVICE_ID);
       expect(dump['cly_device_id_type']).assertEqual(DeviceIdType.TEMPORARY_ID);
@@ -522,6 +555,246 @@ export default function deviceIdTest() {
       await h.instance.deviceId.changeWithMerge('merged_id');
       await flushTick(80);
       assertWireOrder(h.network.calls, ['begin_session=1', 'old_device_id=']);
+    });
+
+    // --- Offline mode (dev guide: Device ID Management, Offline Mode) ---
+
+    it('changeWithMerge_inOfflineMode_replacesPlaceholderWithoutMergeRequest', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
+      await h.instance.events.recordEvent('recorded_while_offline');
+      await h.instance.flushEvents();
+      await flushTick(60);
+      expect(h.network.calls.length).assertEqual(0);
+      await h.instance.deviceId.changeWithMerge('merged_after_offline');
+      await flushTick(150);
+      expect(h.instance.deviceId.getID()).assertEqual('merged_after_offline');
+      expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.DEVELOPER_SUPPLIED);
+      expect(h.network.findCallsWithParam('old_device_id=').length).assertEqual(0);
+      expect(h.network.findCallsWithParam(`device_id=${encodeURIComponent(TEMP_DEVICE_ID)}`).length).assertEqual(0);
+      expect(h.network.calls.some((c: RecordedCall) =>
+        c.data.indexOf('recorded_while_offline') !== -1 && c.data.indexOf('device_id=merged_after_offline') !== -1)).assertTrue();
+    });
+
+    it('changeWithMerge_inTemporaryIdMode_keepsConsent', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.deviceId.enableOfflineMode();
+        cfg.consent.setRequiresConsent(true);
+      });
+      h.instance.consentModule.giveConsent(['events']);
+      await flushTick(60);
+      await h.instance.deviceId.changeWithMerge('merged_after_temporary');
+      await flushTick(150);
+      expect(h.instance.consentModule.hasConsent('events')).assertTrue();
+      expect(h.network.findCallsWithParam('old_device_id=').length).assertEqual(0);
+    });
+
+    it('changeWithoutMerge_inOfflineMode_replacesPlaceholderWithoutMergeRequest', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
+      await h.instance.events.recordEvent('recorded_while_offline');
+      await h.instance.flushEvents();
+      await flushTick(60);
+      await h.instance.deviceId.changeWithoutMerge('real_after_offline');
+      await flushTick(150);
+      expect(h.network.findCallsWithParam('old_device_id=').length).assertEqual(0);
+      expect(h.network.findCallsWithParam(`device_id=${encodeURIComponent(TEMP_DEVICE_ID)}`).length).assertEqual(0);
+      expect(h.network.calls.some((c: RecordedCall) =>
+        c.data.indexOf('recorded_while_offline') !== -1 && c.data.indexOf('device_id=real_after_offline') !== -1)).assertTrue();
+    });
+
+    it('setID_inOfflineMode_keepsConsentAndSession', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.deviceId.enableOfflineMode();
+        cfg.consent.setRequiresConsent(true);
+      });
+      h.instance.consentModule.giveConsent(['sessions', 'events']);
+      h.instance.lifecycleForeground();
+      await flushTick(60);
+      await h.instance.deviceId.setID('user_after_login');
+      await flushTick(150);
+      expect(h.instance.consentModule.hasConsent('sessions')).assertTrue();
+      expect(h.instance.consentModule.hasConsent('events')).assertTrue();
+      expect(h.network.findCallsWithParam('end_session=1').length).assertEqual(0);
+      expect(h.network.findCallsWithParam('old_device_id=').length).assertEqual(0);
+      expect(h.network.calls.some((c: RecordedCall) =>
+        c.data.indexOf('begin_session=1') !== -1 && c.data.indexOf('device_id=user_after_login') !== -1)).assertTrue();
+    });
+
+    it('enableOfflineMode_atRuntime_worksLikeChangeWithoutMergeToThePlaceholder', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.deviceId.setId('user_before_logout');
+        cfg.consent.setRequiresConsent(true).giveAll();
+      });
+      h.instance.lifecycleForeground();
+      await h.instance.events.recordEvent('pending_before_logout');
+      await flushTick(60);
+      await h.instance.deviceId.enableOfflineMode();
+      await flushTick(60);
+      expect(h.instance.deviceId.getID()).assertEqual(TEMP_DEVICE_ID);
+      expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
+      expect(h.instance.consentModule.hasConsent('events')).assertFalse();
+      const queued: string[] = h.instance.requestQueue.peekAll();
+      expect(queued.some((r: string) => r.indexOf('pending_before_logout') !== -1 && r.indexOf('device_id=user_before_logout') !== -1)).assertTrue();
+      expect(queued.some((r: string) => r.indexOf('end_session=1') !== -1 && r.indexOf('device_id=user_before_logout') !== -1)).assertTrue();
+      expect(h.network.findCallsWithParam('pending_before_logout').length).assertEqual(0);
+
+      // Leaving offline mode does not give the removed consent back.
+      await h.instance.deviceId.disableOfflineMode('user_after_login');
+      await flushTick(150);
+      expect(h.instance.consentModule.hasConsent('events')).assertFalse();
+      expect(h.network.calls.some((c: RecordedCall) =>
+        c.data.indexOf('pending_before_logout') !== -1 && c.data.indexOf('device_id=user_before_logout') !== -1)).assertTrue();
+    });
+
+    it('disableOfflineMode_withoutId_returnsToTheIdAndTypeBefore', 0, async () => {
+      const h: Harness = await buildHarness();
+      const before: string = h.instance.deviceId.getID();
+      await h.instance.deviceId.enableOfflineMode();
+      await h.instance.events.recordEvent('recorded_while_offline');
+      await h.instance.flushEvents();
+      await h.instance.deviceId.disableOfflineMode();
+      await flushTick(150);
+      expect(h.instance.deviceId.getID()).assertEqual(before);
+      expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.SDK_GENERATED);
+      expect(h.network.findCallsWithParam('old_device_id=').length).assertEqual(0);
+      expect(h.network.calls.some((c: RecordedCall) =>
+        c.data.indexOf('recorded_while_offline') !== -1 && c.data.indexOf(`device_id=${encodeURIComponent(before)}`) !== -1)).assertTrue();
+    });
+
+    it('disableOfflineMode_withoutId_afterOfflineStart_generatesId', 0, async () => {
+      const h: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
+      await h.instance.deviceId.disableOfflineMode();
+      expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.SDK_GENERATED);
+      expect(h.instance.deviceId.getID() !== TEMP_DEVICE_ID && h.instance.deviceId.getID().length > 0).assertTrue();
+    });
+
+    it('disableOfflineMode_withId_isDeveloperSuppliedWithoutMergeRequest', 0, async () => {
+      const h: Harness = await buildHarness();
+      await h.instance.deviceId.enableOfflineMode();
+      await h.instance.deviceId.disableOfflineMode('logged_in_user');
+      await flushTick(100);
+      expect(h.instance.deviceId.getID()).assertEqual('logged_in_user');
+      expect(h.instance.deviceId.getType()).assertEqual(DeviceIdType.DEVELOPER_SUPPLIED);
+      expect(h.network.findCallsWithParam('old_device_id=').length).assertEqual(0);
+    });
+
+    it('disableOfflineMode_outsideOfflineMode_isIgnoredWithWarning', 0, async () => {
+      const warnings: string[] = [];
+      const h: Harness = await buildHarness((cfg) => {
+        cfg.deviceId.setId('stays_the_same');
+        cfg.logging.setListener((message: string, level: LogLevel): void => {
+          if (level === LogLevel.WARNING) warnings.push(message);
+        });
+      });
+      await h.instance.deviceId.disableOfflineMode('another_user');
+      expect(h.instance.deviceId.getID()).assertEqual('stays_the_same');
+      expect(warnings.some((w: string) => w.indexOf('disableOfflineMode, not in offline mode, ignored') !== -1)).assertTrue();
+    });
+
+    it('placeholderAsNewId_entersOfflineMode', 0, async () => {
+      const a: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('developer_user'); });
+      await a.instance.deviceId.setID(TEMP_DEVICE_ID);
+      expect(a.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
+
+      const b: Harness = await buildHarness();
+      await b.instance.deviceId.changeWithMerge(TEMP_DEVICE_ID);
+      await flushTick(60);
+      expect(b.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
+      expect(b.network.findCallsWithParam('old_device_id=').length).assertEqual(0);
+
+      const c: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('developer_user'); });
+      await c.instance.deviceId.changeWithoutMerge(TEMP_DEVICE_ID);
+      expect(c.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
+
+      const d: Harness = await buildHarness((cfg) => { cfg.deviceId.setId(TEMP_DEVICE_ID); });
+      expect(d.instance.deviceId.getType()).assertEqual(DeviceIdType.TEMPORARY_ID);
+    });
+
+    it('restartInOfflineMode_keepsQueueUntilRealIdArrives', 0, async () => {
+      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
+      await first.instance.events.recordEvent('recorded_before_restart');
+      await first.instance.flushEvents();
+      await first.instance.stop();
+      const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.enableOfflineMode(); });
+      await flushTick(100);
+      expect(second.network.calls.length).assertEqual(0);
+      expect(second.instance.requestQueue.peekAll().some((r: string) => r.indexOf('recorded_before_restart') !== -1)).assertTrue();
+      await second.instance.deviceId.setID('real_after_restart');
+      await flushTick(150);
+      expect(second.network.calls.some((c: RecordedCall) =>
+        c.data.indexOf('recorded_before_restart') !== -1 && c.data.indexOf('device_id=real_after_restart') !== -1)).assertTrue();
+      expect(second.network.findCallsWithParam(`device_id=${encodeURIComponent(TEMP_DEVICE_ID)}`).length).assertEqual(0);
+    });
+
+    it('restartInOfflineMode_disableOfflineModeReturnsToTheIdBefore', 0, async () => {
+      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('user_a'); });
+      await first.instance.deviceId.enableOfflineMode();
+      await first.instance.stop();
+      const second: Harness = await rehydrateWith(first);
+      expect(second.instance.deviceId.isOfflineMode()).assertTrue();
+      await second.instance.deviceId.disableOfflineMode();
+      expect(second.instance.deviceId.getID()).assertEqual('user_a');
+      expect(second.instance.deviceId.getType()).assertEqual(DeviceIdType.DEVELOPER_SUPPLIED);
+    });
+
+    it('restartInOfflineMode_clearStoredDeviceId_sendsHeldDataUnderNewId', 0, async () => {
+      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.enableOfflineMode(); });
+      await first.instance.events.recordEvent('recorded_before_clear');
+      await first.instance.flushEvents();
+      await first.instance.stop();
+      const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.enableClearStoredDeviceId(); });
+      await flushTick(150);
+      expect(second.instance.deviceId.getType()).assertEqual(DeviceIdType.SDK_GENERATED);
+      const newId: string = encodeURIComponent(second.instance.deviceId.getID());
+      expect(second.network.calls.some((c: RecordedCall) =>
+        c.data.indexOf('recorded_before_clear') !== -1 && c.data.indexOf(`device_id=${newId}`) !== -1)).assertTrue();
+    });
+
+    it('restartInOfflineMode_slowStorage_sendsNothingAtInit', 0, async () => {
+      const logger: Logger = new Logger();
+      const storage: SlowStorage = new SlowStorage(logger, 'test_app_key');
+      const first: CountlyInstance = await launchOn(storage, new FakeNetwork(logger), (cfg: TestableCountlyConfig) => {
+        cfg.deviceId.enableOfflineMode();
+      });
+      await first.events.recordEvent('recorded_before_restart');
+      await first.flushEvents();
+      await first.stop();
+      const network: FakeNetwork = new FakeNetwork(logger);
+      const second: CountlyInstance = await launchOn(storage, network, (cfg: TestableCountlyConfig) => {
+        cfg.deviceId.enableOfflineMode();
+      });
+      await flushTick(100);
+      expect(network.calls.length).assertEqual(0);
+      expect(second.requestQueue.peekAll().some((r: string) => r.indexOf('recorded_before_restart') !== -1)).assertTrue();
+      await second.stop();
+    });
+
+    it('setID_inOfflineMode_slowStorage_sendsNoPlaceholderWhileTheIdChanges', 0, async () => {
+      const logger: Logger = new Logger();
+      const network: FakeNetwork = new FakeNetwork(logger);
+      const instance: CountlyInstance = await launchOn(new SlowStorage(logger, 'test_app_key'), network, (cfg: TestableCountlyConfig) => {
+        cfg.deviceId.enableOfflineMode();
+      });
+      await instance.events.recordEvent('recorded_while_offline');
+      await instance.flushEvents();
+      await instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=${encodeURIComponent(TEMP_DEVICE_ID)}&queued_last=1`);
+      await instance.deviceId.setID('real_after_offline');
+      await flushTick(150);
+      expect(network.findCallsWithParam(`device_id=${encodeURIComponent(TEMP_DEVICE_ID)}`).length).assertEqual(0);
+      expect(network.calls.some((c: RecordedCall) =>
+        c.data.indexOf('recorded_while_offline') !== -1 && c.data.indexOf('device_id=real_after_offline') !== -1)).assertTrue();
+      await instance.stop();
+    });
+
+    it('placeholderLeftInQueue_isSentUnderCurrentIdAtNextInit', 0, async () => {
+      const first: Harness = await buildHarness((cfg) => { cfg.deviceId.setId('queue_owner'); });
+      first.instance.requestQueue.pause();
+      await first.instance.requestQueue.enqueue(`timestamp=${Date.now()}&device_id=${encodeURIComponent(TEMP_DEVICE_ID)}&left_behind=1`);
+      await first.instance.stop();
+      const second: Harness = await rehydrateWith(first, (cfg) => { cfg.deviceId.setId('queue_owner'); });
+      await flushTick(150);
+      expect(second.network.calls.some((c: RecordedCall) =>
+        c.data.indexOf('left_behind=1') !== -1 && c.data.indexOf('device_id=queue_owner') !== -1)).assertTrue();
+      expect(second.network.findCallsWithParam(`device_id=${encodeURIComponent(TEMP_DEVICE_ID)}`).length).assertEqual(0);
     });
   });
 }

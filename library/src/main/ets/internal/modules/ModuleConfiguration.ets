@@ -142,7 +142,7 @@ export class ModuleConfiguration extends ModuleBase {
       return;
     }
     if (this.core.deviceIdModule.isTemporary()) {
-      this.config.logger.d('[ModuleConfiguration] onInit, temporary device id, skipping fetch (dev guide §SDK Behavior Settings)');
+      this.config.logger.d('[ModuleConfiguration] onInit, offline mode, the fetch and the timer wait until offline mode ends');
       return;
     }
     if (this.config.unknownConsentMode) {
@@ -169,13 +169,15 @@ export class ModuleConfiguration extends ModuleBase {
 
   /**
    * Called by `CountlyInstance.resolveUnknownConsent` on UCM exit (both
-   * grant and revoke paths) to kick off the SBS fetch + periodic timer
-   * that `onInit` deferred while UCM was active. Fire-and-forget per the
-   * Dart parity protocol.
+   * grant and revoke paths), and when offline mode ends, to kick off the
+   * SBS fetch + periodic timer that `onInit` deferred. No-op while updates
+   * are disabled, or while offline mode or UCM still holds the fetch.
+   * Fire-and-forget per the Dart parity protocol.
    */
   public triggerPostUcmRefresh(): void {
     if (this.config.sdkBehaviorSettingsRequestsDisabled) return;
     if (this.core.deviceIdModule.isTemporary()) return;
+    if (this.config.unknownConsentMode) return;
     this.fetchFromServer().catch((err: Object) => {
       this.config.logger.e(`[ModuleConfiguration] post-UCM SBS fetch rejected: ${err}`);
     });

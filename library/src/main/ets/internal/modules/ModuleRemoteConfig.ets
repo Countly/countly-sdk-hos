@@ -164,6 +164,11 @@ export class ModuleRemoteConfig extends ModuleBase {
       this.notifyAll(callback, RequestResult.Error, 'temporary device ID mode', false, {});
       return;
     }
+    if (this.core.requestQueue.hasTempDeviceIdRequests()) {
+      this.config.logger.d('[ModuleRemoteConfig] download, skipped while queued requests still carry the temporary device ID');
+      this.notifyAll(callback, RequestResult.Error, 'queued requests still carry the temporary device ID', false, {});
+      return;
+    }
 
     const full: boolean = (keysToInclude === null && keysToOmit === null);
     const params: Record<string, string> = this.core.requestBuilder.baseParams();
@@ -382,6 +387,10 @@ export class ModuleRemoteConfig extends ModuleBase {
     }
     if (this.core.deviceIdModule.isTemporary()) {
       this.config.logger.d(`[ModuleRemoteConfig] ${caller}, temporary device ID mode, omitted`);
+      return false;
+    }
+    if (this.core.requestQueue.hasTempDeviceIdRequests()) {
+      this.config.logger.d(`[ModuleRemoteConfig] ${caller}, queued requests still carry the temporary device ID, omitted`);
       return false;
     }
     return true;

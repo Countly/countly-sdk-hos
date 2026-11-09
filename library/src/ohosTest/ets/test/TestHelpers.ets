@@ -141,7 +141,7 @@ export function parseQueryParams(body: string): Record<string, string> {
  *
  * Validations:
  *   - `app_key`, `device_id`, `sdk_name`, `sdk_version`, `av` non-empty.
- *   - `t` is one of `'0'` (developer), `'1'` (SDK-generated), `'3'` (temp).
+ *   - `t` is one of `'0'` (developer), `'1'` (SDK-generated), `'2'` (offline mode).
  *   - `timestamp` parses as a number > 0.
  *   - `hour` parses as 0..23, `dow` as 0..6.
  *   - `tz` parses as a finite number (signed offset in minutes).
@@ -153,7 +153,7 @@ export function assertValidBaseParams(call: RecordedCall): void {
   expect(p['sdk_name'] !== undefined && p['sdk_name'].length > 0).assertTrue();
   expect(p['sdk_version'] !== undefined && p['sdk_version'].length > 0).assertTrue();
   expect(p['av'] !== undefined && p['av'].length > 0).assertTrue();
-  expect(p['t'] === '0' || p['t'] === '1' || p['t'] === '3').assertTrue();
+  expect(p['t'] === '0' || p['t'] === '1' || p['t'] === '2').assertTrue();
   const ts: number = parseInt(p['timestamp'], 10);
   expect(ts > 0).assertTrue();
   const hour: number = parseInt(p['hour'], 10);

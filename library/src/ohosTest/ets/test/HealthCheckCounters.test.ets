@@ -241,7 +241,7 @@ export default function healthCheckCountersTest() {
       const logger: Logger = new Logger();
       const storage: InMemoryStorage = new InMemoryStorage(logger, 'test_app_key');
       const network: FakeNetwork = new FakeNetwork(logger);
-      const a: CountlyInstance = await launch(storage, network, (cfg: TestableCountlyConfig) => { cfg.deviceId.enableTemporaryMode(); });
+      const a: CountlyInstance = await launch(storage, network, (cfg: TestableCountlyConfig) => { cfg.deviceId.enableOfflineMode(); });
       await flushTick(80);
       expect(healthCheckBody(network)).assertEqual('');
       await a.deviceId.setID('real_id_after_temporary');
@@ -305,10 +305,10 @@ export default function healthCheckCountersTest() {
       const logger: Logger = new Logger();
       const storage: InMemoryStorage = new InMemoryStorage(logger, 'test_app_key');
       const network: FakeNetwork = new FakeNetwork(logger);
-      const a: CountlyInstance = await launch(storage, network, (cfg: TestableCountlyConfig) => { cfg.network.enableOfflineMode(); });
+      const a: CountlyInstance = await launch(storage, network, (cfg: TestableCountlyConfig) => { cfg.deviceId.enableOfflineMode(); });
       await flushTick(80);
       expect(healthCheckBody(network)).assertEqual('');
-      await a.requests.disableOfflineMode();
+      await a.deviceId.disableOfflineMode();
       await flushTick(80);
       expect(healthCheckBody(network).length > 0).assertTrue();
       await a.stop();

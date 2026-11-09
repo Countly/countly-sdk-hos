@@ -51,7 +51,7 @@ export class RequestBuilder {
 
   /**
    * Server "t" source marker per dev guide:
-   *   0 = developer-supplied, 1 = SDK-generated, 3 = temporary (offline).
+   *   0 = developer-supplied, 1 = SDK-generated, 2 = offline mode (temporary ID).
    * Exhaustive switch on the enum, ArkTS will warn if new variants are added
    * without a case here.
    */
@@ -59,7 +59,7 @@ export class RequestBuilder {
     switch (type) {
       case DeviceIdType.DEVELOPER_SUPPLIED: return '0';
       case DeviceIdType.SDK_GENERATED: return '1';
-      case DeviceIdType.TEMPORARY_ID: return '3';
+      case DeviceIdType.TEMPORARY_ID: return '2';
       default: return '1';
     }
   }

@@ -29,10 +29,29 @@ export class DeviceIdApi {
 
   public getID(): string { return this.module.getId(); }
   public getType(): DeviceIdType { return this.module.getType(); }
-  public isTemporaryIdMode(): boolean { return this.module.isTemporary(); }
 
-  public async enableTemporaryIdMode(): Promise<void> {
-    this.logger.i('[DeviceId] Calling enableTemporaryIdMode');
-    await this.module.enableTemporaryIdMode();
+  /** Whether the SDK is in offline mode (the placeholder device ID, type TEMPORARY_ID). */
+  public isOfflineMode(): boolean { return this.module.isTemporary(); }
+
+  /**
+   * Enters offline mode, for example when the user logs out: data is
+   * recorded under the placeholder device ID and nothing is sent until
+   * offline mode ends. Like `changeWithoutMerge`, the pending data goes out
+   * under the current ID, the session ends and consent is removed.
+   */
+  public async enableOfflineMode(): Promise<void> {
+    this.logger.i('[DeviceId] Calling enableOfflineMode');
+    await this.module.enableOfflineMode();
+  }
+
+  /**
+   * Leaves offline mode and sends the queued requests under the new ID. With
+   * a device ID it works like `setID`; without one the SDK returns to the ID
+   * it had before offline mode, or generates one. Nothing else is reset and
+   * no merge request is sent.
+   */
+  public async disableOfflineMode(deviceId: string | null = null): Promise<void> {
+    this.logger.i(`[DeviceId] Calling disableOfflineMode, deviceId=[${deviceId !== null}]`);
+    await this.module.disableOfflineMode(deviceId);
   }
 }
