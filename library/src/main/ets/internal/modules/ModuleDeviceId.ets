@@ -278,7 +278,11 @@ export class ModuleDeviceId extends ModuleBase {
     await this.core.flushEvents();
     await this.core.saveUserProfileIfPending();
     const beforeSwap: BeforeNonMergedSwapHook | null = this.onBeforeNonMergedSwap;
-    if (beforeSwap !== null) await beforeSwap(oldId, newId);
+    if (beforeSwap !== null) {
+      // A typed const, because codelinter's await-thenable cannot type a call through a nullable function type.
+      const swapped: Promise<void> = beforeSwap(oldId, newId);
+      await swapped;
+    }
     await this.commit(newId, type);
     await this.notifyChange(oldId, newId, false);
   }
@@ -286,7 +290,10 @@ export class ModuleDeviceId extends ModuleBase {
   /** Runs the change listener, if one is set. */
   private async notifyChange(oldId: string, newId: string, merged: boolean): Promise<void> {
     const listener: DeviceIdChangeListener | null = this.onChange;
-    if (listener !== null) await listener(oldId, newId, merged);
+    if (listener === null) return;
+    // A typed const, because codelinter's await-thenable cannot type a call through a nullable function type.
+    const notified: Promise<void> = listener(oldId, newId, merged);
+    await notified;
   }
 
   /** Keeps the current device ID and type for `disableOfflineMode()`. */

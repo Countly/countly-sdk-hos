@@ -171,7 +171,9 @@ export class ModulePush extends ModuleBase {
     // existing platforms; 'h' is the natural continuation.
     seg['p'] = 'h';
     if (this.pushActionRecorder !== null) {
-      await this.pushActionRecorder(seg);
+      // A typed const, because codelinter's await-thenable cannot type a call through a nullable function type.
+      const recorded: Promise<void> = this.pushActionRecorder(seg);
+      await recorded;
     } else {
       this.config.logger.w('[ModulePush] recordPushActionEvent, no recorder wired, event dropped');
     }

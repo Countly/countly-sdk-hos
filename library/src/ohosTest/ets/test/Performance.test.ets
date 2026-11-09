@@ -10,17 +10,24 @@ import common from '@ohos.app.ability.common';
 
 /**
  * Performance tests. Each test measures wall-clock time around a defined
- * workload and asserts a generous upper bound — the goal is regression
- * detection, not micro-benchmarking. Thresholds are tuned for the HMOS
- * emulator on the development machine; they're 5–10x looser than what we
- * observe in practice so a slow CI run won't trip them.
+ * workload and asserts a generous upper bound: the goal is regression
+ * detection, not micro-benchmarking. CI hosts differ about 4x in speed (an
+ * Intel Xeon runner against an AMD EPYC 7763 one), so the bounds sit well
+ * above the slowest host and catch order-of-magnitude regressions.
  *
- * What "good" looks like in CI logs:
- *   - perf_eventThroughput_10k_events:       <2000 ms total
- *   - perf_requestQueue_enqueue_under_load:  <3000 ms for 5k enqueues
- *   - perf_storageInit_with_1000_buffered:   <500 ms to load 1k requests
- *   - perf_multiInstance_100_create_halt:    <8000 ms total
+ * Long loops yield to the event loop every YIELD_EVERY iterations: a main
+ * thread kept busy for 6 s gets the test app killed (THREAD_BLOCK_6S).
+ *
+ * What CI logs show, fastest to slowest host:
+ *   - perf_eventThroughput_10k_events:       about 1.1 to 4.6 s total
+ *   - perf_requestQueue_enqueue_under_load:  about 4.4 to 8 s for 5k enqueues
+ *   - perf_storageInit_with_1000_buffered:   about 0.2 to 0.4 s to load 1k requests
+ *   - perf_multiInstance_100_create_halt:    about 0.1 to 0.3 s total
  */
+
+/** Iterations between two yields to the event loop in the long loops. */
+const YIELD_EVERY: number = 200;
+
 export default function performanceTest(): void {
   describe('PerformanceTest', (): void => {
     afterEach(async (): Promise<void> => {
@@ -44,6 +51,7 @@ export default function performanceTest(): void {
       const start: number = Date.now();
       for (let i: number = 0; i < N; i++) {
         await h.instance.events.recordEvent(`evt_${i}`, { 'bucket': `b${i % 50}` }, 1, 0, 0);
+        if (i % YIELD_EVERY === YIELD_EVERY - 1) await flushTick(0);
       }
       const recordMs: number = Date.now() - start;
       // All N events sit in the in-memory queue (no flush triggered).
@@ -53,9 +61,7 @@ export default function performanceTest(): void {
       const flushMs: number = Date.now() - flushStart;
       const total: number = recordMs + flushMs;
       h.logger.i(`[PerfTest] eventThroughput, recordMs=${recordMs} flushMs=${flushMs} totalMs=${total} perEvent=${(recordMs / N).toFixed(3)}ms`);
-      // Generous upper bound; observed ~600ms on the emulator, threshold
-      // 5x that to absorb CI variance.
-      expect(total < 3000).assertTrue();
+      expect(total < 12000).assertTrue();
       // Sanity: at least one batch reached the network.
       expect(h.network.calls.length >= 1).assertTrue();
     });
@@ -81,12 +87,12 @@ export default function performanceTest(): void {
       const start: number = Date.now();
       for (let i: number = 0; i < N; i++) {
         await h.instance.requestQueue.enqueue(`app_key=test&device_id=d&t=1&timestamp=${Date.now()}&sdk_name=arkts-native-harmonyos&dummy=${i}`);
+        if (i % YIELD_EVERY === YIELD_EVERY - 1) await flushTick(0);
       }
       const enqueueMs: number = Date.now() - start;
       h.logger.i(`[PerfTest] requestQueueEnqueue, N=${N} totalMs=${enqueueMs} perEnqueue=${(enqueueMs / N).toFixed(3)}ms queueSize=${h.instance.requestQueue.size()}`);
       expect(h.instance.requestQueue.size() === N).assertTrue();
-      // Observed ~700-1500ms on the emulator. 5x ceiling.
-      expect(enqueueMs < 7500).assertTrue();
+      expect(enqueueMs < 20000).assertTrue();
     });
 
     // -- Perf #3: storage init + queue load with N=1000 buffered ----------

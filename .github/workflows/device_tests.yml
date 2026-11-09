@@ -18,7 +18,7 @@ jobs:
   emulator:
     name: HarmonyOS emulator test
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 40
     concurrency:
       group: device-tests-${{ github.event.pull_request.number || github.ref }}
       cancel-in-progress: true
@@ -30,7 +30,7 @@ jobs:
       HOS_CLT_URL_LINUX_X64: ${{ vars.HOS_CLT_URL_LINUX_X64 }}
       HOS_CLT_SHA256_LINUX_X64: ${{ vars.HOS_CLT_SHA256_LINUX_X64 }}
       HOS_EMULATOR_HEADLESS: 'true'
-      HOS_BOOT_TIMEOUT: '1200'
+      HOS_BOOT_TIMEOUT: '600'
     steps:
       - name: Check out
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -65,6 +65,17 @@ endgroup() {
   return 0
 }
 
+# Runs a command, stopped after SECONDS ($1) when coreutils timeout is available; a stopped command exits 124.
+with_time_limit() {
+  local seconds="$1"
+  shift
+  if command -v timeout > /dev/null 2>&1; then
+    timeout -k 30 "$seconds" "$@"
+  else
+    "$@"
+  fi
+}
+
 # Exports a variable in this shell and, under GitHub Actions, for the following steps.
 export_var() {
   export "$1=$2"

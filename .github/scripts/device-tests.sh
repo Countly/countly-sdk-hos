@@ -14,6 +14,7 @@
 #   HOS_TEST_MODULE       test module name (default: name in library/src/ohosTest/module.json5)
 #   HOS_TEST_CLASSES      suites to run (default: output of the classes command)
 #   HOS_TEST_TIMEOUT_MS   per-test timeout passed to aa test (default 60000)
+#   HOS_TEST_RUN_LIMIT_S  seconds the whole aa test run may take before it is stopped (default 900)
 #   HOS_TEST_MIN_COUNT    fail when fewer tests run than this (default 1)
 #
 # Run from the repository root.
@@ -66,13 +67,18 @@ connected_targets() {
 
 # Installs the HAP, runs aa test for every registered suite and parses the log.
 cmd_run() {
-  local hap="${1:-$DEFAULT_HAP}" out_dir="${2:-device-test-results}" bundle module classes timeout_ms remote install_out targets
+  local hap="${1:-$DEFAULT_HAP}" out_dir="${2:-device-test-results}" bundle module classes timeout_ms run_limit remote install_out targets status
+  local hdc_target=()
   [ -s "$hap" ] || die "test HAP not found: $hap"
   mkdir -p "$out_dir"
   bundle="${HOS_TEST_BUNDLE:-$(json_string_value bundleName AppScope/app.json5)}"
   module="${HOS_TEST_MODULE:-$(json_string_value name library/src/ohosTest/module.json5)}"
   classes="${HOS_TEST_CLASSES:-$(cmd_classes)}"
   timeout_ms="${HOS_TEST_TIMEOUT_MS:-60000}"
+  run_limit="${HOS_TEST_RUN_LIMIT_S:-900}"
+  if [ -n "${HOS_HDC_TARGET:-}" ]; then
+    hdc_target=(-t "$HOS_HDC_TARGET")
+  fi
   [ -n "$bundle" ] && [ -n "$module" ] || die "could not read the bundle or test module name"
 
   targets="$(connected_targets)"
@@ -97,11 +103,16 @@ cmd_run() {
   log "Suites: $classes"
   group "aa test"
   set +e
-  hdc_cmd shell aa test -b "$bundle" -m "$module" -s unittest "$TEST_RUNNER" -s class "$classes" -s timeout "$timeout_ms" 2>&1 \
-    | tr -d '\r' | tee "$out_dir/aa-test.log"
+  with_time_limit "$run_limit" "${HOS_HDC:-hdc}" ${hdc_target[@]+"${hdc_target[@]}"} shell aa test -b "$bundle" -m "$module" \
+    -s unittest "$TEST_RUNNER" -s class "$classes" -s timeout "$timeout_ms" 2>&1 | tr -d '\r' | tee "$out_dir/aa-test.log"
+  status="${PIPESTATUS[0]}"
   set -e
   endgroup
 
+  if [ "$status" = 124 ]; then
+    warn "aa test was stopped after ${run_limit}s (HOS_TEST_RUN_LIMIT_S)"
+    hdc_cmd shell "aa dump -a" > "$out_dir/aa-dump.txt" 2>&1 || true
+  fi
   hdc_cmd shell "hilog -x" > "$out_dir/hilog.txt" 2>/dev/null || true
   cmd_parse "$out_dir/aa-test.log"
 }

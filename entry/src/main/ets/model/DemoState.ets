@@ -53,8 +53,7 @@ export class DemoLog {
    */
   public static async safe(tag: string, fn: () => Promise<void> | void): Promise<void> {
     try {
-      const r: Promise<void> | void = fn();
-      if (r instanceof Promise) await r;
+      await Promise.resolve(fn());
       DemoLog.append(`${tag} OK`);
     } catch (e) {
       DemoLog.append(`${tag} ERR: ${e}`);
