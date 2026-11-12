@@ -1,0 +1,85 @@
+name: Public API
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  api:
+    name: Breaking changes
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    env:
+      HOS_CLT_VERSION: ${{ vars.HOS_CLT_VERSION }}
+      HOS_CLT_URL_LINUX_X64: ${{ vars.HOS_CLT_URL_LINUX_X64 }}
+      HOS_CLT_SHA256_LINUX_X64: ${{ vars.HOS_CLT_SHA256_LINUX_X64 }}
+    steps:
+      - name: Check out
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 2
+          persist-credentials: false
+
+      # hvigor needs libGL for texture compression on Linux (Huawei's pipeline guide).
+      - name: Install libGL
+        run: ldconfig -p | grep 'libGL\.so\.1' > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq libgl1; }
+
+      - name: Resolve toolchain settings
+        id: config
+        run: bash .github/scripts/hos-ci.sh config
+
+      - name: Restore Command Line Tools
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.config.outputs.clt_home }}
+          key: ${{ steps.config.outputs.clt_cache_key }}
+
+      - name: Set up Command Line Tools
+        env:
+          HOS_CLT_AUTH_HEADER: ${{ secrets.HOS_CLT_AUTH_HEADER }}
+        run: bash .github/scripts/hos-ci.sh install-toolchain
+
+      # The first parent of the pull request's merge commit is the base branch it merges into.
+      - name: Build the release HAR of the base branch and of this pull request
+        run: |
+          git worktree add "$RUNNER_TEMP/base" HEAD^1
+          for tree in "$RUNNER_TEMP/base" "$GITHUB_WORKSPACE"; do
+            (cd "$tree" \
+              && bash "$GITHUB_WORKSPACE/.github/scripts/hos-ci.sh" align-plugin \
+              && ohpm install --all \
+              && hvigorw --mode module -p module=library@default -p product=default -p buildMode=release assembleHar --no-daemon)
+          done
+
+      - name: Compare the public API with the base branch
+        run: |
+          har=library/build/default/outputs/default/library.har
+          python3 .github/scripts/public_api.py "$RUNNER_TEMP/base/$har" | LC_ALL=C sort > "$RUNNER_TEMP/base.txt"
+          python3 .github/scripts/public_api.py "$har" | LC_ALL=C sort > "$RUNNER_TEMP/head.txt"
+          LC_ALL=C comm -23 "$RUNNER_TEMP/base.txt" "$RUNNER_TEMP/head.txt" | sed 's/^/Removed or changed: /' > "$RUNNER_TEMP/breaking.txt"
+
+      - name: Require a CHANGELOG entry for breaking changes
+        run: |
+          if [ ! -s "$RUNNER_TEMP/breaking.txt" ]; then
+            echo "No breaking change to the public API." >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          {
+            echo "### Breaking changes to the public API"
+            echo '```'
+            cat "$RUNNER_TEMP/breaking.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          if git diff --quiet HEAD^1 HEAD -- CHANGELOG.md; then
+            echo "::error title=Breaking API change::This pull request breaks the public API without a CHANGELOG.md entry. The job summary lists each break."
+            exit 1
+          fi
+          echo "::warning title=Breaking API change::This pull request breaks the public API. Check that CHANGELOG.md marks it as a breaking change."
