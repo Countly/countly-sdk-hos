@@ -9,7 +9,7 @@ import { ModuleConsent } from './internal/modules/ModuleConsent';
 import { ModuleDeviceId } from './internal/modules/ModuleDeviceId';
 import { ModuleEvents, ViewIds } from './internal/modules/ModuleEvents';
 import { ModuleSessions } from './internal/modules/ModuleSessions';
-import { ModuleViews } from './internal/modules/ModuleViews';
+import { ModuleViews, ViewRestartSnapshot } from './internal/modules/ModuleViews';
 import { ModuleCrashes } from './internal/modules/ModuleCrashes';
 import { ModuleUserProfile } from './internal/modules/ModuleUserProfile';
 import { ModuleLocation } from './internal/modules/ModuleLocation';
@@ -110,6 +110,8 @@ export class CountlyInstance implements SdkCore {
   private requestQueueModule: ModuleRequestQueue;
   private readonly configurationModule: ModuleConfiguration;
   private initialized: boolean = false;
+  /** The latest app key change, so the next one starts when it has finished. */
+  private appKeyChange: Promise<void> = Promise.resolve();
 
   // Fan-out lists for consent-change and device-id-change events. Initialised
   // at the end of the constructor once every module is wired. Each list is
@@ -920,7 +922,7 @@ export class CountlyInstance implements SdkCore {
    *     beginSession, setProperty, setLocation, setID, addDirectRequest,
    *     give/removeConsentAll, …) becomes a no-op + warning log.
    *   - Gated instance-level methods (`lifecycleForeground`,
-   *     `lifecycleBackground`, `setServerURL`, `setExternalUrlOpener`)
+   *     `lifecycleBackground`, `setServerURL`, `changeAppKey`, `setExternalUrlOpener`)
    *     are also no-op + warning log post-stop.
    *   - Read accessors (`getID`, `hasPendingEvents`, `checkAllConsent`,
    *     etc.) remain available.
@@ -1085,6 +1087,68 @@ export class CountlyInstance implements SdkCore {
     }
     this.config.serverUrl = Utils.stripTrailingSlashes(url);
     this.config.logger.i('setServerURL, server URL updated, queued requests will send to the new host');
+  }
+
+  /**
+   * Change the app key at runtime (dev guide §Changing the App Key), for
+   * example when a white-label app learns at login which app it reports to.
+   * An empty key or the "YOUR_APP_KEY" placeholder is ignored with an error
+   * log (health check log code e103); a key equal to the current one is ignored.
+   *
+   * Under the old key, the running views stop, pending events and user
+   * profile changes are packed into requests, and the running session ends.
+   * The new key is kept in memory only, the next init uses the config key.
+   * A session that was running begins for the new app and the stopped views
+   * start again. The new app then receives the consent state (while consent
+   * is required), its behavior settings, and its remote config values when
+   * they download automatically; the old app's stored values are cleared, or
+   * marked cached with value caching. Queued requests keep their app key, see
+   * `requests.replaceAllAppKeysInQueueWithCurrentAppKey()` and
+   * `requests.removeDifferentAppKeysFromQueue()`. Calls run one at a time.
+   */
+  public async changeAppKey(appKey: string): Promise<void> {
+    if (this.config.halted) {
+      this.config.logger.w('changeAppKey called after halt, ignored');
+      return;
+    }
+    this.config.logger.i(`Calling changeAppKey, appKey=[${appKey}]`);
+    if (Utils.isNullOrEmpty(appKey) || appKey.trim().length === 0 || appKey === 'YOUR_APP_KEY') {
+      this.config.logger.e(`changeAppKey, invalid app key, ignored (${appKey})`);
+      this.config.logger.healthCode('e103');
+      return;
+    }
+    this.appKeyChange = this.appKeyChange
+      .then((): Promise<void> => this.switchAppKey(appKey))
+      .catch((err: Object): void => {
+        this.config.logger.e(`changeAppKey rejected: ${err}`);
+      });
+    await this.appKeyChange;
+  }
+
+  /** Closes the views, pending data and session under the current app key, then continues under `appKey`. */
+  private async switchAppKey(appKey: string): Promise<void> {
+    if (appKey === this.config.appKey) {
+      this.config.logger.d('changeAppKey, same app key, ignored');
+      return;
+    }
+    const views: ViewRestartSnapshot[] = await this.viewsModule.stopViewsForRestart();
+    await this.eventsModule.flushAllEvents();
+    await this.saveUserProfileIfPending();
+    await this.consentModule.sendPendingConsentNow();
+    const sessionWasActive: boolean = this.sessionsModule.isSessionActive();
+    await this.sessionsModule.endSessionForDeviceIdChange();
+    // stop() may run during any of these awaits; nothing may be queued, stored or scheduled after it.
+    if (this.config.halted) return;
+    this.config.appKey = appKey;
+    this.config.logger.i('changeAppKey, app key changed, new requests use the new app key');
+    if (sessionWasActive) await this.sessionsModule.beginSessionForAppKeyChange();
+    if (this.config.halted) return;
+    await this.viewsModule.restartViews(views);
+    if (this.config.halted) return;
+    await this.consentModule.sendCurrentConsentIfRequired();
+    if (this.config.halted) return;
+    this.configurationModule.triggerPostUcmRefresh();
+    await this.remoteConfigModule.clearAndDownload('appKeyChanged');
   }
 
 }

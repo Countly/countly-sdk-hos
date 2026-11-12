@@ -27,17 +27,20 @@ interface ActiveView {
 
 /**
  * View state captured at `onEnterBackground` for replay at
- * `onEnterForeground`. Keeps name, kind (auto-stopped vs manual), and
+ * `onEnterForeground`, and around an app key change. Keeps the ID of the
+ * view to stop, its name, kind (auto-stopped vs manual), and
  * the most recently accumulated segmentation so the restarted view
  * carries the integrator's intent forward into the new session.
  * ArkTS strict mode bans untyped object literals so a named class is
  * the idiomatic shape.
  */
-class ViewRestartSnapshot {
+export class ViewRestartSnapshot {
+  public id: string;
   public name: string;
   public autoStopped: boolean;
   public segmentation: SegmentationMap;
-  constructor(name: string, autoStopped: boolean, segmentation: SegmentationMap) {
+  constructor(id: string, name: string, autoStopped: boolean, segmentation: SegmentationMap) {
+    this.id = id;
     this.name = name;
     this.autoStopped = autoStopped;
     this.segmentation = segmentation;
@@ -353,6 +356,39 @@ export class ModuleViews extends ModuleBase {
   }
 
   public override onEnterBackground(): void {
+    const snapshots: ViewRestartSnapshot[] = this.snapshotViewsToRestart();
+    this.restartOnForeground = snapshots;
+    // Collected first so the in-loop `activeViews` mutations from
+    // `stopViewWithID` don't trip the iteration.
+    for (let i = 0; i < snapshots.length; i++) {
+      this.stopViewWithID(snapshots[i].id, null).catch((err: Object) => {
+        this.config.logger.e(`[ModuleViews] onEnterBackground, view stop rejected: ${err}`);
+      });
+    }
+  }
+
+  /**
+   * Stops every running view, waiting for each stop, and returns the ones
+   * that `onEnterBackground` would also stop, for `restartViews`. The other
+   * views (paused ones, and manual ones while their restart is disabled) are
+   * not started again. The snapshot that a later foreground restarts is left
+   * as it is.
+   */
+  public async stopViewsForRestart(): Promise<ViewRestartSnapshot[]> {
+    const snapshots: ViewRestartSnapshot[] = this.snapshotViewsToRestart();
+    await this.stopAllViews(null);
+    return snapshots;
+  }
+
+  /** Starts the views that `stopViewsForRestart` stopped again, in their order, waiting for each start. */
+  public async restartViews(snapshots: ViewRestartSnapshot[]): Promise<void> {
+    for (let i = 0; i < snapshots.length; i++) {
+      await this.restartView(snapshots[i]);
+    }
+  }
+
+  /** The running views that background stops and foreground starts again. */
+  private snapshotViewsToRestart(): ViewRestartSnapshot[] {
     // Mirrors Android's `(autoViewTracker || restartManualViews)` gate:
     //   - `autoViewTracker` = `config.automaticViewTracking` (whether
     //     auto view tracking is enabled at config level).
@@ -374,11 +410,10 @@ export class ModuleViews extends ModuleBase {
     //     completely alone (their timing accumulates across bg/fg).
     const restartManualViews: boolean = !this.config.disableViewRestartForManual;
     const autoViewTracker: boolean = this.config.automaticViewTracking;
-    if (!autoViewTracker && !restartManualViews) return;
+    if (!autoViewTracker && !restartManualViews) return [];
 
     const ids: string[] = this.activeViewIds();
     const snapshots: ViewRestartSnapshot[] = [];
-    const idsToStop: string[] = [];
     for (let i = 0; i < ids.length; i++) {
       const view: ActiveView | undefined = this.activeViews.get(ids[i]);
       if (view === undefined) continue;
@@ -393,17 +428,9 @@ export class ModuleViews extends ModuleBase {
       // Copy the accumulated segmentation, the original map is owned by
       // the ActiveView and would be mutated/reset when we restart.
       const segCopy: SegmentationMap = Utils.cloneSegmentationMap(view.accumulatedSegmentation);
-      snapshots.push(new ViewRestartSnapshot(view.name, view.autoStopped, segCopy));
-      idsToStop.push(ids[i]);
+      snapshots.push(new ViewRestartSnapshot(ids[i], view.name, view.autoStopped, segCopy));
     }
-    this.restartOnForeground = snapshots;
-    // Collected first so the in-loop `activeViews` mutations from
-    // `stopViewWithID` don't trip the iteration.
-    for (let i = 0; i < idsToStop.length; i++) {
-      this.stopViewWithID(idsToStop[i], null).catch((err: Object) => {
-        this.config.logger.e(`[ModuleViews] onEnterBackground, view stop rejected: ${err}`);
-      });
-    }
+    return snapshots;
   }
 
   public override onEnterForeground(): void {
@@ -418,14 +445,17 @@ export class ModuleViews extends ModuleBase {
     this.restartOnForeground = [];
     for (let i = 0; i < snapshots.length; i++) {
       const snap: ViewRestartSnapshot = snapshots[i];
-      const seg: SegmentationMap = snap.segmentation;
-      const restarter: Promise<string | null> = snap.autoStopped
-        ? this.startAutoStoppedView(snap.name, seg)
-        : this.startView(snap.name, seg);
-      restarter.catch((err: Object) => {
+      this.restartView(snap).catch((err: Object) => {
         this.config.logger.e(`[ModuleViews] onEnterForeground, restart of '${snap.name}' (autoStopped=${snap.autoStopped}) rejected: ${err}`);
       });
     }
+  }
+
+  /** Starts a stopped view again the way it was started, auto-stopped or manual. */
+  private restartView(snap: ViewRestartSnapshot): Promise<string | null> {
+    return snap.autoStopped
+      ? this.startAutoStoppedView(snap.name, snap.segmentation)
+      : this.startView(snap.name, snap.segmentation);
   }
 
   private async startInternal(name: string, segmentation: SegmentationMap | null, autoStopped: boolean): Promise<string> {

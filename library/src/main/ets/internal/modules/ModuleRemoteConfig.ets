@@ -281,6 +281,15 @@ export class ModuleRemoteConfig extends ModuleBase {
     // merge and non-merge paths clear the cache and re-download. Even though
     // a merge preserves identity server-side, the new id may map to a
     // different segment that returns different RC values.
+    await this.clearAndDownload(`deviceIdChangedMerged(wasTemp=${oldId === 'CLYTemporaryDeviceID'})`);
+  }
+
+  /**
+   * Clears the stored values, or marks them cached with value caching, then
+   * downloads new ones when automatic triggers are on. Also used after an app
+   * key change, because the stored values belong to the old app.
+   */
+  public async clearAndDownload(reason: string): Promise<void> {
     if (this.config.remoteConfigValueCaching) {
       const keys: string[] = Object.keys(this.cache);
       for (let i = 0; i < keys.length; i++) this.cache[keys[i]] = { v: this.cache[keys[i]].v, c: 0 };
@@ -292,7 +301,7 @@ export class ModuleRemoteConfig extends ModuleBase {
     if (this.config.remoteConfigAutomaticTriggers
         && this.core.consentModule.hasConsent(CountlyFeature.REMOTE_CONFIG)
         && !this.core.deviceIdModule.isTemporary()) {
-      this.fireAutomaticDownload(`deviceIdChangedMerged(wasTemp=${oldId === 'CLYTemporaryDeviceID'})`);
+      this.fireAutomaticDownload(reason);
     }
   }
 

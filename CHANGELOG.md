@@ -12,6 +12,7 @@
 * Calling "disableOfflineMode" outside offline mode is now ignored with a warning.
 * Setting "CLYTemporaryDeviceID" as the device ID, in the config or with "setID", "changeWithoutMerge" or "changeWithMerge", now enters offline mode.
 * Requests recorded in offline mode now carry the device ID type "t=2", as the SDK development guide defines.
+* Added "countly.changeAppKey(appKey)" to change the app key after init.
 
 * Mitigated an issue where clearing or filtering the request queue while a request was being sent could delete an unsent request.
 * Mitigated an issue where "countly.setServerURL(url)" accepted a URL without a host, such as "http://".

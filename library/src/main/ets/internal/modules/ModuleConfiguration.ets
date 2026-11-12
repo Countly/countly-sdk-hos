@@ -169,12 +169,14 @@ export class ModuleConfiguration extends ModuleBase {
 
   /**
    * Called by `CountlyInstance.resolveUnknownConsent` on UCM exit (both
-   * grant and revoke paths), and when offline mode ends, to kick off the
+   * grant and revoke paths), when offline mode ends, and after an app key
+   * change (the new app's settings), to kick off the
    * SBS fetch + periodic timer that `onInit` deferred. No-op while updates
    * are disabled, or while offline mode or UCM still holds the fetch.
    * Fire-and-forget per the Dart parity protocol.
    */
   public triggerPostUcmRefresh(): void {
+    if (this.config.halted) return;
     if (this.config.sdkBehaviorSettingsRequestsDisabled) return;
     if (this.core.deviceIdModule.isTemporary()) return;
     if (this.config.unknownConsentMode) return;
