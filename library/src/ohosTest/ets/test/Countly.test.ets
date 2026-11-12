@@ -212,6 +212,25 @@ export default function countlyFacadeTest() {
       expect(h.instance.config.serverUrl).assertEqual(before);
     });
 
+    /** setServerURL, a URL without a host is ignored and requests keep going to the current server. */
+    it('setServerURL_withoutHost_ignored', 0, async () => {
+      const h: Harness = await buildHarness();
+      await flushTick(60);
+      h.network.reset();
+      h.instance.setServerURL('https://b.example.com');
+      h.instance.setServerURL('http://');
+      h.instance.setServerURL('https://');
+      h.instance.setServerURL('http://:8080');
+      h.instance.setServerURL('http:///i');
+      expect(h.instance.config.serverUrl).assertEqual('https://b.example.com');
+      await h.instance.events.recordEvent('after_hostless_urls');
+      await h.instance.flushEvents();
+      await flushTick(60);
+      const sent = h.network.findCallsWithParam('after_hostless_urls');
+      expect(sent.length).assertEqual(1);
+      expect(sent[0].baseUrl).assertEqual('https://b.example.com');
+    });
+
     /** enableOfflineMode holds what is recorded under the placeholder until
      *  disableOfflineMode sends it under the device ID used before. */
     it('enableOfflineMode_holdsRequestsUntilDisableOfflineMode', 0, async () => {

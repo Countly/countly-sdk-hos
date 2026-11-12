@@ -59,6 +59,8 @@ export class RequestQueue {
   // the process (browser/Node return positive ids; HMOS does not guarantee
   // that). See ModuleConsent.pendingCoalesceTimer for the original symptom.
   private processorTimer: number | null = null;
+  /** The request on its way, kept current when a rewrite replaces it, so only that request is removed after the send. */
+  private inFlight: string | null = null;
   private tempMode: () => boolean;
   private healthListener: HealthListener | null = null;
 
@@ -130,7 +132,11 @@ export class RequestQueue {
     let changed: boolean = false;
     for (let i = 0; i < this.queue.length; i++) {
       const next: string = this.queue[i].replace(rx, `$1app_key=${encoded}`);
-      if (next !== this.queue[i]) { this.queue[i] = next; changed = true; }
+      if (next !== this.queue[i]) {
+        if (this.queue[i] === this.inFlight) this.inFlight = next;
+        this.queue[i] = next;
+        changed = true;
+      }
     }
     if (changed) {
       await this.persist();
@@ -225,6 +231,7 @@ export class RequestQueue {
     for (let i = 0; i < this.queue.length; i++) {
       const next: string = this.queue[i].replace(rx, `$1device_id=${encodedReal}`);
       if (next !== this.queue[i]) {
+        if (this.queue[i] === this.inFlight) this.inFlight = next;
         this.queue[i] = next;
         changed = true;
       }
@@ -294,10 +301,12 @@ export class RequestQueue {
     }
 
     this.processing = true;
+    this.inFlight = this.queue[0];
     try {
       await this.processHead();
     } finally {
       this.processing = false;
+      this.inFlight = null;
     }
     if (this.queue.length > 0) this.scheduleTick();
   }
@@ -374,7 +383,8 @@ export class RequestQueue {
     if (decision === 'drop') {
       this.config.logger.d(`[RequestQueue] processHead, dropping head after unrecoverable response status=${result.statusCode} endpoint=${endpoint}`);
       if (this.healthListener !== null) this.healthListener.onFailedRequest(result.statusCode, result.body);
-      this.queue.shift();
+      // The queue can be cleared, filtered or trimmed during the send: remove the head only if it is still the sent request.
+      if (this.queue[0] === this.inFlight) this.queue.shift();
       this.consecutiveBackedOff = 0;
       await this.persist();
       return;
@@ -387,7 +397,7 @@ export class RequestQueue {
     }
 
     // Success, reset backoff and remove head.
-    this.queue.shift();
+    if (this.queue[0] === this.inFlight) this.queue.shift();
     this.consecutiveBackedOff = 0;
     await this.persist();
     // INFO + URL-decoded request + full response body so post-mortem

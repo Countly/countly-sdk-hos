@@ -529,5 +529,64 @@ export default function requestQueueTest() {
       await flushTick(80);
       expect(h.network.calls.some(c => c.data.indexOf('foo=disabled2') !== -1)).assertTrue();
     });
+
+    it('removeDifferentAppKeys_whileTheHeadIsOnItsWay_keepsTheUnsentRequests', 0, async () => {
+      const h: Harness = await buildHarness();
+      await flushTick(60);
+      h.network.reset();
+      h.network.holdNext('foo=held');
+      await h.instance.requestQueue.enqueue(`app_key=other_key&timestamp=${Date.now()}&foo=held`);
+      await flushTick(30);
+      await h.instance.requestQueue.enqueue(`app_key=test_app_key&timestamp=${Date.now()}&foo=keep1`);
+      await h.instance.requestQueue.enqueue(`app_key=other_key&timestamp=${Date.now()}&foo=drop1`);
+      await h.instance.requestQueue.enqueue(`app_key=test_app_key&timestamp=${Date.now()}&foo=keep2`);
+      await h.instance.requests.removeDifferentAppKeysFromQueue();
+      h.network.releaseHeld();
+      await flushTick(120);
+
+      const sent: string[] = h.network.findCallsWithParam('&foo=').map((c: RecordedCall) => c.data.split('&foo=')[1].split('&')[0]);
+      expect(sent.join(',')).assertEqual('held,keep1,keep2');
+      expect(h.instance.requestQueue.size()).assertEqual(0);
+    });
+
+    it('flushQueues_whileTheHeadIsOnItsWay_keepsWhatIsQueuedAfterIt', 0, async () => {
+      const h: Harness = await buildHarness();
+      await flushTick(60);
+      h.network.reset();
+      h.network.holdNext('foo=held');
+      await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=held`);
+      await flushTick(30);
+      await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=flushed`);
+      await h.instance.requests.flushQueues();
+      await h.instance.requestQueue.enqueue(`timestamp=${Date.now()}&foo=after_flush`);
+      h.network.releaseHeld();
+      await flushTick(120);
+
+      expect(h.network.findCallsWithParam('foo=held').length).assertEqual(1);
+      expect(h.network.findCallsWithParam('foo=flushed').length).assertEqual(0);
+      expect(h.network.findCallsWithParam('foo=after_flush').length).assertEqual(1);
+      expect(h.instance.requestQueue.size()).assertEqual(0);
+    });
+
+    it('replaceAllAppKeys_whileTheHeadIsOnItsWay_sendsItOnlyOnce', 0, async () => {
+      const h: Harness = await buildHarness();
+      await flushTick(60);
+      h.network.reset();
+      h.network.holdNext('foo=held');
+      await h.instance.requestQueue.enqueue(`app_key=other_key&timestamp=${Date.now()}&foo=held`);
+      await flushTick(30);
+      await h.instance.requestQueue.enqueue(`app_key=other_key&timestamp=${Date.now()}&foo=second`);
+      await h.instance.requests.replaceAllAppKeysInQueueWithCurrentAppKey();
+      h.network.releaseHeld();
+      await flushTick(120);
+
+      const held: RecordedCall[] = h.network.findCallsWithParam('foo=held');
+      expect(held.length).assertEqual(1);
+      expect(held[0].data.indexOf('app_key=other_key') !== -1).assertTrue();
+      const second: RecordedCall[] = h.network.findCallsWithParam('foo=second');
+      expect(second.length).assertEqual(1);
+      expect(second[0].data.indexOf('app_key=test_app_key') !== -1).assertTrue();
+      expect(h.instance.requestQueue.size()).assertEqual(0);
+    });
   });
 }

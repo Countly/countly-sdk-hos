@@ -295,6 +295,20 @@ export class ModuleConsent extends ModuleBase {
     await this.core.requestQueue.enqueue(body);
   }
 
+  /** Sends the current consent state now while consent is required, for an app that has not received it yet. */
+  public async sendCurrentConsentIfRequired(): Promise<void> {
+    if (!this.requiresConsent) return;
+    await this.sendSnapshot();
+  }
+
+  /** Sends a consent change that waits for the batching timer now, so it goes out under the app key in use. */
+  public async sendPendingConsentNow(): Promise<void> {
+    if (this.pendingCoalesceTimer === null) return;
+    clearTimeout(this.pendingCoalesceTimer);
+    this.pendingCoalesceTimer = null;
+    await this.sendSnapshot();
+  }
+
   /**
    * Cancel any pending coalesced consent snapshot. Called from
    * CountlyInstance.halt so a detached instance's timer doesn't fire after

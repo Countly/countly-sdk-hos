@@ -278,7 +278,7 @@ export class ModuleSessions extends ModuleBase {
   }
 
   private scheduleUpdateTimer(): void {
-    if (this.updateTimer !== null) return;
+    if (this.updateTimer !== null || this.config.halted) return;
     const intervalMs: number = this.config.sessionUpdateIntervalSec * 1000;
     this.updateTimer = setInterval(() => {
       if (this.config.manualSessionControl && !this.config.manualSessionHybridMode) return;
@@ -326,11 +326,20 @@ export class ModuleSessions extends ModuleBase {
    * pre-swap hook calls this UNDER THE OLD ID, before commit, so the wire
    * `end_session=1` carries the previous user's device_id. Emit only in
    * non-manual mode, the caller is responsible for checking
-   * `manualSessionControl`.
+   * `manualSessionControl`. An app key change also ends the running
+   * session with it, under the old app key, in every session mode.
    */
   public async endSessionForDeviceIdChange(): Promise<void> {
     if (!this.sessionActive) return;
     await this.endSessionInternal(true);
+  }
+
+  /**
+   * Begins the session for the new app after an app key change, when one was
+   * running before the change. Counted as a begin the SDK made by itself.
+   */
+  public async beginSessionForAppKeyChange(): Promise<void> {
+    await this.beginSessionInternal();
   }
 
   public override async onDeviceIdChangedNotMerged(_oldId: string, _newId: string): Promise<void> {

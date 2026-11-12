@@ -4,6 +4,7 @@ import requestBuilderTest from './RequestBuilder.test';
 import requestQueueTest from './RequestQueue.test';
 import consentTest from './Consent.test';
 import deviceIdTest from './DeviceId.test';
+import appKeyTest from './AppKey.test';
 import eventsTest from './Events.test';
 import sessionsTest from './Sessions.test';
 import viewsTest from './Views.test';
@@ -30,6 +31,7 @@ export default function testsuite() {
   requestQueueTest();
   consentTest();
   deviceIdTest();
+  appKeyTest();
   eventsTest();
   sessionsTest();
   viewsTest();

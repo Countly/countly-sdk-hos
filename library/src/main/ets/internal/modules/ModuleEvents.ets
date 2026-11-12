@@ -59,6 +59,8 @@ export class ModuleEvents extends ModuleBase {
    * the next flush trigger (or via end_session's await).
    */
   private flushInProgress: boolean = false;
+  /** Settles when the running flush ends, so `flushAllEvents` can wait for it instead of skipping it. */
+  private flushDone: Promise<void> = Promise.resolve();
   private timed: Map<string, TimedEvent> = new Map<string, TimedEvent>();
   private lastEventId: string = '';
   private lastEventName: string = '';
@@ -372,6 +374,8 @@ export class ModuleEvents extends ModuleBase {
       return;
     }
     this.flushInProgress = true;
+    let settle: () => void = (): void => { /* replaced by the resolver below */ };
+    this.flushDone = new Promise<void>((resolve: () => void) => { settle = resolve; });
     try {
       // Snapshot without mutating so an enqueue failure doesn't silently lose
       // events. Only after enqueue resolves do we drop them from the in-memory
@@ -398,6 +402,24 @@ export class ModuleEvents extends ModuleBase {
       this.eventQueue.splice(0, count);
     } finally {
       this.flushInProgress = false;
+      settle();
+    }
+  }
+
+  /**
+   * Moves every buffered event into requests. A flush that is already running
+   * is waited for instead of skipped, and the queue is flushed batch by batch
+   * until it is empty or a batch cannot be enqueued.
+   */
+  public async flushAllEvents(): Promise<void> {
+    while (this.eventQueue.length > 0) {
+      if (this.flushInProgress) {
+        await this.flushDone;
+        continue;
+      }
+      const before: number = this.eventQueue.length;
+      await this.flushEventQueue();
+      if (this.eventQueue.length >= before) return;
     }
   }
 
