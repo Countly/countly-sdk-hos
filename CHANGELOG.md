@@ -14,6 +14,7 @@
 * Requests recorded in offline mode now carry the device ID type "t=2", as the SDK development guide defines.
 
 * Mitigated an issue where clearing or filtering the request queue while a request was being sent could delete an unsent request.
+* Mitigated an issue where "countly.setServerURL(url)" accepted a URL without a host, such as "http://".
 * Mitigated an issue where the health check counted the retry pauses after failed requests as backoffs.
 * Mitigated an issue where a delivered health check also cleared what was counted while it was on its way.
 * Mitigated an issue where the longest run of backoffs in the health check never went above 1.

@@ -1079,6 +1079,10 @@ export class CountlyInstance implements SdkCore {
       this.config.logger.e('setServerURL, authority contains "@", ignored (userinfo hazard)');
       return;
     }
+    if (reason === 'host') {
+      this.config.logger.e(`setServerURL, the URL has no host, ignored (${url})`);
+      return;
+    }
     this.config.serverUrl = Utils.stripTrailingSlashes(url);
     this.config.logger.i('setServerURL, server URL updated, queued requests will send to the new host');
   }

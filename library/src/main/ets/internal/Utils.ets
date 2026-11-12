@@ -80,6 +80,7 @@ export class Utils {
    *                 "https://legit.server.com@evil.com", RFC 3986 parses
    *                 the authority as `evil.com` so a misconfiguration here
    *                 silently redirects all telemetry.
+   *   'host'     , no host after the scheme, e.g. "http://" or "http://:8080"
    */
   public static validateServerUrl(url: string | null | undefined): string {
     if (url === null || url === undefined || url.trim().length === 0) return 'empty';
@@ -90,6 +91,8 @@ export class Utils {
       ? url.substring(schemeEnd + 3)
       : url.substring(schemeEnd + 3, authorityEnd);
     if (authority.indexOf('@') !== -1) return 'authority';
+    const host: string = authority.split(/[?#]/)[0].replace(/:\d*$/, '');
+    if (host.trim().length === 0) return 'host';
     return '';
   }
 
