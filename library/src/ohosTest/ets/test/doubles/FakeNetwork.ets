@@ -19,9 +19,28 @@ export class FakeNetwork extends Network {
   public nextBody: string = '{"result":"Success"}';
   public nextElapsedMs: number = 20;
   public shouldFail: boolean = false;
+  private holdMatch: string = '';
+  private holdGate: Promise<void> | null = null;
+  private holdRelease: (() => void) | null = null;
 
   constructor(logger: Logger) {
     super(logger);
+  }
+
+  /** Makes the next request whose data contains `match` stay on its way until `releaseHeld` is called. */
+  public holdNext(match: string): void {
+    this.holdMatch = match;
+    this.holdGate = new Promise<void>((resolve: () => void) => {
+      this.holdRelease = resolve;
+    });
+  }
+
+  /** Lets the held request finish. */
+  public releaseHeld(): void {
+    if (this.holdRelease !== null) {
+      this.holdRelease();
+      this.holdRelease = null;
+    }
   }
 
   public override async execute(baseUrl: string, endpoint: string, data: string, usePost: boolean): Promise<HttpResult> {
@@ -34,6 +53,11 @@ export class FakeNetwork extends Network {
     // `ucm-hc-sbs-gate` for the protocol.
     if (this.silenced) {
       throw new Error('[FakeNetwork] silenced, request blocked');
+    }
+    if (this.holdGate !== null && data.indexOf(this.holdMatch) !== -1) {
+      const held: Promise<void> = this.holdGate;
+      this.holdGate = null;
+      await held;
     }
     this.calls.push({ endpoint, data, usePost, baseUrl });
     if (this.shouldFail) {
