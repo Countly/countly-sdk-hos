@@ -1,0 +1,331 @@
+ConsentApi class
+ConsentApi: checkAllConsent(): boolean;
+ConsentApi: constructor(logger: Logger, module: ModuleConsent);
+ConsentApi: giveConsentAll(): void;
+ConsentApi: removeConsentAll(): void;
+ConsentChangeSource enum
+ConsentChangeSource: DeveloperSet = "DeveloperSet",
+ConsentChangeSource: DeviceIDChangedNotMerged = "DeviceIDChangedNotMerged"
+ContentCallback type
+ContentCallback: export type ContentCallback = (status: ContentStatus, data: Record<string, Object>) => void;
+ContentConfig class
+ContentConfig: addAllowedOrigins(origins: string[]): ContentConfig;
+ContentConfig: allowedOrigins: string[];
+ContentConfig: callback: ContentCallback | null;
+ContentConfig: categories: string[];
+ContentConfig: disableRefreshContentZone(): ContentConfig;
+ContentConfig: displayMode: WebViewDisplayOption;
+ContentConfig: refreshEnabled: boolean;
+ContentConfig: setCategories(categories: string[]): ContentConfig;
+ContentConfig: setContentCallback(cb: ContentCallback): ContentConfig;
+ContentConfig: setDisplayMode(option: WebViewDisplayOption): ContentConfig;
+ContentConfig: setZoneTimerInterval(sec: number): ContentConfig;
+ContentConfig: zoneIntervalSec: number;
+ContentData class
+ContentData: constructor(html: string, portrait: ContentPlacement | null, landscape: ContentPlacement | null);
+ContentData: html: string;
+ContentData: landscape: ContentPlacement | null;
+ContentData: portrait: ContentPlacement | null;
+ContentPlacement class
+ContentPlacement: constructor(x: number, y: number, width: number, height: number);
+ContentPlacement: height: number;
+ContentPlacement: width: number;
+ContentPlacement: x: number;
+ContentPlacement: y: number;
+ContentStatus enum
+ContentStatus: CLOSED = "CLOSED"
+ContentStatus: COMPLETED = "COMPLETED",
+Countly class
+Countly: static createInstance(name: string, config: CountlyConfig, storageOverride?: Storage, networkOverride?: Network): Promise<CountlyInstance>;
+Countly: static getInstance(name: string): CountlyInstance | undefined;
+Countly: static haltAll(): Promise<void>;
+Countly: static initShared(config: CountlyConfig, storageOverride?: Storage, networkOverride?: Network): Promise<CountlyInstance>;
+Countly: static lifecycleBackgroundAll(): void;
+Countly: static lifecycleForegroundAll(): void;
+Countly: static listInstances(): string[];
+Countly: static sharedInstance(): CountlyInstance;
+Countly: static stopAll(): Promise<void>;
+CountlyConfig class
+CountlyConfig: appKey: string;
+CountlyConfig: appVersion: string;
+CountlyConfig: constructor(context: common.Context, serverUrl: string, appKey: string);
+CountlyConfig: context: common.Context;
+CountlyConfig: disableSDKBehaviorSettingsUpdates(): CountlyConfig;
+CountlyConfig: get _internalContent(): ContentConfig;
+CountlyConfig: get _internalFeedback(): FeedbackConfig;
+CountlyConfig: get _internalPush(): PushConfig;
+CountlyConfig: metricOverride: Record<string, string>;
+CountlyConfig: protected readonly content: ContentConfig;
+CountlyConfig: protected readonly feedback: FeedbackConfig;
+CountlyConfig: protected readonly push: PushConfig;
+CountlyConfig: readonly consent: ConsentConfig;
+CountlyConfig: readonly crashes: CrashesConfig;
+CountlyConfig: readonly deviceId: DeviceIdConfig;
+CountlyConfig: readonly events: EventsConfig;
+CountlyConfig: readonly experimental: ExperimentalConfig;
+CountlyConfig: readonly location: LocationConfig;
+CountlyConfig: readonly logging: LoggingConfig;
+CountlyConfig: readonly network: NetworkConfig;
+CountlyConfig: readonly remoteConfig: RCConfig;
+CountlyConfig: readonly sdkInternalLimits: SdkInternalLimitsConfig;
+CountlyConfig: readonly sessions: SessionsConfig;
+CountlyConfig: readonly userProfile: UserProfileConfig;
+CountlyConfig: readonly views: ViewsConfig;
+CountlyConfig: sdkBehaviorSettings: string | null;
+CountlyConfig: sdkBehaviorSettingsRequestsDisabled: boolean;
+CountlyConfig: serverUrl: string;
+CountlyConfig: setAppVersion(v: string): CountlyConfig;
+CountlyConfig: setMetricOverride(metricOverride: Record<string, string>): CountlyConfig;
+CountlyConfig: setSDKBehaviorSettings(sdkBehaviorSettings: string): CountlyConfig;
+CountlyFeature class
+CountlyFeature: static readonly CLICKS: string;
+CountlyFeature: static readonly CONTENT: string;
+CountlyFeature: static readonly CRASHES: string;
+CountlyFeature: static readonly EVENTS: string;
+CountlyFeature: static readonly FEEDBACK: string;
+CountlyFeature: static readonly FORMS: string;
+CountlyFeature: static readonly LOCATION: string;
+CountlyFeature: static readonly METRICS: string;
+CountlyFeature: static readonly PUSH: string;
+CountlyFeature: static readonly REMOTE_CONFIG: string;
+CountlyFeature: static readonly SCROLLS: string;
+CountlyFeature: static readonly SESSIONS: string;
+CountlyFeature: static readonly STAR_RATING: string;
+CountlyFeature: static readonly USERS: string;
+CountlyFeature: static readonly VIEWS: string;
+CountlyFeatureNames const
+CountlyFeatureNames: export declare const CountlyFeatureNames: string[];
+CountlyFeedbackWidget class
+CountlyFeedbackWidget: constructor(widgetId: string, type: FeedbackWidgetType, name: string, tags: string[], widgetVersion: string | null);
+CountlyFeedbackWidget: name: string;
+CountlyFeedbackWidget: tags: string[];
+CountlyFeedbackWidget: type: FeedbackWidgetType;
+CountlyFeedbackWidget: widgetId: string;
+CountlyFeedbackWidget: widgetVersion: string | null;
+CountlyInstance class
+CountlyInstance: changeAppKey(appKey: string): Promise<void>;
+CountlyInstance: config: InternalConfig;
+CountlyInstance: constructor(countlyConfig: CountlyConfig, storageOverride?: Storage, networkOverride?: Network);
+CountlyInstance: flushEvents(): Promise<void>;
+CountlyInstance: halt(): Promise<void>;
+CountlyInstance: handleContentOverlayUrl(url: string): boolean;
+CountlyInstance: handleFeedbackOverlayUrl(url: string): boolean;
+CountlyInstance: hasAnyActiveTimers(): boolean;
+CountlyInstance: hasPendingEvents(): boolean;
+CountlyInstance: init(): Promise<void>;
+CountlyInstance: isAutomaticCrashHandlerInstalled(): boolean;
+CountlyInstance: lifecycleBackground(): void;
+CountlyInstance: lifecycleForeground(): void;
+CountlyInstance: notifyConsentDidChange(added: string[], removed: string[], source: ConsentChangeSource): Promise<void>;
+CountlyInstance: notifyConsentWillChange(added: string[], removed: string[], source: ConsentChangeSource): Promise<void>;
+CountlyInstance: onContentOverlayClosed(status: ContentStatus, data: Record<string, Object>): void;
+CountlyInstance: onContentOverlayLoadTimedOut(): void;
+CountlyInstance: onFeedbackOverlayClosed(): void;
+CountlyInstance: onFeedbackOverlayLoadTimedOut(): void;
+CountlyInstance: readonly consent: ConsentApi;
+CountlyInstance: readonly consentModule: ModuleConsent;
+CountlyInstance: readonly crashes: CrashesApi;
+CountlyInstance: readonly deviceId: DeviceIdApi;
+CountlyInstance: readonly deviceIdModule: ModuleDeviceId;
+CountlyInstance: readonly events: EventsApi;
+CountlyInstance: readonly location: LocationApi;
+CountlyInstance: readonly remoteConfig: RemoteConfigApi;
+CountlyInstance: readonly requests: RequestQueueApi;
+CountlyInstance: readonly sessions: SessionsApi;
+CountlyInstance: readonly userProfile: UserProfileApi;
+CountlyInstance: readonly views: ViewsApi;
+CountlyInstance: requestBuilder: RequestBuilder;
+CountlyInstance: requestQueue: RequestQueue;
+CountlyInstance: resolveUnknownConsent(givenAll: boolean): Promise<void>;
+CountlyInstance: saveHealthCheckState(): Promise<void>;
+CountlyInstance: saveUserProfileIfPending(): Promise<void>;
+CountlyInstance: setExternalUrlOpener(opener: ((url: string) => void) | null): void;
+CountlyInstance: setServerURL(url: string): void;
+CountlyInstance: stop(): Promise<void>;
+CountlyOverlayRoot struct
+CountlyOverlayRoot: build(): void;
+CrashData class
+CrashData: breadcrumbs: string[];
+CrashData: constructor(stackTrace: string, breadcrumbs: string[], crashSegmentation: SegmentationMap, crashMetrics: Record<string, Object>, fatal: boolean);
+CrashData: crashMetrics: Record<string, Object>;
+CrashData: crashSegmentation: SegmentationMap;
+CrashData: fatal: boolean;
+CrashData: stackTrace: string;
+CrashesApi class
+CrashesApi: addCrashBreadcrumb(record: string): void;
+CrashesApi: constructor(logger: Logger, module: ModuleCrashes);
+CrashesApi: recordHandledException(err: Error, customSegmentation?: SegmentationMap | null): Promise<void>;
+CrashesApi: recordUnhandledException(err: Error, customSegmentation?: SegmentationMap | null): Promise<void>;
+CrashesApi: setThreadStackProvider(provider: ThreadStackProvider | null): void;
+CrashesConfig class
+CrashesConfig: customSegmentation: SegmentationMap;
+CrashesConfig: enableCrashReporting(): CrashesConfig;
+CrashesConfig: enableRecordAllThreadsWithCrash(): CrashesConfig;
+CrashesConfig: enabled: boolean;
+CrashesConfig: filter: GlobalCrashFilterCallback | null;
+CrashesConfig: recordAllThreads: boolean;
+CrashesConfig: setCustomCrashSegmentation(seg: SegmentationMap): CrashesConfig;
+CrashesConfig: setGlobalCrashFilterCallback(cb: GlobalCrashFilterCallback): CrashesConfig;
+DeviceIdApi class
+DeviceIdApi: changeWithMerge(deviceId: string): Promise<void>;
+DeviceIdApi: changeWithoutMerge(deviceId: string): Promise<void>;
+DeviceIdApi: constructor(logger: Logger, module: ModuleDeviceId);
+DeviceIdApi: disableOfflineMode(deviceId?: string | null): Promise<void>;
+DeviceIdApi: enableOfflineMode(): Promise<void>;
+DeviceIdApi: getID(): string;
+DeviceIdApi: getType(): DeviceIdType;
+DeviceIdApi: isOfflineMode(): boolean;
+DeviceIdApi: setID(deviceId: string): Promise<void>;
+DeviceIdType enum
+DeviceIdType: DEVELOPER_SUPPLIED = "DEVELOPER_SUPPLIED",
+DeviceIdType: SDK_GENERATED = "SDK_GENERATED",
+DeviceIdType: TEMPORARY_ID = "TEMPORARY_ID"
+EventsApi class
+EventsApi: cancelEvent(key: string): void;
+EventsApi: constructor(logger: Logger, module: ModuleEvents);
+EventsApi: endEvent(key: string, segmentation?: SegmentationMap | null, count?: number, sum?: number): Promise<void>;
+EventsApi: recordEvent(key: string, segmentation?: SegmentationMap | null, count?: number, sum?: number, dur?: number): Promise<void>;
+EventsApi: recordPastEvent(key: string, segmentation: SegmentationMap | null, count: number, sum: number, dur: number, timestamp: number): Promise<void>;
+EventsApi: startEvent(key: string): void;
+ExperimentalConfig class
+ExperimentalConfig: enablePreviousNameRecording(): ExperimentalConfig;
+ExperimentalConfig: enableVisibilityTracking(): ExperimentalConfig;
+ExperimentalConfig: previousNameRecording: boolean;
+ExperimentalConfig: visibilityTracking: boolean;
+FeedbackCallback interface
+FeedbackCallback: onClosed(): void;
+FeedbackCallback: onFinished(error: string | null): void;
+FeedbackConfig class
+FeedbackConfig: displayMode: WebViewDisplayOption;
+FeedbackConfig: setDisplayMode(option: WebViewDisplayOption): FeedbackConfig;
+FeedbackWidgetType enum
+FeedbackWidgetType: NPS = "nps",
+FeedbackWidgetType: RATING = "rating"
+FeedbackWidgetType: SURVEY = "survey",
+GlobalCrashFilterCallback type
+GlobalCrashFilterCallback: export type GlobalCrashFilterCallback = (crash: CrashData) => boolean;
+LocationApi class
+LocationApi: constructor(logger: Logger, module: ModuleLocation);
+LocationApi: disableLocation(): Promise<void>;
+LocationApi: setLocation(country: string | null, city: string | null, gps: string | null, ip: string | null): Promise<void>;
+LogLevel enum
+LogLevel: DEBUG = 1,
+LogLevel: ERROR = 4
+LogLevel: INFO = 2,
+LogLevel: VERBOSE = 0,
+LogLevel: WARNING = 3,
+LogListener type
+LogListener: export type LogListener = (message: string, level: LogLevel) => void;
+MessagingProvider enum
+MessagingProvider: APN = "APN"
+MessagingProvider: FCM = "FCM",
+MessagingProvider: HMS = "HMS",
+PushActionHandler type
+PushActionHandler: export type PushActionHandler = (notificationId: string, buttonIndex: number, url: string) => boolean;
+PushConfig class
+PushConfig: actionHandler: PushActionHandler | null;
+PushConfig: allowedIntentTargets: string[];
+PushConfig: provider: MessagingProvider;
+PushConfig: sendTokenAlways: boolean;
+PushConfig: setAllowedIntentTargets(allowList: string[]): PushConfig;
+PushConfig: setMessagingProvider(provider: MessagingProvider): PushConfig;
+PushConfig: setNotificationActionHandler(handler: PushActionHandler): PushConfig;
+PushConfig: setSendPushTokenAlways(enabled: boolean): PushConfig;
+PushConfig: setTestMode(mode: PushTestMode): PushConfig;
+PushConfig: testMode: PushTestMode;
+PushTestMode enum
+PushTestMode: DEVELOPMENT = 1,
+PushTestMode: PRODUCTION = 0,
+PushTestMode: TEST_DISTRIBUTION = 2
+RCData class
+RCData: constructor(value: Object | null, isCurrentUsersData: boolean);
+RCData: isCurrentUsersData: boolean;
+RCData: value: Object | null;
+RCDownloadCallback type
+RCDownloadCallback: export type RCDownloadCallback = (result: RequestResult, error: string | null, fullValueUpdate: boolean, downloadedValues: Record<string, RCData>) => void;
+RemoteConfigApi class
+RemoteConfigApi: clearAllRemoteConfig(): Promise<void>;
+RemoteConfigApi: constructor(logger: Logger, module: ModuleRemoteConfig);
+RemoteConfigApi: downloadAllKeys(callback?: RCDownloadCallback | null): Promise<void>;
+RemoteConfigApi: downloadOmittingKeys(keysToOmit: string[], callback?: RCDownloadCallback | null): Promise<void>;
+RemoteConfigApi: downloadSpecificKeys(keysToInclude: string[], callback?: RCDownloadCallback | null): Promise<void>;
+RemoteConfigApi: enrollIntoABTestsForKeys(keys: string[]): Promise<void>;
+RemoteConfigApi: exitABTestsForKeys(keys?: string[] | null): Promise<void>;
+RemoteConfigApi: getAllValuesAndEnroll(): Promise<Record<string, RCData>>;
+RemoteConfigApi: getValue(key: string): RCData | null;
+RemoteConfigApi: getValueAndEnroll(key: string): Promise<RCData | null>;
+RemoteConfigApi: getValues(): Record<string, RCData>;
+RemoteConfigApi: registerDownloadCallback(cb: RCDownloadCallback): void;
+RemoteConfigApi: removeDownloadCallback(cb: RCDownloadCallback): void;
+RequestQueueApi class
+RequestQueueApi: addDirectRequest(requestParameters: Record<string, string>): Promise<void>;
+RequestQueueApi: constructor(logger: Logger, module: ModuleRequestQueue);
+RequestQueueApi: flushQueues(): Promise<void>;
+RequestQueueApi: recordMetrics(metricOverride: Record<string, string>): Promise<void>;
+RequestQueueApi: removeDifferentAppKeysFromQueue(): Promise<void>;
+RequestQueueApi: replaceAllAppKeysInQueueWithCurrentAppKey(): Promise<void>;
+RequestResult enum
+RequestResult: Error = "Error"
+RequestResult: NetworkIssue = "NetworkIssue",
+RequestResult: Success = "Success",
+RetrieveFeedbackWidgetData type
+RetrieveFeedbackWidgetData: export type RetrieveFeedbackWidgetData = (data: Record<string, Object> | null, error: string | null) => void;
+RetrieveFeedbackWidgets type
+RetrieveFeedbackWidgets: export type RetrieveFeedbackWidgets = (widgets: CountlyFeedbackWidget[], error: string | null) => void;
+SdkInternalLimitsConfig class
+SdkInternalLimitsConfig: maxKeyLength: number | null;
+SdkInternalLimitsConfig: setMaxKeyLength(maxKeyLength: number): SdkInternalLimitsConfig;
+SegmentationMap type
+SegmentationMap: export type SegmentationMap = Record<string, SegmentationValue>;
+SegmentationValue type
+SegmentationValue: export type SegmentationValue = string | number | boolean | string[] | number[] | boolean[] | null;
+SessionsApi class
+SessionsApi: beginSession(): Promise<void>;
+SessionsApi: constructor(logger: Logger, module: ModuleSessions);
+SessionsApi: endSession(): Promise<void>;
+SessionsApi: updateSession(): Promise<void>;
+UserProfileApi class
+UserProfileApi: clear(): void;
+UserProfileApi: constructor(logger: Logger, module: ModuleUserProfile);
+UserProfileApi: increment(key: string): void;
+UserProfileApi: incrementBy(key: string, value: number): void;
+UserProfileApi: multiply(key: string, value: number): void;
+UserProfileApi: pull(key: string, value: string): void;
+UserProfileApi: push(key: string, value: string): void;
+UserProfileApi: pushUnique(key: string, value: string): void;
+UserProfileApi: save(): Promise<void>;
+UserProfileApi: saveMax(key: string, value: number): void;
+UserProfileApi: saveMin(key: string, value: number): void;
+UserProfileApi: setOnce(key: string, value: string): void;
+UserProfileApi: setProperties(data: SegmentationMap): void;
+UserProfileApi: setProperty(key: string, value: SegmentationValue): void;
+ViewsApi class
+ViewsApi: addSegmentationToViewWithID(id: string, segmentation: SegmentationMap): void;
+ViewsApi: addSegmentationToViewWithName(name: string, segmentation: SegmentationMap): void;
+ViewsApi: constructor(logger: Logger, module: ModuleViews);
+ViewsApi: pauseViewWithID(id: string): void;
+ViewsApi: resumeViewWithID(id: string): void;
+ViewsApi: setGlobalViewSegmentation(segmentation: SegmentationMap): void;
+ViewsApi: startAutoStoppedView(name: string, segmentation?: SegmentationMap | null): Promise<string | null>;
+ViewsApi: startView(name: string, segmentation?: SegmentationMap | null): Promise<string | null>;
+ViewsApi: stopAllViews(segmentation?: SegmentationMap | null): Promise<void>;
+ViewsApi: stopViewWithID(id: string, segmentation?: SegmentationMap | null): Promise<void>;
+ViewsApi: stopViewWithName(name: string, segmentation?: SegmentationMap | null): Promise<void>;
+ViewsApi: updateGlobalViewSegmentation(segmentation: SegmentationMap): void;
+ViewsApi: updateOrientation(mode: string): Promise<void>;
+ViewsConfig class
+ViewsConfig: automaticEnabled: boolean;
+ViewsConfig: disableViewRestartForManual: boolean;
+ViewsConfig: disableViewRestartForManualRecording(): ViewsConfig;
+ViewsConfig: enableAutomaticViewShortNames(): ViewsConfig;
+ViewsConfig: enableAutomaticViewTracking(): ViewsConfig;
+ViewsConfig: exclusions: string[];
+ViewsConfig: globalSegmentation: SegmentationMap;
+ViewsConfig: setAutomaticViewTrackingExclusions(exclusions: string[]): ViewsConfig;
+ViewsConfig: setGlobalViewSegmentation(segmentation: SegmentationMap): ViewsConfig;
+ViewsConfig: setTrackOrientationChanges(enabled: boolean): ViewsConfig;
+ViewsConfig: trackOrientationChanges: boolean;
+ViewsConfig: useShortNames: boolean;
+WebViewDisplayOption enum
+WebViewDisplayOption: IMMERSIVE = "IMMERSIVE",
+WebViewDisplayOption: SAFE_AREA = "SAFE_AREA"
