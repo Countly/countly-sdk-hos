@@ -1,6 +1,7 @@
 name: Device tests (HarmonyOS)
 
-# Runs the library's ohosTest suite on a HarmonyOS emulator and fails on any test failure or error.
+# Runs the library's ohosTest suite on a HarmonyOS emulator, fails on any test failure or error, and reports the
+# suite's line, function and branch coverage.
 #
 # Every pull request and every push to staging or master runs it on a GitHub-hosted ubuntu-24.04 runner
 # with KVM: the emulator comes from the Command Line Tools and the x86_64 phone image from Huawei's CDN.
@@ -74,8 +75,9 @@ jobs:
       - name: Install ohpm dependencies
         run: ohpm install --all
 
+      # The instrumented build also writes init_coverage.json, the map the coverage report starts from.
       - name: Compile ohosTest HAP
-        run: hvigorw --mode module -p module=library@ohosTest -p isOhosTest=true -p product=default -p buildMode=test genOnDeviceTestHap --no-daemon --stacktrace
+        run: hvigorw --mode module -p module=library@ohosTest -p isOhosTest=true -p product=default -p buildMode=test -p ohos-test-coverage=true genOnDeviceTestHap --no-daemon --stacktrace
 
       - name: Prepare the runner for the emulator
         run: bash .github/scripts/emulator.sh prepare-host
@@ -84,7 +86,23 @@ jobs:
         run: bash .github/scripts/emulator.sh fetch-image
 
       - name: Boot the emulator and run the tests
+        env:
+          HOS_TEST_COVERAGE: 'true'
         run: bash .github/scripts/emulator.sh run-tests library/build/default/outputs/ohosTest/library-ohosTest-unsigned.hap ci-out/device-tests
+
+      # collectCoverage only logs a missing input file, so both are checked first.
+      - name: Write the coverage report
+        run: |
+          data=library/.test/default/intermediates/ohosTest
+          for file in "$data/init_coverage.json" "$data/coverage_data/js_coverage.json"; do
+            if [ ! -s "$file" ]; then
+              echo "::error title=Coverage::$file is missing"
+              exit 1
+            fi
+          done
+          hvigorw collectCoverage -p "projectPath=$PWD" -p "reportPath=$PWD/ci-out/device-tests/coverage" \
+            -p "coverageFile=$PWD/$data/coverage_data/js_coverage.json#$PWD/$data/init_coverage.json" --no-daemon
+          python3 .github/scripts/coverage_summary.py ci-out/device-tests/coverage/coverageReport.json | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Upload test logs
         if: always()
