@@ -23,6 +23,7 @@ import countlyFacadeTest from './Countly.test';
 import countlyConfigTest from './CountlyConfig.test';
 import performanceTest from './Performance.test';
 import leakTest from './Leak.test';
+import requestScenariosTest from './RequestScenarios.test';
 
 export default function testsuite() {
   utilsTest();
@@ -46,4 +47,5 @@ export default function testsuite() {
   countlyConfigTest();
   performanceTest();
   leakTest();
+  requestScenariosTest();
 }

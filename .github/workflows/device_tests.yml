@@ -90,6 +90,19 @@ jobs:
           HOS_TEST_COVERAGE: 'true'
         run: bash .github/scripts/emulator.sh run-tests library/build/default/outputs/ohosTest/library-ohosTest-unsigned.hap ci-out/device-tests
 
+      # The emulator cannot read the repository, so the request scenarios print their records into the aa test log.
+      - name: Compare the request records
+        id: requests
+        if: ${{ !cancelled() && hashFiles('ci-out/device-tests/aa-test.log') != '' }}
+        run: python3 .github/scripts/request_records.py ci-out/device-tests/aa-test.log api/requests "$RUNNER_TEMP/request-records"
+
+      - name: Upload the new request records
+        if: ${{ !cancelled() && steps.requests.outcome == 'failure' }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: request-records
+          path: ${{ runner.temp }}/request-records
+
       # collectCoverage only logs a missing input file, so both are checked first.
       - name: Write the coverage report
         run: |
