@@ -94,7 +94,7 @@ jobs:
       - name: Compare the request records
         id: requests
         if: ${{ !cancelled() && hashFiles('ci-out/device-tests/aa-test.log') != '' }}
-        run: python3 .github/scripts/request_records.py ci-out/device-tests/aa-test.log api/requests "$RUNNER_TEMP/request-records"
+        run: python3 .github/scripts/request_records.py ci-out/device-tests/aa-test.log api/requests "$RUNNER_TEMP/request-records" "$RUNNER_TEMP/ci-report-request-records"
 
       - name: Upload the new request records
         if: ${{ !cancelled() && steps.requests.outcome == 'failure' }}
@@ -102,6 +102,14 @@ jobs:
         with:
           name: request-records
           path: ${{ runner.temp }}/request-records
+
+      - name: Upload the request records CI report fragment
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ci-report-request-records
+          path: ${{ runner.temp }}/ci-report-request-records
+          if-no-files-found: ignore
 
       # collectCoverage only logs a missing input file, so both are checked first.
       - name: Write the coverage report
