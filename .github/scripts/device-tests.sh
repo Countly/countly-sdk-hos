@@ -18,6 +18,8 @@
 #   HOS_TEST_RUN_LIMIT_S  seconds the whole aa test run may take before it is stopped (default 900)
 #   HOS_TEST_START_TRIES  tries to start the test ability with the first suite before giving up (default 4)
 #   HOS_TEST_MIN_COUNT    fail when fewer tests run than this (default 1)
+#   HOS_TEST_COVERAGE     true to run aa test with coverage on and save the coverage data it reports (default off)
+#   HOS_TEST_COVERAGE_FILE  where to save it (default: the js_coverage.json that hvigorw collectCoverage reads)
 #
 # Run from the repository root.
 
@@ -29,6 +31,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 DEFAULT_LIST="library/src/ohosTest/ets/test/List.test.ets"
 DEFAULT_HAP="library/build/default/outputs/ohosTest/library-ohosTest-unsigned.hap"
+DEFAULT_COVERAGE_FILE="library/.test/default/intermediates/ohosTest/coverage_data/js_coverage.json"
 TEST_RUNNER="/ets/testrunner/OpenHarmonyTestRunner"
 
 # Prints the describe() names of every suite imported by List.test.ets, in import order, comma separated.
@@ -71,13 +74,17 @@ connected_targets() {
 # after LIMIT ($1) seconds. Returns the status of hdc, 124 when the run was stopped.
 run_aa_test() {
   local limit="$1" log_file="$2" bundle="$3" module="$4" classes="$5" timeout_ms="$6" status
-  local target=()
+  local target=() coverage=()
   if [ -n "${HOS_HDC_TARGET:-}" ]; then
     target=(-t "$HOS_HDC_TARGET")
   fi
+  if [ "${HOS_TEST_COVERAGE:-}" = true ]; then
+    coverage=(-s coverage true)
+  fi
   set +e
   with_time_limit "$limit" "${HOS_HDC:-hdc}" ${target[@]+"${target[@]}"} shell aa test -b "$bundle" -m "$module" \
-    -s unittest "$TEST_RUNNER" -s class "$classes" -s timeout "$timeout_ms" 2>&1 | tr -d '\r' | tee "$log_file"
+    -s unittest "$TEST_RUNNER" -s class "$classes" -s timeout "$timeout_ms" ${coverage[@]+"${coverage[@]}"} 2>&1 \
+    | tr -d '\r' | tee "$log_file"
   status="${PIPESTATUS[0]}"
   set -e
   return "$status"
@@ -100,6 +107,26 @@ wait_for_test_ability() {
     sleep 10
   done
   return 1
+}
+
+# Saves the coverage data that the aa test log in $1 reports, while the device is still connected: the device file
+# named by OHOS_REPORT_COVERAGE_PATH, or else the OHOS_REPORT_COVERAGE_DATA chunks joined in order.
+collect_coverage() {
+  local log_file="$1" dest="${HOS_TEST_COVERAGE_FILE:-$DEFAULT_COVERAGE_FILE}" device_path
+  mkdir -p "$(dirname "$dest")"
+  rm -f "$dest"
+  device_path="$(sed -nE 's/.*OHOS_REPORT_COVERAGE_PATH: (.*)$/\1/p' "$log_file" | tail -1)"
+  if [ -n "$device_path" ]; then
+    hdc_cmd file recv "$device_path" "$dest" 2>&1 | tr -d '\r' >&2 || warn "hdc file recv failed for $device_path"
+  else
+    sed -nE 's/.*OHOS_REPORT_COVERAGE_DATA: (.*)$/\1/p' "$log_file" | tr -d '\n' > "$dest"
+  fi
+  if [ -s "$dest" ]; then
+    log "Coverage data saved to $dest"
+  else
+    rm -f "$dest"
+    warn "aa test reported no coverage data"
+  fi
 }
 
 # Installs the HAP, waits until the test ability starts, runs aa test for every registered suite and parses the log.
@@ -143,6 +170,9 @@ cmd_run() {
     group "aa test"
     run_aa_test "$run_limit" "$out_dir/aa-test.log" "$bundle" "$module" "$classes" "$timeout_ms" || status=$?
     endgroup
+    if [ "${HOS_TEST_COVERAGE:-}" = true ]; then
+      collect_coverage "$out_dir/aa-test.log"
+    fi
     [ "$status" != 124 ] || warn "aa test was stopped after ${run_limit}s (HOS_TEST_RUN_LIMIT_S)"
   fi
   if [ "$started" = 0 ] || [ "$status" != 0 ]; then
