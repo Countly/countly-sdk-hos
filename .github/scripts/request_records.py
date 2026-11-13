@@ -32,8 +32,23 @@ def committed_records(records_dir):
     return records
 
 
-def main(log_path, records_dir, out_dir):
-    """Writes the printed records under out_dir, reports every difference in the job summary and returns 1 on any."""
+def write_fragment(fragment_dir, printed, committed, details):
+    """Writes the CI report fragment under fragment_dir: a title, how many scenarios differ, then the details."""
+    names = set(printed) | set(committed)
+    differing = sum(1 for name in names if printed.get(name) != committed.get(name))
+    if not printed:
+        summary = "The device tests printed no request record"
+    elif differing:
+        summary = f"{differing} of {len(names)} scenarios differ"
+    else:
+        summary = f"All {len(names)} scenarios match"
+    os.makedirs(fragment_dir, exist_ok=True)
+    with open(os.path.join(fragment_dir, "report.md"), "w", encoding="utf-8") as fragment:
+        fragment.write(f"Request records\n{summary}\n{details}")
+
+
+def main(log_path, records_dir, out_dir, fragment_dir=None):
+    """Writes the printed records to out_dir, reports differences in the job summary and fragment; returns 1 on any."""
     printed = printed_records(log_path)
     committed = committed_records(records_dir)
     report = []
@@ -51,16 +66,20 @@ def main(log_path, records_dir, out_dir):
         report.append(f"### The {name} scenario printed no record\n\nThe device tests did not run it, or it failed before printing.\n")
     if not printed:
         report.append("### The device tests printed no request record\n")
+    details = ""
+    if report:
+        details = "Commit the files from this run's request-records artifact, with a CHANGELOG.md line, if the change is deliberate.\n\n" + "\n".join(report)
+    if fragment_dir:
+        write_fragment(fragment_dir, printed, committed, details)
     if not report:
         return 0
     summary = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary:
         with open(summary, "a", encoding="utf-8") as out:
-            out.write("Commit the files from this run's request-records artifact, with a CHANGELOG.md line, if the change is deliberate.\n\n")
-            out.write("\n".join(report))
+            out.write(details)
     print("::error title=Request records::The requests the SDK sends differ from api/requests/. The job summary shows how.")
     return 1
 
 
 if __name__ == "__main__":
-    sys.exit(main(*sys.argv[1:4]))
+    sys.exit(main(*sys.argv[1:5]))
